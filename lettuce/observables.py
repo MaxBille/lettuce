@@ -9,7 +9,7 @@ import numpy as np
 from lettuce.util import torch_gradient
 from packaging import version
 
-__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum","Vorticity"]
+__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity"]
 
 
 class Observable:
@@ -157,3 +157,28 @@ class Vorticity(Observable):
                 + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))  # gegenüber Enstrophy fehlt hier die Summierung
 
         return vorticity * dx ** self.lattice.D
+
+
+class DragCoefficient(Observable):
+    """The drag coefficient of obstacle, calculated using momentum exchange method
+    modified version of M.Kliemanks Drag Coefficient"""
+
+    def __init__(self, lattice, flow, simulation):
+        super().__init__(lattice, flow)
+        self.forceOnBoundary = simulation.forceOnBoundary
+        # self.lattice = lattice
+        # self.flow = flow
+        # self.boundary = []
+        # for boundary in simulation._boundaries:
+        #     if isinstance(boundary, BounceBackBoundary):
+        #         boundary.output_force = True
+        #         self.boundary.append(boundary)
+
+    def __call__(self, f):
+        rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
+        Fw = self.forceOnBoundary.force[0]
+        # f = torch.where(self.mask, f, torch.zeros_like(f))
+        # f[0, ...] = 0
+        # Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
+        drag_coefficient = Fw / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.flow.area)
+        return drag_coefficient

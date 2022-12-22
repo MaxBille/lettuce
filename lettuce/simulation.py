@@ -24,7 +24,7 @@ class Simulation:
 
     """
 
-    def __init__(self, flow, lattice, collision, streaming):
+    def __init__(self, flow, lattice, collision, streaming, force_on_boundary):
         self.flow = flow
         self.lattice = lattice
         self.collision = collision
@@ -61,6 +61,7 @@ class Simulation:
                 no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(self.f.shape)
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
+        self.forceOnBoundary = force_on_boundary
 
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
