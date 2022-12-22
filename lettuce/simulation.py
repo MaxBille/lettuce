@@ -62,19 +62,26 @@ class Simulation:
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
         self.forceOnBoundary = force_on_boundary
+        self.forceVal = []
 
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
         start = timer()
         if self.i == 0:
+            # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
+            # Perform force calculation on selected boundaries (f.ex. obstacles)
+            self.forceVal[self.i] = self.forceOnBoundary(self.f)
+            # Perform streaming
             self.f = self.streaming(self.f)
+            # apply boundary conditions
             for boundary in self._boundaries:
                 self.f = boundary(self.f)
             self.i += 1
+            # call reporters
             self._report()
         end = timer()
         seconds = end - start
