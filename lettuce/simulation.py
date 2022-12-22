@@ -70,11 +70,13 @@ class Simulation:
         if self.i == 0:
             # reporters are called before the first timestep
             self._report()
+            # Perform force calculation on selected boundaries (f.ex. obstacles)
+            self.forceVal.append(self.forceOnBoundary(self.f))
         for _ in range(num_steps):
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             # Perform force calculation on selected boundaries (f.ex. obstacles)
-            self.forceVal[self.i] = self.forceOnBoundary(self.f)
+            self.forceVal.append(self.forceOnBoundary(self.f))
             # Perform streaming
             self.f = self.streaming(self.f)
             # apply boundary conditions
