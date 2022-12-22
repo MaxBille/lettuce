@@ -75,13 +75,17 @@ class Simulation:
         for _ in range(num_steps):
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-            # Perform force calculation on selected boundaries (f.ex. obstacles)
-            self.forceVal.append(self.forceOnBoundary(self.f))
+#            # Perform force calculation on selected boundaries (f.ex. obstacles)
+#            self.forceVal.append(self.forceOnBoundary(self.f))
             # Perform streaming
             self.f = self.streaming(self.f)
+#            # Perform force calculation on selected boundaries (f.ex. obstacles)
+            self.forceVal.append(self.forceOnBoundary(self.f))
             # apply boundary conditions
             for boundary in self._boundaries:
                 self.f = boundary(self.f)
+#            #            # Perform force calculation on selected boundaries (f.ex. obstacles)
+#            self.forceVal.append(self.forceOnBoundary(self.f))
             self.i += 1
             # call reporters
             self._report()

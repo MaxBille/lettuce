@@ -9,7 +9,7 @@ import numpy as np
 from lettuce.util import torch_gradient
 from packaging import version
 
-__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient"]
+__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient"]
 
 
 class Observable:
@@ -177,11 +177,39 @@ class DragCoefficient(Observable):
 
     def __call__(self, f):
         rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        Fw = self.forceOnBoundary.force[0]
-        print("force",self.forceOnBoundary.force)
-        print("Fw",Fw)
+        Fx = self.forceOnBoundary.force[0] # Fw ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung
+#        print("force",self.forceOnBoundary.force)
+#        print("Fx",Fx)
         # f = torch.where(self.mask, f, torch.zeros_like(f))
         # f[0, ...] = 0
         # Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
-        drag_coefficient = Fw / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
+        drag_coefficient = Fx / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
         return drag_coefficient
+
+
+class LiftCoefficient(Observable):
+    """The drag coefficient of obstacle, calculated using momentum exchange method
+    modified version of M.Kliemanks Drag Coefficient"""
+
+    def __init__(self, lattice, flow, simulation, area):
+        super().__init__(lattice, flow)
+        self.forceOnBoundary = simulation.forceOnBoundary
+        self.area = area
+        # self.lattice = lattice
+        # self.flow = flow
+        # self.boundary = []
+        # for boundary in simulation._boundaries:
+        #     if isinstance(boundary, BounceBackBoundary):
+        #         boundary.output_force = True
+        #         self.boundary.append(boundary)
+
+    def __call__(self, f):
+        rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
+        Fy = self.forceOnBoundary.force[1] # Fw ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung
+#        print("force",self.forceOnBoundary.force)
+#        print("Fx",Fx)
+        # f = torch.where(self.mask, f, torch.zeros_like(f))
+        # f[0, ...] = 0
+        # Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
+        lift_coefficient = Fy / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
+        return lift_coefficient

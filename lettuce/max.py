@@ -25,6 +25,7 @@ class ForceOnBoundary:
                             # ...wird der gegenüberliegende stencil-Vektor e_i, des nach außen zeigenden Stencil-Vektors (also letztendlich der in Richtung boundary zeigende)
                             # ...markiert:
                             # Markiere c_i auf dem Boundary-Rand, welcher nach innen zeigt (vom solid Knoten aus)
+                            # ...das ist die Population, die von der Baundary in diesem Zeitschritt invertiert wird, also konkret die Population, deren Impuls relevant ist
                             self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
@@ -41,13 +42,15 @@ class ForceOnBoundary:
                         pass  # just ignore this iteration since there is no neighbor there
 
         self.force_mask = self.lattice.convert_to_tensor(self.force_mask)
-        print(self.force_mask)
+#        print(self.force_mask)
 
     def __call__(self, f):
-        tmp = torch.where(self.force_mask, f, torch.zeros_like(f)) # x,y-Grid mit f an den Stellen, wo ein Boundary-Rand ist (auf der Boundary)
+        tmp = torch.where(self.force_mask, f, torch.zeros_like(f)) # alle Pupulationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und hiernach von der Boundary invertiert werden?
         self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0 # warum 1^D?
+#        print("tmp", tmp)
+#        print("force", self.force)
         #tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
         #for _ in range(0, self.lattice.D):
         #    tmp = torch.sum(tmp, dim=1)
         # self.force = tmp * 2
-        return self.force
+        return self.force # force in x and y direction
