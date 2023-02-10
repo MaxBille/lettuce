@@ -143,73 +143,88 @@ class Mass(Observable):
 
 
 class Vorticity(Observable):
+    """Vorticity: the curl of the flow velocity field
+    Note: only works for periodic domains (according to a note in class Enstrophy (see above)
+    """
     def __call__(self, f):
         u0 = self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[0])
         u1 = self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[1])
         dx = self.flow.units.convert_length_to_pu(1.0)
         grad_u0 = torch_gradient(u0, dx=dx, order=6)
         grad_u1 = torch_gradient(u1, dx=dx, order=6)
-        vorticity = (grad_u0[1] - grad_u1[0]) * (grad_u0[1] - grad_u1[0])  # gegenüber Enstrophy fehlt hier die Summierung
+        vorticity = (grad_u0[1] - grad_u1[0]) * (grad_u0[1] - grad_u1[0])  # gegenüber Enstrophy fehlt hier die Summation
         if self.lattice.D == 3:
             u2 = self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[2])
             grad_u2 = torch_gradient(u2, dx=dx, order=6)
             vorticity += (grad_u2[1] - grad_u1[2]) * (grad_u2[1] - grad_u1[2])\
-                + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))  # gegenüber Enstrophy fehlt hier die Summierung
+                + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))  # gegenüber Enstrophy fehlt hier die Summation
 
         return vorticity * dx ** self.lattice.D
 
 
 class DragCoefficient(Observable):
-    """The drag coefficient of obstacle, calculated using momentum exchange method
-    modified version of M.Kliemanks Drag Coefficient"""
+    """The drag coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
+    modified version of M.Kliemank's Drag Coefficient Code
+
+    calculates the density, gets the force in x direction on the boundary from the forceOnBoundary object,
+    calculates the coefficient of drag
+
+    M.K.'s non used code is commented out by "##"
+    """
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
         self.forceOnBoundary = simulation.forceOnBoundary
         self.area = area
-        # self.lattice = lattice
-        # self.flow = flow
-        # self.boundary = []
-        # for boundary in simulation._boundaries:
-        #     if isinstance(boundary, BounceBackBoundary):
-        #         boundary.output_force = True
-        #         self.boundary.append(boundary)
+        ## self.lattice = lattice
+        ## self.flow = flow
+        ## self.boundary = []
+        ## for boundary in simulation._boundaries:
+        ##     if isinstance(boundary, BounceBackBoundary):
+        ##         boundary.output_force = True
+        ##         self.boundary.append(boundary)
 
     def __call__(self, f):
         rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        Fx = self.forceOnBoundary.force[0] # Fw ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung
+        Fx = self.forceOnBoundary.force[0] # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung
 #        print("force",self.forceOnBoundary.force)
 #        print("Fx",Fx)
-        # f = torch.where(self.mask, f, torch.zeros_like(f))
-        # f[0, ...] = 0
-        # Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
+        ## f = torch.where(self.mask, f, torch.zeros_like(f))
+        ## f[0, ...] = 0
+        ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
         drag_coefficient = Fx / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
         return drag_coefficient
 
 
 class LiftCoefficient(Observable):
-    """The drag coefficient of obstacle, calculated using momentum exchange method
-    modified version of M.Kliemanks Drag Coefficient"""
+    """The lift coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
+        modified version of M.Kliemank's lift Coefficient Code
+
+        calculates the density, gets the force in x direction on the boundary from the forceOnBoundary object,
+        calculates the coefficient of lift
+
+        M.K.'s non used code is commented out by "##"
+        """
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
         self.forceOnBoundary = simulation.forceOnBoundary
         self.area = area
-        # self.lattice = lattice
-        # self.flow = flow
-        # self.boundary = []
-        # for boundary in simulation._boundaries:
-        #     if isinstance(boundary, BounceBackBoundary):
-        #         boundary.output_force = True
-        #         self.boundary.append(boundary)
+        ## self.lattice = lattice
+        ## self.flow = flow
+        ## self.boundary = []
+        ## for boundary in simulation._boundaries:
+        ##     if isinstance(boundary, BounceBackBoundary):
+        ##         boundary.output_force = True
+        ##         self.boundary.append(boundary)
 
     def __call__(self, f):
         rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        Fy = self.forceOnBoundary.force[1] # Fw ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung
+        Fy = self.forceOnBoundary.force[1] # Fwy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
 #        print("force",self.forceOnBoundary.force)
 #        print("Fx",Fx)
-        # f = torch.where(self.mask, f, torch.zeros_like(f))
-        # f[0, ...] = 0
-        # Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
+        ## f = torch.where(self.mask, f, torch.zeros_like(f))
+        ## f[0, ...] = 0
+        ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
         lift_coefficient = Fy / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
         return lift_coefficient

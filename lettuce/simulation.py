@@ -84,7 +84,7 @@ class Simulation:
             # apply boundary conditions
             for boundary in self._boundaries:
                 self.f = boundary(self.f)
-#            #            # Perform force calculation on selected boundaries (f.ex. obstacles)
+#            # Perform force calculation on selected boundaries (f.ex. obstacles)
 #            self.forceVal.append(self.forceOnBoundary(self.f))
             self.i += 1
             # call reporters

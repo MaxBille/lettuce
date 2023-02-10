@@ -3,7 +3,11 @@ import numpy as np
 
 
 class ForceOnBoundary:
-    """Fullway Bounce-Back Boundary"""
+    """calculates the force on the boundary area defined by boundary_mask by MEA/MEM (momentum exchange algorithm),
+    based on code by M.Kliemank, who based his code on Kruger (book, 2007, "principles and pracites...").
+    - lettuce implemented a Fullway Bounce-Back Boundary, which could be problematic, Kruger describes the MEM for
+    a halfway-bbb, which is more time-accurate
+    """
     def __init__(self, boundary_mask, lattice):
         self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
         self.lattice = lattice
@@ -14,9 +18,9 @@ class ForceOnBoundary:
             print("x:", x)
             print("y:", y)
             self.force_mask = np.zeros((lattice.Q, x, y), dtype=bool) # force_mask: [stencilVektor-Zahl, x, y]
-            a, b = np.where(boundary_mask) # np.array, welches
-            print("a:", a) # Liste der x-Koordinaten der boundary-mask
-            print("b:", b) # Liste der y-Koordinaten der boudnary-mask
+            a, b = np.where(boundary_mask) # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+            print("a:", a)
+            print("b:", b)
             for p in range(0, len(a)): # für alle Punkte der boundary-mask
                 for i in range(0, lattice.Q): # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
