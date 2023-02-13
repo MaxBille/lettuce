@@ -9,31 +9,31 @@ class ForceOnBoundary:
     a halfway-bbb, which is more time-accurate
     """
     def __init__(self, boundary_mask, lattice):
+        print("initializing forceOnBoundary")
         self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
         self.lattice = lattice
 
-        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # for force in all dimensions (x,y,(z))
         if lattice.D == 2:
-            x, y = boundary_mask.shape # Anzahl x-Punkte, Anzahl y-Punkte (Skalar)
-            print("x:", x)
-            print("y:", y)
-            self.force_mask = np.zeros((lattice.Q, x, y), dtype=bool) # force_mask: [stencilVektor-Zahl, x, y]
-            a, b = np.where(boundary_mask) # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
-            print("a:", a)
-            print("b:", b)
-            for p in range(0, len(a)): # für alle Punkte der boundary-mask
-                for i in range(0, lattice.Q): # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
-                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+            x, y = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), der Simulation
+            self.force_mask = np.zeros((lattice.Q, x, y), dtype=bool)  # force_mask: [stencilVektor-Zahl, x, y]
+                # ...zur markierung aller auf die Boundary (bzw. das Objekt) zeigenden Stencil-Vektoren
+            a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+                # ...um über alle Boundary-Knoten iterieren zu können
+            for p in range(0, len(a)):  # für alle Punkte der boundary-mask
+                for i in range(0, lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
                         if not boundary_mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                            # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (True mit Nachbar False)
-                            # ...wird der gegenüberliegende stencil-Vektor e_i, des nach außen zeigenden Stencil-Vektors (also letztendlich der in Richtung boundary zeigende)
+                            # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
+                            # ...wird der gegenüberliegende stencil-Vektor e_i, des nach außen zeigenden Stencil-Vektors (also letztendlich der in Richtung boundary zeigende Vektor)
                             # ...markiert:
-                            # Markiere c_i auf dem Boundary-Rand, welcher nach innen zeigt (vom solid Knoten aus)
-                            # ...das ist die Population, die von der Baundary in diesem Zeitschritt invertiert wird, also konkret die Population, deren Impuls relevant ist
-                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1
+                            # Markiere c_i (e) auf dem Boundary-Rand, welcher nach innen zeigt (vom ersten solid Knoten aus in Richtung Objektinneres)
+                            # ...das ist die Population, die von der Boundary in diesem Zeitschritt invertiert wird, also konkret die Population, deren Impuls relevant ist
+                            # (Schritt-Reihenfolge: Collision->Streaming->ForceCalc->Boundary, das heißt, "hier" wurde noch nicht invertiert)
+                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle gegen die Boundary gerichteten Populationen
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
-        if lattice.D == 3:
+        if lattice.D == 3:  # entspricht 2D, nur halt in 3D...
             x, y, z = boundary_mask.shape
             self.force_mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
             a, b, c = np.where(boundary_mask)
@@ -45,16 +45,31 @@ class ForceOnBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
 
-        self.force_mask = self.lattice.convert_to_tensor(self.force_mask)
-#        print(self.force_mask)
+        print("done initializing forceOnBoundary")
+        print("force_mask before array-tensor-conversion:")
+        print(self.force_mask)
+        self.force_mask = self.lattice.convert_to_tensor(self.force_mask)  # np.array to torch.tensor conversion
+        print("force_mask after array-tensor-conversion:")
+        print(self.force_mask)
 
     def __call__(self, f):
-        tmp = torch.where(self.force_mask, f, torch.zeros_like(f)) # alle Pupulationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und hiernach von der Boundary invertiert werden?
-        self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0 # warum 1^D?
-#        print("tmp", tmp)
-#        print("force", self.force)
-        #tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
-        #for _ in range(0, self.lattice.D):
-        #    tmp = torch.sum(tmp, dim=1)
-        # self.force = tmp * 2
-        return self.force # force in x and y direction
+        print("calling forceOnBoundary")
+        tmp = torch.where(self.force_mask, f, torch.zeros_like(f))  # alle Pupulationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und im Boudnary-Teilschritt invertiert werden würden
+        self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT - warum 1^D?...
+            # summiert alle Kräfte in x und in y Richtung auf,
+            # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
+            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+            # tmp: 9 x nx x ny
+            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+            # übrig bleiben nur zwei Koordinatenrichtungen (indexname d)
+        print("tmp: \n", tmp)
+        print("self.lattice.e \n", self.lattice.e)
+        print("force: \n", self.force)
+            ### >>> stuff war schon bei M.K. auskommentiert:
+            #tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
+            #for _ in range(0, self.lattice.D):
+            #    tmp = torch.sum(tmp, dim=1)
+            # self.force = tmp * 2
+            ### <<<
+        return self.force  # force in x and y direction
