@@ -109,7 +109,7 @@ class Simulation:
             print("streaming", self.i)
             print(self.f)
 
-            # (optional) calc. force on object-boundary
+            # (optional) calc. force on object-boundary (NUR HIER GIBT'S Werte non-Zero)
             self.forceVal.append(self.forceOnBoundary(self.f))
             print("forceVal:")
             print(self.forceVal)
