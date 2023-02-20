@@ -20,15 +20,16 @@ class ForceOnBoundary:
                 # ...zur markierung aller auf die Boundary (bzw. das Objekt) zeigenden Stencil-Vektoren
             a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
                 # ...um über alle Boundary-Knoten iterieren zu können
-            for p in range(0, len(a)):  # für alle Punkte der boundary-mask
+            for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
                 for i in range(0, lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
                         if not boundary_mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
                             # ...wird der gegenüberliegende stencil-Vektor e_i, des nach außen zeigenden Stencil-Vektors (also letztendlich der in Richtung boundary zeigende Vektor)
                             # ...markiert:
-                            # Markiere c_i (e) auf dem Boundary-Rand, welcher nach innen zeigt (vom ersten solid Knoten aus in Richtung Objektinneres)
-                            # ...das ist die Population, die von der Boundary in diesem Zeitschritt invertiert wird, also konkret die Population, deren Impuls relevant ist
+                            # Markiere c_i (e) auf dem Boundary-Rand, welcher nach innen zeigt (vom ersten solid Knoten (auf dem Knoten selbst) aus, in Richtung Objektinneres)
+                            # ...das ist die Population, die in diesem Zeitschritt in die Boundary eingeströmt ist und
+                            # ...die von der Boundary in diesem Zeitschritt invertiert wird, also konkret die Population dieses Knotens, deren Impuls relevant ist
                             # (Schritt-Reihenfolge: Collision->Streaming->ForceCalc->Boundary, das heißt, "hier" wurde noch nicht invertiert)
                             self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle gegen die Boundary gerichteten Populationen
                     except IndexError:
@@ -54,7 +55,7 @@ class ForceOnBoundary:
 
     def __call__(self, f):
         print("calling forceOnBoundary")
-        tmp = torch.where(self.force_mask, f, torch.zeros_like(f))  # alle Pupulationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und im Boudnary-Teilschritt invertiert werden würden
+        tmp = torch.where(self.force_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und im Boundary-Teilschritt invertiert werden würden
         self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT - warum 1^D?...
             # summiert alle Kräfte in x und in y Richtung auf,
             # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
