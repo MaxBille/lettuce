@@ -63,7 +63,11 @@ class ForceOnBoundary:
             # tmp: 9 x nx x ny
             # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
             # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-            # übrig bleiben nur zwei Koordinatenrichtungen (indexname d)
+            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+            # "1**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+                # eigentlich rechnet man hier einen DELTA P aus
+                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+                # ...deshalb wird hier nochmal durch 1.0 geteilt (!)
         print("tmp: \n", tmp)
         print("self.lattice.e \n", self.lattice.e)
         print("force: \n", self.force)
