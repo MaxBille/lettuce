@@ -74,7 +74,7 @@ class ForceOnBoundary:
             ### >>> stuff war schon bei M.K. auskommentiert:
             #tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
             #for _ in range(0, self.lattice.D):
-            #    tmp = torch.sum(tmp, dim=1)
+            #    tmp =torch.sum(tmp, dim=1)
             # self.force = tmp * 2
             ### <<<
         return self.force  # force in x and y direction
