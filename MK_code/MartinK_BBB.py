@@ -629,6 +629,7 @@ class ConvectiveBoundaryOutlet(object):
         no_stream_mask[[self.velocities_in] + self.index] = 1
         return no_stream_mask
 
+
 class HalfWayBounceBackObject:
     """Halfway Bounce-Back Boundary around object mask"""
     def __init__(self, mask, lattice):

@@ -31,7 +31,7 @@ class ForceOnBoundary:
                             # ...das ist die Population, die in diesem Zeitschritt in die Boundary eingeströmt ist und
                             # ...die von der Boundary in diesem Zeitschritt invertiert wird, also konkret die Population dieses Knotens, deren Impuls relevant ist
                             # (Schritt-Reihenfolge: Collision->Streaming->ForceCalc->Boundary, das heißt, "hier" wurde noch nicht invertiert)
-                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle gegen die Boundary gerichteten Populationen
+                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle auf den äußersten Boudndary-Nodes liegenden Populationen, die "in" die Boundary zeigen
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if lattice.D == 3:  # entspricht 2D, nur halt in 3D...
@@ -55,7 +55,7 @@ class ForceOnBoundary:
 
     def __call__(self, f):
         print("calling forceOnBoundary")
-        tmp = torch.where(self.force_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf dem Boundaryrand (solid) nach innen zeigen und im Boundary-Teilschritt invertiert werden würden
+        tmp = torch.where(self.force_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf dem Boundaryrand (solid?) nach innen zeigen und im Boundary-Teilschritt invertiert werden würden
         self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT - warum 1^D?...
             # summiert alle Kräfte in x und in y Richtung auf,
             # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
