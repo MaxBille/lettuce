@@ -31,7 +31,7 @@ class ForceOnBoundary:
                             # ...das ist die Population, die in diesem Zeitschritt in die Boundary eingeströmt ist und
                             # ...die von der Boundary in diesem Zeitschritt invertiert wird, also konkret die Population dieses Knotens, deren Impuls relevant ist
                             # (Schritt-Reihenfolge: Collision->Streaming->ForceCalc->Boundary, das heißt, "hier" wurde noch nicht invertiert)
-                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle auf den äußersten Boudndary-Nodes liegenden Populationen, die "in" die Boundary zeigen
+                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1  # markiere alle auf den äußersten Boundary-Nodes liegenden Populationen, die "in" die Boundary zeigen
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if lattice.D == 3:  # entspricht 2D, nur halt in 3D...

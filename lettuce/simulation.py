@@ -2,7 +2,7 @@
 
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, HalfwayBounceBackBoundary
+    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, HalfwayBounceBackBoundary, FullwayBounceBackBoundary,
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -61,18 +61,22 @@ class Simulation:
         # (initialized with 0, later specified by e.g. boundary conditions)
         x = flow.grid  # meshgrid, dimensions: D x nx x ny (x nz)
         self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(x[0], dtype=bool))  # dimensions: nx x ny (x nz)
-        no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))  # warum kein "self."?
+        no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))
+            # warum kein "self."? - vielleicht, weil es außerhalb der init nicht mehr gebraucht wird
+            # ...(no_collision_mask wird für die collision gebraucht im call (s.u.), die no_streaming_mask wird aber direkt in der init
+            # ...noch auf streaming.no_streaming_mask geschrieben (s.u.)
 
         # retrieve no-streaming and no-collision markings from all boundaries
         self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
-                # add no-collision markings from boundaries
+                # get no-collision markings from boundaries
                 self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(self.f.shape)
             if hasattr(boundary, "make_no_stream_mask"):
-                # add no-streaming marking from boundaries
+                # get no-streaming markings from boundaries
                 no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(self.f.shape)
         if no_stream_mask.any():
+            # write no_streaming_mask to streaming-object
             self.streaming.no_stream_mask = no_stream_mask
 
         # define f_collided (post-collision, pre-streaming f), if HalfwayBounceBackBoundary is used
@@ -103,12 +107,20 @@ class Simulation:
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-            # store post-collision population for halfway-bounce-back boundary condition
+
+            ### CALCULATE FORCES ON BOUNCE BACK BOUNDARIES
+            # ...and store post-collision population for halfway-bounce-back boundary condition
             for boundary in self._boundaries:
                 if isinstance(boundary, HalfwayBounceBackBoundary):
                     self.f_collided = deepcopy(self.f)
+                    self.forceVal.append(boundary.calc_force_on_boundary(self.f))
+                if isinstance(boundary, FullwayBounceBackBoundary):
+                    self.forceVal.append(boundary.calc_force_on_boundary(self.f))
 #            print("collision", self.i)
 #            print(self.f)
+
+
+
 
             # (optional) calc. force on object-boundary
 #            self.forceVal.append(self.forceOnBoundary(self.f))

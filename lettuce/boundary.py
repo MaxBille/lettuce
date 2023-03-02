@@ -19,7 +19,7 @@ import torch
 import numpy as np
 from lettuce import (LettuceException)
 
-__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
+__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
 
 
 class BounceBackBoundary:
@@ -38,48 +38,203 @@ class BounceBackBoundary:
         return self.mask
 
 
-class HalfwayBounceBackBoundary:
-    """Halfway Bounce Back Boundary"""
+class FullwayBounceBackBoundary:
+    """Fullway Bounce-Back Boundary
+    - inverts populations within two substeps
+    - call() must be called after Streaming substep
+    - calc_force_on_boundary() must be called after collision substep and before streaming substep
+    """
+    # based on Master-Branch "class BounceBackBoundary"
+    # added option to calculate force on the boundary by Momentum Exchange Method
 
-    def __init__(self, obstacle_mask, lattice):
-        self.obstacle_mask = lattice.convert_to_tensor(obstacle_mask)
+    def __init__(self, boundary_mask, lattice):
+        self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
         self.lattice = lattice
-
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
+        # create f_mask, needed for force-calculation
+        # ...(marks all fs which point from fluid to solid (boundary))
         if self.lattice.D == 2:
-            nx, ny = obstacle_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
-            self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller zu invertierenden Populationen
-                # ...zur markierung aller auf die Boundary (bzw. das Objekt) zeigenden Stencil-Vektoren bzw. Populationen
-            a, b = np.where(obstacle_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
-                # ...um über alle Boundary-Knoten iterieren zu können
+            nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+            self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
+                # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
+                # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
+            a, b = np.where(boundary_mask)
+                # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+                # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
             for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
                 for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
-                        if not obstacle_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
+                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
-                            # ...wird der an diesem Fluidknoten parallel dazu liegende Stencil-Vektor markiert:
-                            # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
-                            self.f_mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1  # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
+                            # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
+                            # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
+                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1
+                            # f_mask[q,x,y]
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
-            nx, ny, z = obstacle_mask.shape
+            nx, ny, z = boundary_mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
-            a, b, c = np.where(obstacle_mask)
+            a, b, c = np.where(boundary_mask)
             for p in range(0, len(a)):
                 for i in range(0, self.lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not obstacle_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
-                            self.f_mask[i, a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
+                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
+                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
+
+    def __call__(self, f):
+        # FULLWAY-BB: inverts populations on all boundary nodes
+        f = torch.where(self.boundary_mask, f[self.lattice.stencil.opposite], f)
+        return f
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.boundary_mask.shape == f_shape[1:]
+        return self.boundary_mask
+
+    def calc_force_on_boundary(self, f):
+        # calculate force on boundary by momentum exchange method (MEA, MEM):
+            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
+            # ...populations pointing at the surface of the boundary
+        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
+        self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT
+            # summiert alle Kräfte in x und in y Richtung auf,
+            # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
+            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+            # tmp: 9 x nx x ny
+            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+            # "1**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+                # eigentlich rechnet man hier einen DELTA P aus
+                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+                # ...deshalb wird hier nochmal durch 1.0 geteilt (!)
+        return self.force  # force in x and y direction
+
+
+class HalfwayBounceBackBoundary:
+    """Halfway Bounce Back Boundary
+    - inverts populations within one substep
+    - call() must be called after Streaming substep
+    - calc_force_on_boundary() must be called after collision substep and before streaming substep
+    """
+
+    def __init__(self, boundary_mask, lattice):
+        self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
+        self.lattice = lattice  # das self wird hier benötigt, da auf lattice auch außerhalb der init zugegriffen werden können soll
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
+        # create f_mask, needed for force-calculation
+        # ...(marks all fs which point from fluid to solid (boundary))
+        if self.lattice.D == 2:
+            nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+            self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
+                # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
+            a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+                # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
+            for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
+                for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
+                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
+                            # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
+                            # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
+                            # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
+                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1
+                            # f_mask[q,x,y]
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
+            nx, ny, z = boundary_mask.shape
+            self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
+            a, b, c = np.where(boundary_mask)
+            for p in range(0, len(a)):
+                for i in range(0, self.lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
+                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
 
     def __call__(self, f, f_collided):
-        f = torch.where(self.f_mask, f_collided[self.lattice.stencil.opposite], f)  # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
+        # HALFWAY-BB: overwrite all populations (on fluid nodes) which came from boundary with pre-streaming populations (on fluid nodes) which pointed at boundary
+            #print("f_mask:\n", self.f_mask)
+            #print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
+            #print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
+            #print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
+        f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)  # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
             # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
             # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
             # es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
         return f
+
+    def calc_force_on_boundary(self, f):
+        # calculate force on boundary by momentum exchange method (MEA, MEM):
+            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
+            # ...populations pointing at the surface of the boundary
+        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
+        self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT
+            # summiert alle Kräfte in x und in y Richtung auf,
+            # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
+            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+            # tmp: 9 x nx x ny
+            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+            # "1**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+                # eigentlich rechnet man hier einen DELTA P aus
+                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+                # ...deshalb wird hier nochmal durch 1.0 geteilt (!)
+        return self.force  # force in x and y direction
+
+# class HalfwayBounceBackBoundary:
+#     """Halfway Bounce Back Boundary"""
+#
+#     def __init__(self, boundary_mask, lattice):
+#         self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
+#         self.lattice = lattice  # das self wird hier
+#
+#         if self.lattice.D == 2:
+#             nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+#             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller zu invertierenden Populationen
+#                 # ...zur markierung aller auf die Boundary (bzw. das Objekt) zeigenden Stencil-Vektoren bzw. Populationen
+#             a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+#                 # ...um über alle Boundary-Knoten iterieren zu können
+#             for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
+#                 for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
+#                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
+#                         if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
+#                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
+#                             # ...wird der an diesem Fluidknoten parallel dazu liegende Stencil-Vektor markiert:
+#                             # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
+#                             self.f_mask[i, a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1  # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
+#                             # f_mask[q,x,y]
+#                     except IndexError:
+#                         pass  # just ignore this iteration since there is no neighbor there
+#         if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
+#             nx, ny, z = boundary_mask.shape
+#             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
+#             a, b, c = np.where(boundary_mask)
+#             for p in range(0, len(a)):
+#                 for i in range(0, self.lattice.Q):
+#                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+#                         if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
+#                             self.f_mask[i, a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
+#                     except IndexError:
+#                         pass  # just ignore this iteration since there is no neighbor there
+#         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
+#
+#     def __call__(self, f, f_collided):
+#         print("f_mask:\n", self.f_mask)
+#         print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
+#         print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
+#         print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
+#         f = torch.where(self.f_mask, f_collided[self.lattice.stencil.opposite], f)  # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
+#             # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
+#             # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
+#             # es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
+#         return f
 
 
 class EquilibriumBoundaryPU:
