@@ -174,7 +174,7 @@ class DragCoefficient(Observable):
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
-        self.force = simulation.forceVal[-1]  # total force on obstacle_boundary in x,y(,z)-direction
+        self.forceVal = simulation.forceVal
         self.area_pu = area  # crosssectional area of obstacle
         ## self.lattice = lattice
         ## self.flow = flow
@@ -187,7 +187,7 @@ class DragCoefficient(Observable):
     def __call__(self, f):
         rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
         rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
-        force_x_pu = self.flow.units.convert_force_to_pu(self.force[0]) # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung (+z in 3D)
+        force_x_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][0]) # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung (+z in 3D)
         ## f = torch.where(self.mask, f, torch.zeros_like(f))
         ## f[0, ...] = 0
         ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
@@ -208,7 +208,7 @@ class LiftCoefficient(Observable):
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
-        self.force = simulation.forceVal[-1]  # total force on obstacle_boundary in x,y(,z)-direction
+        self.forceVal = simulation.forceVal
         self.area_pu = area  # crosssectional area of obstacle
         ## self.lattice = lattice
         ## self.flow = flow
@@ -221,7 +221,7 @@ class LiftCoefficient(Observable):
     def __call__(self, f):
         rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
         rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
-        force_y_pu = self.flow.units.convert_force_to_pu(self.force[1]) # Fy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
+        force_y_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][1]) # Fy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
         ## f = torch.where(self.mask, f, torch.zeros_like(f))
         ## f[0, ...] = 0
         ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)

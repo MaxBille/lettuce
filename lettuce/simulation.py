@@ -50,8 +50,6 @@ class Simulation:
         u = lattice.convert_to_tensor(flow.units.convert_velocity_to_lu(u))
         rho = lattice.convert_to_tensor(flow.units.convert_pressure_pu_to_density_lu(p))
         self.f = lattice.equilibrium(rho, lattice.convert_to_tensor(u))
-        print("f initialized to equilibrium:")
-        print(self.f)
 
         # list for reporters
         self.reporters = []
@@ -100,11 +98,11 @@ class Simulation:
         """
         start = timer()
         if self.i == 0:  # if this is the first timestep, calc. initial forceOnObject and call reporters
-            # reporters are called before the first timestep
-            self._report()
             # Perform force calculation on obstacle_boundary
             if self.obstacle_boundary is not None:
                 self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
+            # reporters are called before the first timestep
+            self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
