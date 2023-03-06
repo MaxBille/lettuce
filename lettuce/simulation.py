@@ -24,7 +24,7 @@ class Simulation:
 
     """
 
-    def __init__(self, flow, lattice, collision, streaming, forceOnBoundary):
+    def __init__(self, flow, lattice, collision, streaming):
         print("initializing simulation")
         self.flow = flow
         self.lattice = lattice
@@ -32,8 +32,7 @@ class Simulation:
         self.streaming = streaming
         self.i = 0  # Laufindex i für Schrittzahl
         # M.Bille: Kraftberechnung auf Objekt/BBB
-        self.forceOnBoundary = forceOnBoundary
-        self.forceVal = []  # Liste der Kräfte über alle Schritte
+        self.forceVal = []  # Liste der Kräfte (in x und y) über alle Schritte
 
         # CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -83,11 +82,17 @@ class Simulation:
         for boundary in self._boundaries:
             if isinstance(boundary, HalfwayBounceBackBoundary):
                 self.f_collided = deepcopy(self.f)
-        print("done initializing simulation")
-        print("no_collision_mask:")
-        print(self.no_collision_mask)
-        print("no_stream_mask:")
-        print(no_stream_mask)
+
+        # get pointer on obstacle_boundary for force_calculation
+        self.obstacle_boundary = None
+        if self._boundaries[-1] is not None:
+            self.obstacle_boundary = self._boundaries[-1]
+
+        #print("done initializing simulation")
+        #print("no_collision_mask:")
+        #print(self.no_collision_mask)
+        #print("no_stream_mask:")
+        #print(no_stream_mask)
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -96,64 +101,40 @@ class Simulation:
         start = timer()
         if self.i == 0:  # if this is the first timestep, calc. initial forceOnObject and call reporters
             # reporters are called before the first timestep
-#            print("first report, prior to step 1")
             self._report()
-            # Perform force calculation on selected boundaries (e.g. obstacles)
-#            print("first forceVal, prior to step 1")
-            self.forceVal.append(self.forceOnBoundary(self.f))
-#            print(self.forceVal)
+            # Perform force calculation on obstacle_boundary
+            if self.obstacle_boundary is not None:
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
         for _ in range(num_steps):  # simulate num_step timesteps
-#            print("simulation, step ", self.i)
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
-            self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-
-            ### CALCULATE FORCES ON BOUNCE BACK BOUNDARIES
             # ...and store post-collision population for halfway-bounce-back boundary condition
-            for boundary in self._boundaries:
-                if isinstance(boundary, HalfwayBounceBackBoundary):
-                    self.f_collided = deepcopy(self.f)
-                    self.forceVal.append(boundary.calc_force_on_boundary(self.f))
-                if isinstance(boundary, FullwayBounceBackBoundary):
-                    self.forceVal.append(boundary.calc_force_on_boundary(self.f))
-#            print("collision", self.i)
-#            print(self.f)
+            self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
+            self.f_collided = deepcopy(self.f)
 
-
-
-
-            # (optional) calc. force on object-boundary
-#            self.forceVal.append(self.forceOnBoundary(self.f))
+            ### CALCULATE FORCES ON OBSTACLE BOUNDARIES
+            if self.obstacle_boundary is not None:
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
 
             ### STREAMING
             self.f = self.streaming(self.f)
-#            print("streaming", self.i)
-#            print(self.f)
 
-            # (optional) calc. force on object-boundary (NUR HIER GIBT'S Werte non-Zero für die ForceCOnBoundary-Implementierung, die von HW- und FW-BB losgelöst ist)
+#OLD:            # (optional) calc. force on object-boundary (NUR HIER GIBT'S Werte non-Zero für die ForceCOnBoundary-Implementierung, die von HW- und FW-BB losgelöst ist)
 ###            self.forceVal.append(self.forceOnBoundary(self.f))
-#            print("forceVal:")
-#            print(self.forceVal)
 
             ### BOUNDARY
             # apply boundary conditions
             for boundary in self._boundaries:
                 if isinstance(boundary, HalfwayBounceBackBoundary):
-                    self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary relies on post-collision_pre-streaming f on boundary nodes
+                    self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform 1-step-reflection
                 else:
                     self.f = boundary(self.f)  # all non-HalfwayBounceBackBoundary-BoundaryConditions
-#            print("boundary", self.i)
-#            print(self.f)
-
-            # (optional) calc. force on object-boundary
-#            self.forceVal.append(self.forceOnBoundary(self.f))
 
             # count step
             self.i += 1
 
             # call reporters
             self._report()
-#            print("finished step ", self.i)
         end = timer()
 
         print("finishes simulation")

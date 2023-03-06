@@ -47,24 +47,24 @@ class FullwayBounceBackBoundary:
     # based on Master-Branch "class BounceBackBoundary"
     # added option to calculate force on the boundary by Momentum Exchange Method
 
-    def __init__(self, boundary_mask, lattice):
-        self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
+    def __init__(self, mask, lattice):
+        self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
         self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
         # create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary))
         if self.lattice.D == 2:
-            nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+            nx, ny = mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
                 # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
                 # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
-            a, b = np.where(boundary_mask)
+            a, b = np.where(mask)
                 # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
                 # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
             for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
                 for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
-                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
                             # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
                             # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
@@ -73,13 +73,13 @@ class FullwayBounceBackBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
-            nx, ny, z = boundary_mask.shape
+            nx, ny, z = mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
-            a, b, c = np.where(boundary_mask)
+            a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, self.lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
                             self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
@@ -87,12 +87,12 @@ class FullwayBounceBackBoundary:
 
     def __call__(self, f):
         # FULLWAY-BB: inverts populations on all boundary nodes
-        f = torch.where(self.boundary_mask, f[self.lattice.stencil.opposite], f)
+        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         return f
 
     def make_no_collision_mask(self, f_shape):
-        assert self.boundary_mask.shape == f_shape[1:]
-        return self.boundary_mask
+        assert self.mask.shape == f_shape[1:]
+        return self.mask
 
     def calc_force_on_boundary(self, f):
         # calculate force on boundary by momentum exchange method (MEA, MEM):
@@ -121,22 +121,22 @@ class HalfwayBounceBackBoundary:
     - calc_force_on_boundary() must be called after collision substep and before streaming substep
     """
 
-    def __init__(self, boundary_mask, lattice):
-        self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
+    def __init__(self, mask, lattice):
+        self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice  # das self wird hier benötigt, da auf lattice auch außerhalb der init zugegriffen werden können soll
         self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
         # create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary))
         if self.lattice.D == 2:
-            nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+            nx, ny = mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
                 # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
-            a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
+            a, b = np.where(mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
                 # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
             for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
                 for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
-                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
                             # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
                             # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
@@ -145,13 +145,13 @@ class HalfwayBounceBackBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
-            nx, ny, z = boundary_mask.shape
+            nx, ny, z = mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
-            a, b, c = np.where(boundary_mask)
+            a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, self.lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
                             self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
