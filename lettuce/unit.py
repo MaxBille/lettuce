@@ -30,6 +30,7 @@ class UnitConversion:
         self.characteristic_density_pu = characteristic_density_pu
         self.origin_pu = np.zeros([lattice.D]) if origin_pu is None else origin_pu
 
+    # calculate: u_char_lu, p_char_pu, p_char_lu, viscosity_lu, viscosity_pu, relax_parm_lu
     @property
     def characteristic_velocity_lu(self):
         return self.lattice.stencil.cs * self.mach_number
@@ -54,6 +55,9 @@ class UnitConversion:
     def relaxation_parameter_lu(self):
         return self.viscosity_lu / self.lattice.stencil.cs ** 2 + 0.5
 
+    ### converter methods: u(LU->PU), u(PU->LU), a(LU->PU), a(PU->LU), t(LU->PU), t(PU->LU), rho_lu->p_lu, p_pu->rho_lu,
+        # ...rho(LU->PU), rho(PU->LU), p(LU->PU), p(PU->LU), l(LU->PU), l(LU->PU), Energy(LU->PU), Energy(PU->LU),
+        # ...incompressibleEnergy(LU->PU), incompressibleEnergy(PU->LU), force(LU->PU)
     def convert_velocity_to_pu(self, velocity_in_lu):
         return velocity_in_lu / self.characteristic_velocity_lu * self.characteristic_velocity_pu
 
@@ -127,5 +131,5 @@ class UnitConversion:
     def convert_force_to_pu(self, force_lu):
         return (force_lu * (self.characteristic_density_pu/self.characteristic_density_lu) *
                            (self.characteristic_velocity_pu/self.characteristic_velocity_lu)**2 *
-                           (self.characteristic_length_pu/self.characteristic_length_lu)**2)
+                           (self.characteristic_length_pu/self.characteristic_length_lu)**(self.lattice.D-1)) # area-dimension is 1 in 2D !
 

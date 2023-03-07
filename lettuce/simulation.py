@@ -33,6 +33,7 @@ class Simulation:
         self.i = 0  # Laufindex i für Schrittzahl
         # M.Bille: Kraftberechnung auf Objekt/BBB
         self.forceVal = []  # Liste der Kräfte (in x und y) über alle Schritte
+        self.dx = self.flow.units.convert_length_to_lu(self.flow.units.characteristic_length_pu / self.flow.units.characteristic_length_lu)  # Gitterkonstante (Knoten-Knoten-Abstand)
 
         # CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -100,7 +101,7 @@ class Simulation:
         if self.i == 0:  # if this is the first timestep, calc. initial forceOnObject and call reporters
             # Perform force calculation on obstacle_boundary
             if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f, self.dx))
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
@@ -112,7 +113,7 @@ class Simulation:
 
             ### CALCULATE FORCES ON OBSTACLE BOUNDARIES
             if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f, self.dx))
 
             ### STREAMING
             self.f = self.streaming(self.f)
