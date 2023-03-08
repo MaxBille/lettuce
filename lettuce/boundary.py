@@ -94,25 +94,26 @@ class FullwayBounceBackBoundary:
         assert self.mask.shape == f_shape[1:]
         return self.mask
 
-    def calc_force_on_boundary(self, f, dx):
+    def calc_force_on_boundary(self, f):
         # calculate force on boundary by momentum exchange method (MEA, MEM):
             # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
             # ...populations pointing at the surface of the boundary
         tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
-        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT
-        self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT
-            # summiert alle Kräfte in x und in y Richtung auf,
-            # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
-            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT / v1.1 - M.Kliemank
+        #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT / v.1.2 - M.Bille (allgemeine dx und dt=dx, dx als Funktionsparameter, wurde in simulaton.py übergeben)
+        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # BERECHNE KRAFT / v2.0 - M.Bille: dx_lu = dt_lu ist immer 1 (!). Vermeide hier unnötige mini_Rechenoperationen etc.
+            # summiert alle Kräfte in x und in y (und z) Richtung auf,
+            # tmp: f an allen Stellen, die in f_mask markiert sind
             # tmp: 9 x nx x ny
             # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
             # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
             # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
             # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
                 # eigentlich rechnet man hier einen DELTA P aus
                 # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt !)
-        return self.force  # force in x and y direction
+                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
+        return self.force  # force in x and y (and z) direction
 
 
 class HalfwayBounceBackBoundary:
@@ -170,24 +171,29 @@ class HalfwayBounceBackBoundary:
             # es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
         return f
 
-    def calc_force_on_boundary(self, f, dx):
+    def make_no_stream_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]  # all dimensions except the 0th (q)
+        return self.mask #| self.mask
+
+    def calc_force_on_boundary(self, f):
         # calculate force on boundary by momentum exchange method (MEA, MEM):
             # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
             # ...populations pointing at the surface of the boundary
         tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
-        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT
-        self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT
-            # summiert alle Kräfte in x und in y Richtung auf,
-            # tmp: Betrag aus f an allen Stellen, die in force_mask markiert sind
-            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
-            # tmp: 9 x nx x ny
-            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
-            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
-            # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
-                # eigentlich rechnet man hier einen DELTA P aus
-                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt !)
+        # self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT / v1.1 - M.Kliemank
+        # self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT / v.1.2 - M.Bille (allgemeine dx und dt=dx, dx als Funktionsparameter, wurde in simulaton.py übergeben)
+        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # BERECHNE KRAFT / v2.0 - M.Bille: dx_lu = dt_lu ist immer 1 (!). Vermeide hier unnötige mini_Rechenoperationen etc.
+        # summiert alle Kräfte in x und in y (und z) Richtung auf,
+        # tmp: f an allen Stellen, die in f_mask markiert sind
+        # tmp: 9 x nx x ny
+        # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+        # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+        # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+        # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+        # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+        # eigentlich rechnet man hier einen DELTA P aus
+        # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+        # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
         return self.force  # force in x and y direction
 
 # class HalfwayBounceBackBoundary:

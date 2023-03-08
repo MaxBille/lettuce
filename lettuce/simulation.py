@@ -33,7 +33,6 @@ class Simulation:
         self.i = 0  # Laufindex i für Schrittzahl
         # M.Bille: Kraftberechnung auf Objekt/BBB
         self.forceVal = []  # Liste der Kräfte (in x und y) über alle Schritte
-        self.dx = self.flow.units.convert_length_to_lu(self.flow.units.characteristic_length_pu / self.flow.units.characteristic_length_lu)  # Gitterkonstante (Knoten-Knoten-Abstand)
 
         # CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -84,8 +83,8 @@ class Simulation:
 
         # get pointer on obstacle_boundary for force_calculation
         self.obstacle_boundary = None
-        if self._boundaries[-1] is not None:
-            self.obstacle_boundary = self._boundaries[-1]
+        if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
+            self.obstacle_boundary = self._boundaries[-1]  # obst.b. should be the last boundary in the list
 
         #print("done initializing simulation")
         #print("no_collision_mask:")
@@ -101,7 +100,7 @@ class Simulation:
         if self.i == 0:  # if this is the first timestep, calc. initial forceOnObject and call reporters
             # Perform force calculation on obstacle_boundary
             if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f, self.dx))
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
@@ -111,21 +110,18 @@ class Simulation:
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self.f_collided = deepcopy(self.f)
 
-            ### CALCULATE FORCES ON OBSTACLE BOUNDARIES
+            ### CALCULATE FORCES ON OBSTACLE BOUNDARY
             if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f, self.dx))
+                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
 
             ### STREAMING
             self.f = self.streaming(self.f)
-
-#OLD:            # (optional) calc. force on object-boundary (NUR HIER GIBT'S Werte non-Zero für die ForceCOnBoundary-Implementierung, die von HW- und FW-BB losgelöst ist)
-###            self.forceVal.append(self.forceOnBoundary(self.f))
 
             ### BOUNDARY
             # apply boundary conditions
             for boundary in self._boundaries:
                 if isinstance(boundary, HalfwayBounceBackBoundary):
-                    self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform 1-step-reflection
+                    self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform reflection of populations within the same timestep
                 else:
                     self.f = boundary(self.f)  # all non-HalfwayBounceBackBoundary-BoundaryConditions
 
