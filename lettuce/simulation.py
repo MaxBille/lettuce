@@ -25,7 +25,6 @@ class Simulation:
     """
 
     def __init__(self, flow, lattice, collision, streaming):
-        print("initializing simulation")
         self.flow = flow
         self.lattice = lattice
         self.collision = collision
@@ -86,12 +85,6 @@ class Simulation:
         if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
             self.obstacle_boundary = self._boundaries[-1]  # obst.b. should be the last boundary in the list
 
-        #print("done initializing simulation")
-        #print("no_collision_mask:")
-        #print(self.no_collision_mask)
-        #print("no_stream_mask:")
-        #print(no_stream_mask)
-
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
         M.Bille: added force_calculation on object/boundaries
@@ -132,7 +125,6 @@ class Simulation:
             self._report()
         end = timer()
 
-        print("finishes simulation")
         # calculate runtime and performance in MLUPS
         seconds = end - start
         num_grid_points = self.lattice.rho(self.f).numel()

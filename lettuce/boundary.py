@@ -19,7 +19,7 @@ import torch
 import numpy as np
 from lettuce import (LettuceException)
 
-__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
+__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumInletPU", "EquilibriumOutletP"]
 
 
 class BounceBackBoundary:
@@ -172,8 +172,13 @@ class HalfwayBounceBackBoundary:
         return f
 
     def make_no_stream_mask(self, f_shape):
+        # ?? no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
         assert self.mask.shape == f_shape[1:]  # all dimensions except the 0th (q)
-        return self.mask #| self.mask
+        return self.mask  #| self.mask
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]
+        return self.mask
 
     def calc_force_on_boundary(self, f):
         # calculate force on boundary by momentum exchange method (MEA, MEM):
@@ -195,54 +200,6 @@ class HalfwayBounceBackBoundary:
         # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
         # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
         return self.force  # force in x and y direction
-
-# class HalfwayBounceBackBoundary:
-#     """Halfway Bounce Back Boundary"""
-#
-#     def __init__(self, boundary_mask, lattice):
-#         self.boundary_mask = lattice.convert_to_tensor(boundary_mask)
-#         self.lattice = lattice  # das self wird hier
-#
-#         if self.lattice.D == 2:
-#             nx, ny = boundary_mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
-#             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller zu invertierenden Populationen
-#                 # ...zur markierung aller auf die Boundary (bzw. das Objekt) zeigenden Stencil-Vektoren bzw. Populationen
-#             a, b = np.where(boundary_mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
-#                 # ...um über alle Boundary-Knoten iterieren zu können
-#             for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
-#                 for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
-#                     try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
-#                         if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
-#                             # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
-#                             # ...wird der an diesem Fluidknoten parallel dazu liegende Stencil-Vektor markiert:
-#                             # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
-#                             self.f_mask[i, a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1  # markiere alle "von der Boundary kommenden" Populationen im Fluid-Bereich (also den Nachbarknoten der Boundary)
-#                             # f_mask[q,x,y]
-#                     except IndexError:
-#                         pass  # just ignore this iteration since there is no neighbor there
-#         if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
-#             nx, ny, z = boundary_mask.shape
-#             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
-#             a, b, c = np.where(boundary_mask)
-#             for p in range(0, len(a)):
-#                 for i in range(0, self.lattice.Q):
-#                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-#                         if not boundary_mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]]:
-#                             self.f_mask[i, a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
-#                     except IndexError:
-#                         pass  # just ignore this iteration since there is no neighbor there
-#         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
-#
-#     def __call__(self, f, f_collided):
-#         print("f_mask:\n", self.f_mask)
-#         print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
-#         print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
-#         print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
-#         f = torch.where(self.f_mask, f_collided[self.lattice.stencil.opposite], f)  # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
-#             # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
-#             # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
-#             # es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
-#         return f
 
 
 class EquilibriumBoundaryPU:
@@ -274,6 +231,49 @@ class EquilibriumBoundaryPU:
       #  u = self.lattice.convert_to_tensor(u)
       #  feq = self.lattice.equilibrium(rho, u)
       #  f[:, 0, :] = feq[:, 0, :]
+        return f
+
+
+class EquilibriumInletPU:
+    """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
+    Note that this behavior is generally not compatible with the Navier-Stokes equations.
+    This boundary condition should only be used if no better options are available.
+    """
+
+    def __init__(self, mask, lattice, units, velocity, pressure=0):
+        # parameter input (u, p) in PU!
+        self.mask = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+        self.units = units
+        self.velocity = lattice.convert_to_tensor(velocity)  # inlet-velocity in PU
+        self.pressure = lattice.convert_to_tensor(pressure)  # inlet-pressure in PU
+        self.u_inlet = self.units.convert_velocity_to_lu(self.velocity) # ein Tensor: tensor([0.0289, 0.0000], device='cuda:0')
+        # calculate uniform or parabolic inlet-velocity-distibution
+        u_in_parabel = True
+        if u_in_parabel:
+            ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
+                ## How to Parabel:
+                ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
+                ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
+                ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
+                ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
+            ny = mask.shape[1]  # Gitterpunktzahl in y-Richtung
+            ux_temp = np.zeros((1, ny))  # x-Geschwindigkeiten der Randbedingung
+            y_coordinates = np.linspace(0, ny, ny)  # linspace() erzeugt n Punkte zwischen 0 und ny inklusive 0 und ny, so wird die Parabel auch symmetrisch und ist trotzdem an den Rändern NULL
+            ux_temp[:, 1:-1] = - np.array(self.u_inlet.cpu()).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1/(ny/2)**2
+                # (!) es muss die charakteristische Geschwindigkeit in LU genutzt werden (!) -> der Unterschied PU/LU ist u.U. Größenordnungen und es kommt bei falscher Nutzung zu Schock/Überschall und somit Sim-Crash
+                # Skalierungsfaktor 3/2=1.5 für die Parabelamplitude, falls man im Integral der Konstantgeschwindigkeit entsprechenn möchte.
+                # in 2D braucht u1 dann die Dimension 1 x ny (!)
+            uy_temp = np.zeros_like(ux_temp)  # y-Geschwindigkeit = 0
+            self.u_inlet = np.stack([ux_temp, uy_temp], axis=0)  # verpacke u-Feld
+            self.u_inlet = self.lattice.convert_to_tensor(self.u_inlet)  # np.array to torch.tensor
+
+    def __call__(self, f):
+        # convert PU-inputs to LU, calc feq and overwrite f with feq where mask==True
+        rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
+        feq = self.lattice.equilibrium(rho, self.u_inlet)  # Berechne Gleichgewicht mit neuer Geschwindigkeit
+        feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])  # erweitere auf komplettes Feld, falls nötig (feq "breit" ziehen in x-Richtung)
+        f = torch.where(self.mask, feq, f)  # überschreibe f am Einlass mit feq
         return f
 
 

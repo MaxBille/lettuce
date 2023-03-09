@@ -190,7 +190,7 @@ class DragCoefficient(Observable):
 
     def __call__(self, f):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
+        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
         self.rho_max_list.append(self.lattice.convert_to_numpy(torch.max(rho_tmp[~rho_tmp.isnan()])))
         self.rho_min_list.append(self.lattice.convert_to_numpy(torch.min(rho_tmp[~rho_tmp.isnan()])))
@@ -233,7 +233,7 @@ class LiftCoefficient(Observable):
 
     def __call__(self, f):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.mask), self.lattice.convert_to_tensor(torch.nan),
+        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan),
                               self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
         rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
