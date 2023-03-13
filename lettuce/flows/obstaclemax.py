@@ -62,7 +62,7 @@ class ObstacleMax:
         if self.lateral_walls:
             self.wall_mask[:, [0, -1]] = True
             self.solid_mask[np.where(self.wall_mask)] = 1
-        self._obstacle_mask = np.zeros_like(self.solid_mask)
+        self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc)
 
     @property
     def obstacle_mask(self):
@@ -72,12 +72,13 @@ class ObstacleMax:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
+        self.solid_mask[np.where(self.obstacle_mask)] = 1
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u_max_lu = self.units.characteristic_velocity_lu * self._unit_vector()
         u_max_lu = append_axes(u_max_lu, self.units.lattice.D)
-        self.solid_mask[np.where(self.obstacle_mask)] = 1
+        self.solid_mask[np.where(self.obstacle_mask)] = 1  # kann vielleicht raus, da die Belegung über den obstacle_mask.setter ausreichen sollte
         ### initial velocity field: "u_init"-parameter
         # 0: uniform u=0
         # 1: uniform u=1
