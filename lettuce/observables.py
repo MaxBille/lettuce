@@ -9,7 +9,7 @@ import numpy as np
 from lettuce.util import torch_gradient
 from packaging import version
 
-__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient"]
+__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient", "Mass"]
 
 
 class Observable:

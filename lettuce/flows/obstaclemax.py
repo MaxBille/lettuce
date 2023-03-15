@@ -61,6 +61,7 @@ class ObstacleMax:
         self.wall_mask = np.zeros_like(self.solid_mask)
         if self.lateral_walls:
             self.wall_mask[:, [0, -1]] = True
+            # self.wall_mask[-1, :] = True # für halb geschlossene Box und "Masse-Akkumulation"
             self.solid_mask[np.where(self.wall_mask)] = 1
         self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc)
 
