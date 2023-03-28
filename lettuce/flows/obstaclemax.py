@@ -139,13 +139,19 @@ class ObstacleMax:
             obstacle_boundary = HalfwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
         else:
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
-
-        return [
-            inlet_boundary,
-            outlet_boundary,
-            lateral_boundary,
-            obstacle_boundary
-        ]
+        if lateral_boundary is None:  # if lateral boundary is periodic...don't return a boundary-object
+            return [
+                inlet_boundary,
+                outlet_boundary,
+                obstacle_boundary
+                ]
+        else:
+            return [
+                inlet_boundary,
+                outlet_boundary,
+                lateral_boundary,
+                obstacle_boundary
+                ]
 
     def _unit_vector(self, i=0):
         return np.eye(self.units.lattice.D)[i]
