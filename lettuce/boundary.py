@@ -19,7 +19,10 @@ import torch
 import numpy as np
 from lettuce import (LettuceException)
 
-__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumInletPU", "EquilibriumOutletP"]
+__all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
+           "AntiBounceBackOutlet", "EquilibriumBoundaryPU",
+           #"EquilibriumInletPU",
+           "EquilibriumOutletP"]
 
 
 class BounceBackBoundary:
@@ -226,47 +229,49 @@ class EquilibriumBoundaryPU:
         return f
 
 
-class EquilibriumInletPU:
-    """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
-    Note that this behavior is generally not compatible with the Navier-Stokes equations.
-    This boundary condition should only be used if no better options are available.
-    """
-
-    def __init__(self, mask, lattice, units, velocity, pressure=0):
-        # parameter input (u, p) in PU!
-        self.mask = lattice.convert_to_tensor(mask)
-        self.lattice = lattice
-        self.units = units
-        self.velocity = lattice.convert_to_tensor(velocity)  # inlet-velocity in PU
-        self.pressure = lattice.convert_to_tensor(pressure)  # inlet-pressure in PU
-        self.u_inlet = self.units.convert_velocity_to_lu(self.velocity) # ein Tensor: tensor([0.0289, 0.0000], device='cuda:0')
-        # calculate uniform or parabolic inlet-velocity-distibution
-        u_in_parabel = True
-        if u_in_parabel:
-            ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
-                ## How to Parabel:
-                ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
-                ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
-                ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
-                ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
-            ny = mask.shape[1]  # Gitterpunktzahl in y-Richtung
-            ux_temp = np.zeros((1, ny))  # x-Geschwindigkeiten der Randbedingung
-            y_coordinates = np.linspace(0, ny, ny)  # linspace() erzeugt n Punkte zwischen 0 und ny inklusive 0 und ny, so wird die Parabel auch symmetrisch und ist trotzdem an den Rändern NULL
-            ux_temp[:, 1:-1] = - np.array(self.u_inlet.cpu()).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1/(ny/2)**2
-                # (!) es muss die charakteristische Geschwindigkeit in LU genutzt werden (!) -> der Unterschied PU/LU ist u.U. Größenordnungen und es kommt bei falscher Nutzung zu Schock/Überschall und somit Sim-Crash
-                # Skalierungsfaktor 3/2=1.5 für die Parabelamplitude, falls man im Integral der Konstantgeschwindigkeit entsprechenn möchte.
-                # in 2D braucht u1 dann die Dimension 1 x ny (!)
-            uy_temp = np.zeros_like(ux_temp)  # y-Geschwindigkeit = 0
-            self.u_inlet = np.stack([ux_temp, uy_temp], axis=0)  # verpacke u-Feld
-            self.u_inlet = self.lattice.convert_to_tensor(self.u_inlet)  # np.array to torch.tensor
-
-    def __call__(self, f):
-        # convert PU-inputs to LU, calc feq and overwrite f with feq where mask==True
-        rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
-        feq = self.lattice.equilibrium(rho, self.u_inlet)  # Berechne Gleichgewicht mit neuer Geschwindigkeit
-        feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])  # erweitere auf komplettes Feld, falls nötig (feq "breit" ziehen in x-Richtung)
-        f = torch.where(self.mask, feq, f)  # überschreibe f am Einlass mit feq
-        return f
+# class EquilibriumInletPU:
+#     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
+#     Note that this behavior is generally not compatible with the Navier-Stokes equations.
+#     This boundary condition should only be used if no better options are available.
+#     """
+#
+#     def __init__(self, mask, lattice, units, velocity, pressure=0):
+#         # parameter input (u, p) in PU!
+#         self.mask = lattice.convert_to_tensor(mask)
+#         self.lattice = lattice
+#         self.units = units
+#         self.velocity = lattice.convert_to_tensor(velocity)  # inlet-velocity in PU
+#         self.pressure = lattice.convert_to_tensor(pressure)  # inlet-pressure in PU
+#         self.u_inlet = self.units.convert_velocity_to_lu(self.velocity) # ein Tensor: tensor([0.0289, 0.0000], device='cuda:0')
+#         ### wurde ausgelagert in obstaclemax.py und wird in der velocity direkt als Verteilung übergeben (!)
+#         # calculate uniform or parabolic inlet-velocity-distibution
+#         # u_in_parabel = False
+#         # if u_in_parabel:
+#         #     ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
+#         #         ## How to Parabel:
+#         #         ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
+#         #         ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
+#         #         ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
+#         #         ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
+#         #     ny = mask.shape[1]  # Gitterpunktzahl in y-Richtung
+#         #     ux_temp = np.zeros((1, ny))  # x-Geschwindigkeiten der Randbedingung
+#         #     y_coordinates = np.linspace(0, ny, ny)  # linspace() erzeugt n Punkte zwischen 0 und ny inklusive 0 und ny, so wird die Parabel auch symmetrisch und ist trotzdem an den Rändern NULL
+#         #     ux_temp[:, 1:-1] = - np.array(self.u_inlet.cpu()).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1/(ny/2)**2
+#         #         # (!) es muss die charakteristische Geschwindigkeit in LU genutzt werden (!) -> der Unterschied PU/LU ist u.U. Größenordnungen und es kommt bei falscher Nutzung zu Schock/Überschall und somit Sim-Crash
+#         #         # Skalierungsfaktor 3/2=1.5 für die Parabelamplitude, falls man im Integral der Konstantgeschwindigkeit entsprechenn möchte.
+#         #         # in 2D braucht u1 dann die Dimension 1 x ny (!)
+#         #     uy_temp = np.zeros_like(ux_temp)  # y-Geschwindigkeit = 0
+#         #     self.u_inlet = np.stack([ux_temp, uy_temp], axis=0)  # verpacke u-Feld
+#         #     self.u_inlet = self.lattice.convert_to_tensor(self.u_inlet)  # np.array to torch.tensor
+#         # print(self.u_inlet)
+#
+#     def __call__(self, f):
+#         # convert PU-inputs to LU, calc feq and overwrite f with feq where mask==True
+#         rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
+#         feq = self.lattice.equilibrium(rho, self.u_inlet)  # Berechne Gleichgewicht mit neuer Geschwindigkeit
+#         feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])  # erweitere auf komplettes Feld, falls nötig (feq "breit" ziehen in x-Richtung)
+#         f = torch.where(self.mask, feq, f)  # überschreibe f am Einlass mit feq
+#         return f
 
 
 class AntiBounceBackOutlet:

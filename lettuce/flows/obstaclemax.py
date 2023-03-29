@@ -1,7 +1,9 @@
 import numpy as np
 from lettuce.unit import UnitConversion
 from lettuce.util import append_axes
-from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumInletPU, EquilibriumOutletP, AntiBounceBackOutlet
+from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet
+    # EquilibriumInletPU,
+
 
 
 class ObstacleMax:
@@ -61,9 +63,26 @@ class ObstacleMax:
         self.wall_mask = np.zeros_like(self.solid_mask)
         if self.lateral_walls:
             self.wall_mask[:, [0, -1]] = True
-            # self.wall_mask[-1, :] = True # für halb geschlossene Box und "Masse-Akkumulation"
             self.solid_mask[np.where(self.wall_mask)] = 1
         self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc)
+
+        # generate parabolic velocity profile for inlet BC if lateral_walls=True (== channel-flow)
+        self.u_inlet = self.units.characteristic_velocity_pu * self._unit_vector()
+        if self.lateral_walls:
+            ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
+            ## How to Parabel:
+            ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
+            ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
+            ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
+            ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
+            ny = self.shape[1]  # Gitterpunktzahl in y-Richtung
+            ux_temp = np.zeros((1, ny))  # x-Geschwindigkeiten der Randbedingung
+            y_coordinates = np.linspace(0, ny, ny)  # linspace() erzeugt n Punkte zwischen 0 und ny inklusive 0 und ny, so wird die Parabel auch symmetrisch und ist trotzdem an den Rändern NULL
+            ux_temp[:, 1:-1] = - np.array(self.u_inlet).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2
+            # Skalierungsfaktor 3/2=1.5 für die Parabelamplitude, falls man im Integral der Konstantgeschwindigkeit entsprechenn möchte.
+            # in 2D braucht u1 dann die Dimension 1 x ny (!)
+            uy_temp = np.zeros_like(ux_temp)  # y-Geschwindigkeit = 0
+            self.u_inlet = np.stack([ux_temp, uy_temp], axis=0)  # verpacke u-Feld
 
     @property
     def obstacle_mask(self):
@@ -120,10 +139,11 @@ class ObstacleMax:
     @property
     def boundaries(self):
         # inlet ("left side", x[0],y[1:-1])
-        inlet_boundary = EquilibriumInletPU(
+        inlet_boundary = EquilibriumBoundaryPU(
                                             self.in_mask,
                                             self.units.lattice, self.units,
-                                            self.units.characteristic_velocity_pu * self._unit_vector())
+                                            #self.units.characteristic_velocity_pu * self._unit_vector())
+                                            self.u_inlet) # übergibt 1 x D Vektor oder ny x D Vektor, beides funktioniert dank Einsum in EquilibriumBoundaryPU
         # lateral walls ("top and bottom walls", x[:], y[0,-1])
         lateral_boundary = None
         if self.lateral_walls:
@@ -131,7 +151,7 @@ class ObstacleMax:
                 lateral_boundary = HalfwayBounceBackBoundary(self.wall_mask, self.units.lattice)
             else:  # else use fullway bounce back
                 lateral_boundary = FullwayBounceBackBoundary(self.wall_mask, self.units.lattice)
-        # oulet ("right side", x[-1],y[:])
+        # outlet ("right side", x[-1],y[:])
         outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0])  # Auslass in positive x-Richtung
         # obstacle (obstacle "cylinder" with radius centered at position x_pos, y_pos)
         obstacle_boundary = None
