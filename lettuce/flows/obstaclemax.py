@@ -37,11 +37,11 @@ class ObstacleMax:
         >>> flow.obstacle_mask[np.where(condition)] = 1
     """
 
-    def __init__(self, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1, y_cl=5, x_cl=10, lateral_walls=True, hwbb=True, perturb_init=True, u_init=0):
-        self.shape = (int(x_cl * char_length_lu), int(y_cl * char_length_lu))  # shape of the domain
+    def __init__(self, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1, y_lu=5, x_lu=10, lateral_walls=True, hwbb=True, perturb_init=True, u_init=0):
+        self.shape = (int(x_lu), int(y_lu))  # shape of the domain
         self.char_length_pu = char_length_pu
-        self.domain_length_cl = x_cl
-        self.domain_width_cl = y_cl
+        self.x_lu = x_lu
+        self.y_lu = y_lu
 
         self.perturb_init = perturb_init
         self.u_init = u_init
