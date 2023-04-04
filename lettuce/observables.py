@@ -175,11 +175,11 @@ class DragCoefficient(Observable):
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
         self.forceVal = simulation.forceVal
-        self.area_pu = area  # crosssectional area of obstacle (! length in 2D -> area-dimension = self.lattice.D-1)
+      #  self.area_pu = area  # crosssectional area of obstacle (! length in 2D -> area-dimension = self.lattice.D-1)
         self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1)
-        self.rho_max_list = []
-        self.rho_min_list = []
-        self.rho_mean_list = []
+        #self.rho_max_list = []
+        #self.rho_min_list = []
+        #self.rho_mean_list = []
         ## self.lattice = lattice
         ## self.flow = flow
         ## self.boundary = []
@@ -192,12 +192,12 @@ class DragCoefficient(Observable):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
         rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
-        self.rho_max_list.append(self.lattice.convert_to_numpy(torch.max(rho_tmp[~rho_tmp.isnan()])))
-        self.rho_min_list.append(self.lattice.convert_to_numpy(torch.min(rho_tmp[~rho_tmp.isnan()])))
-        self.rho_mean_list.append(self.lattice.convert_to_numpy(rho))
-        rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
+        #self.rho_max_list.append(self.lattice.convert_to_numpy(torch.max(rho_tmp[~rho_tmp.isnan()])))
+        #self.rho_min_list.append(self.lattice.convert_to_numpy(torch.min(rho_tmp[~rho_tmp.isnan()])))
+        #self.rho_mean_list.append(self.lattice.convert_to_numpy(rho))
+       # rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
         force_x_lu = self.forceVal[-1][0]
-        force_x_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][0]) # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung (+z in 3D)
+       # force_x_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][0]) # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung (+z in 3D)
         ## f = torch.where(self.mask, f, torch.zeros_like(f))
         ## f[0, ...] = 0
         ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
@@ -220,7 +220,7 @@ class LiftCoefficient(Observable):
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
         self.forceVal = simulation.forceVal
-        self.area_pu = area  # crosssectional area of obstacle
+      #  self.area_pu = area  # crosssectional area of obstacle
         self.area_lu = area * (self.flow.units.characteristic_length_lu / self.flow.units.characteristic_length_pu) ** (
                     self.lattice.D - 1)
         ## self.lattice = lattice
@@ -236,9 +236,9 @@ class LiftCoefficient(Observable):
         rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan),
                               self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
-        rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
+      #  rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
         force_y_lu = self.forceVal[-1][1]
-        force_y_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][1]) # Fy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
+      #  force_y_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][1]) # Fy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
         ## f = torch.where(self.mask, f, torch.zeros_like(f))
         ## f[0, ...] = 0
         ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
