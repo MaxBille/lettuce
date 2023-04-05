@@ -14,20 +14,34 @@ import time
 import datetime
 import os
 import shutil
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+warnings.simplefilter("ignore")
+
+##################################################
+#ARGUMENT PARSING
+parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+parser.add_argument("--re", default=200, type=float, help="Reynolds number")
+parser.add_argument("--n_steps", default=100000, type=int, help="number of steps to simulate, overwritten by t_target, if t_target is >0")
+parser.add_argument("--gpd", default=40, type=int, help="number of gridpoints per diameter")
+parser.add_argument("--dpy", default=19, type=int, help="domain width in diameters")
+parser.add_argument("--t_target", default=0, type=float, help="time in PU to dimulate")
+parser.add_argument("--collision", default="bgk", help="collision operator (bgk, kbc, reg)")
+
+args = vars(parser.parse_args())
 
 ##################################################
 #PARAMETERS
 
-re = 200            # Reynoldszahl
+re = args["re"]            # Reynoldszahl
 Ma = 0.05           # Machzahl
-n_steps = 125000    # Schrittzahl
+n_steps = args["n_steps"]    # Schrittzahl
 setup_diameter = 1  # D_PU = char_length_pu -> this defines the PU-Reference
 flow_velocity = 1   # U_PU = char_velocity_pu -> this defines the PU-Reference velocity (u_max of inflow)
 
 periodic_start = 0.9  # relative start of peak_finding for Cd_mean Measurement to cut of any transients
 
-gridpoints_per_diameter = 160  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
-domain_width_in_D = 19  # D/Y  -> this defines the domain-size and total number of Lattice-Nodes
+gridpoints_per_diameter = args["gpd"]  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
+domain_width_in_D = args["dpy"]  # D/Y  -> this defines the domain-size and total number of Lattice-Nodes
 domain_length_in_D = 2*domain_width_in_D  # D/X
 
 # if DpY is even, resulting GPD can't be odd for symmetrical cylinder and channel
@@ -40,7 +54,13 @@ if domain_width_in_D % 2 == 0 and gridpoints_per_diameter % 2 != 0:
     gridpoints_per_diameter = int(gridpoints_per_diameter/2)*2   # make gpd even
     print("(!) domain_width_in_D is even, gridpoints_per_diameter will be "+str(gridpoints_per_diameter)+". Use odd domain_width_in_D to enable use of odd GPD!")
 
-T_target=140
+
+### OVERWRITE n_steps, if t_target is given
+T_target = 140
+if args["t_target"] > 0:
+    T_target= args["t_target"]
+    n_steps = int(T_target*((gridpoints_per_diameter+1)/setup_diameter)*(flow_velocity/(Ma*1/np.sqrt(3))))
+
 print("shape_LU:", gridpoints_per_diameter*domain_length_in_D, "x", gridpoints_per_diameter*domain_width_in_D)
 print("T with", n_steps, "steps:", round(n_steps * (setup_diameter/(gridpoints_per_diameter+1))*(Ma*1/np.sqrt(3)/flow_velocity),2), "seconds")
 print("n_steps to simulate 1 second:", round(((gridpoints_per_diameter+1)/setup_diameter)*(flow_velocity/(Ma*1/np.sqrt(3))),2), "steps")
@@ -67,8 +87,8 @@ gridpoints = gridpoints_per_diameter**2*domain_length_in_D*domain_width_in_D
 output_save = True
 
 # naming:
-batch = ""
-version = ""
+batch = "_argtest"
+version = "_GPD"+str(gridpoints_per_diameter)
 
 if output_save:  # toggle output
     # (see above) vtk_out = True    # vtk-Repoter für Animation des Flusses in ParaView: True = vtk-output, False = no vtk-output
@@ -76,9 +96,9 @@ if output_save:  # toggle output
     timestamp = datetime.datetime.now()
     timestamp = timestamp.strftime("%y%m%d")+"_"+timestamp.strftime("%H%M%S")
 
-    #output_path = "/mnt/ScratchHDD1/Max_Scratch/lbm_simulations"  # lokal HBRS
+    output_path = "/mnt/ScratchHDD1/Max_Scratch/lbm_simulations"  # lokal HBRS
     #output_path = "/home/max/Documents/lbm_simulations"  # lokal Bonn
-    output_path = "/home/mbille3s/02_lbm_simulations"  # cluster HBRS
+    #output_path = "/home/mbille3s/02_lbm_simulations"  # cluster HBRS
     dir_name = "/data_" + str(timestamp) + batch + version
     os.makedirs(output_path+dir_name)
     
@@ -120,12 +140,24 @@ flow.obstacle_mask[np.where(condition)] = 1
     
 ### Simulations-Objekt (Simulator)
 tau = flow.units.relaxation_parameter_lu
+
+if args["collision"] == "kbc":
+    collision = lt.KBCCollision2D(lattice,tau)
+    collision_name ="kbc"
+elif args["collision"] == "reg":
+    collision = lt.RegularizedCollision(lattice, tau)
+    collision_name ="reg"
+else:
+    collision = lt.BGKCollision(lattice, tau)
+    collision_name ="bgk"
+
 sim = lt.Simulation(flow, lattice, 
-                     lt.BGKCollision(lattice, tau),
+                    collision,
+                    # lt.BGKCollision(lattice, tau),
                     # lt.RegularizedCollision(lattice, tau), 
                     # lt.KBCCollision2D(lattice,tau),
                     lt.StandardStreaming(lattice)
-
+                    )
 ### Reporter
 
 # VTK Reporter -> Visualisierung
@@ -150,7 +182,7 @@ if lift_out == True:
 
 t_start=time.time()
 
-mlups = sim.step(n_steps) #Simulation mit Schrittzahl n_steps
+mlups = sim.step(int(n_steps)) #Simulation mit Schrittzahl n_steps
 
 t_end=time.time()
 runtime=t_end-t_start
@@ -215,7 +247,7 @@ try:
 except:
     print("peak-finding didn't work... probably no significant peaks visible (Re<46?), or periodic region not reached (T too small)")
     values = drag_coefficient[int(drag_coefficient.shape[0]*periodic_start-1):,2]
-    drag_mean = values[first_peak:last_peak].mean()
+    drag_mean_simple = values.mean()
     peakfinder=False
     print("Cd, simple mean:",drag_mean_simple)
 
@@ -314,6 +346,7 @@ if output_save:
     output_file.write("\nu_init = "+str(u_init))
     output_file.write("\nperturb_init = "+str(perturb_init))
     output_file.write("\nbb_wall = "+str(bb_wall))
+    output_file.write("\ncollision = "+str(collision_name))
     output_file.write("\nhwbb BC = "+str(halfway))
     output_file.write("\nvtk_fps = "+str(vtk_fps))
     output_file.write("\nvtk_out = "+str(vtk_out))
@@ -368,6 +401,7 @@ if output_save:
     output_file.write("\n"+str(u_init))
     output_file.write("\n"+str(perturb_init))
     output_file.write("\n"+str(bb_wall))
+    output_file.write("\n"+str(collision_name))
     output_file.write("\n"+str(halfway))
     output_file.write("\n"+str(vtk_fps))
     output_file.write("\n"+str(vtk_out))

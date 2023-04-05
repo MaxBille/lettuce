@@ -20,13 +20,13 @@ import shutil
 
 re = 200            # Reynoldszahl
 Ma = 0.05           # Machzahl
-n_steps = 125000    # Schrittzahl
+n_steps = 365000    # Schrittzahl
 setup_diameter = 1  # D_PU = char_length_pu -> this defines the PU-Reference
 flow_velocity = 1   # U_PU = char_velocity_pu -> this defines the PU-Reference velocity (u_max of inflow)
 
 periodic_start = 0.9  # relative start of peak_finding for Cd_mean Measurement to cut of any transients
 
-gridpoints_per_diameter = 160  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
+gridpoints_per_diameter = 74  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
 domain_width_in_D = 19  # D/Y  -> this defines the domain-size and total number of Lattice-Nodes
 domain_length_in_D = 2*domain_width_in_D  # D/X
 
