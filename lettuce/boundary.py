@@ -161,6 +161,9 @@ class HalfwayBounceBackBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
+        #print("f_mask size:",self.f_mask.element_size()*self.f_mask.nelement())
+        #print("mask size:", self.mask.element_size() * self.mask.nelement())
+        #print("force size:", self.force.element_size() * self.force.nelement())
 
     def __call__(self, f, f_collided):
         # HALFWAY-BB: overwrite all populations (on fluid nodes) which came from boundary with pre-streaming populations (on fluid nodes) which pointed at boundary

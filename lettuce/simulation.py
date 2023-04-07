@@ -32,6 +32,7 @@ class Simulation:
         self.i = 0  # Laufindex i für Schrittzahl
         # M.Bille: Kraftberechnung auf Objekt/BBB
         self.forceVal = []  # Liste der Kräfte (in x und y) über alle Schritte
+        self.hwbb_present = False
 
         # CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -78,6 +79,7 @@ class Simulation:
         # define f_collided (post-collision, pre-streaming f), if HalfwayBounceBackBoundary is used
         for boundary in self._boundaries:
             if isinstance(boundary, HalfwayBounceBackBoundary):
+                self.hwbb_present = True  # marks if Halfway Bounce Back Boundary is in use and f_collided is needed
                 self.f_collided = deepcopy(self.f)
 
         # get pointer on obstacle_boundary for force_calculation
@@ -101,7 +103,8 @@ class Simulation:
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             # ...and store post-collision population for halfway-bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-            self.f_collided = deepcopy(self.f)
+            if self.hwbb_present:
+                self.f_collided = deepcopy(self.f)
 
             ### CALCULATE FORCES ON OBSTACLE BOUNDARY
             if self.obstacle_boundary is not None:
@@ -113,10 +116,11 @@ class Simulation:
             ### BOUNDARY
             # apply boundary conditions
             for boundary in self._boundaries:
-                if isinstance(boundary, HalfwayBounceBackBoundary):
-                    self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform reflection of populations within the same timestep
-                else:
-                    self.f = boundary(self.f)  # all non-HalfwayBounceBackBoundary-BoundaryConditions
+                if boundary is not None:
+                    if isinstance(boundary, HalfwayBounceBackBoundary):
+                        self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform reflection of populations within the same timestep
+                    else:
+                        self.f = boundary(self.f)  # all non-HalfwayBounceBackBoundary-BoundaryConditions
 
             # count step
             self.i += 1
