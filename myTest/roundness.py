@@ -3,8 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-# List of Diemeters to measure:
-gpds = [20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75.80,90,100] #(np.arange(150)+5)
+# List of Diameters to measure:
+gpds = [9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100] #(np.arange(150)+5)
+gpds = [20,21,22]
+#gpds = np.arange(0,150)+5
 r_rel_list = []
 r_rel_list_weights = []
 rq_rel_list = []
@@ -22,8 +24,8 @@ r_rel_min_list = []
 for i in gpds:
     print("#######")
     gridpoints_per_diameter = i  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
-    domain_width_in_D = 19 #1+(2/gridpoints_per_diameter)  # D/Y  -> this defines the domain-size and total number of Lattice-Nodes
-    domain_length_in_D = 2*domain_width_in_D #1+(2/gridpoints_per_diameter) #2*domain_width_in_D  # D/X
+    domain_width_in_D = 1+(2/gridpoints_per_diameter)  # D/Y 19  -> this defines the domain-size and total number of Lattice-Nodes
+    domain_length_in_D = 1+(2/gridpoints_per_diameter) #2*domain_width_in_D 2*domain_width_in_D # D/X
 
     # if DpY is even, resulting GPD can't be odd for symmetrical cylinder and channel
     # ...if DpY is even, GPD will be corrected to even GPD for symemtrical cylinder
@@ -104,7 +106,7 @@ for i in gpds:
     # calculate all radii and r_max and r_min
     r_max = 0
     r_min = gridpoints_per_diameter
-    radii = np.zeros_like(rand_x)  # Liste aller Radien (ohne q) in LU
+    radii = np.zeros_like(rand_x, dtype=float)  # Liste aller Radien (ohne q) in LU
     for p in range(0, len(rand_x)):  # für alle Punkte
         radii[p] = np.sqrt((rand_x[p]-x_pos)**2 + (rand_y[p]-y_pos)**2)  # berechne Abstand des Punktes zum Zentrum
         if radii[p] > r_max:
@@ -113,7 +115,7 @@ for i in gpds:
             r_min = radii[p]
 
     # calculate all radii (with q-multiplicity)
-    radii_q = np.zeros_like(rand_xq)
+    radii_q = np.zeros_like(rand_xq, dtype=float)
     for p in range(0, len(rand_xq)):
         radii_q[p] = np.sqrt((rand_xq[p]-x_pos)**2 + (rand_yq[p]-y_pos)**2)
 
@@ -153,56 +155,84 @@ for i in gpds:
     print("radii: ", Counter(radii))
     print("radii_q: ", Counter(radii))
 
+    if True:
+        ### PLOT rand_mask
+        plt.figure()
+        plt.imshow(rand_mask)
+        plt.xticks(np.arange(gridpoints_per_diameter + 2), minor=True)
+        plt.yticks(np.arange(gridpoints_per_diameter + 2), minor=True)
+        plt.xticks([])
+        plt.yticks([])
+        plt.title("GPD = "+str(gridpoints_per_diameter))
+        plt.savefig("/home/max/Desktop/plots/roundness/other_masks/maskGPD" + str(gridpoints_per_diameter) + ".png")
+        plt.show()
 
-if True:
+if False:
     ### HISTOGRAM for radii
-    n, bins, patches = plt.hist(x=r_rel_list,  #bins='auto',
+    n, bins, patches = plt.hist(x=r_rel_list,  bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
                                 alpha=0.7,
                                 rwidth=0.85,  #density=True,  # density macht nur % draus, durch *100
                                 align="mid",
                                 weights=r_rel_list_weights  # y-Achse
                                 )
-    plt.grid(axis='y', alpha=0.75)
-    plt.xlabel('rel. radius')
-    plt.ylabel('Frequency')
-    plt.title('Histogram of relative radius distribution for GPD variants for DpY='+str(domain_width_in_D))
-    plt.text(23, 45, r'$\mu=15, b=3$')
-    plt.legend([str(x) for x in gpds])
+    plt.xlabel('relativer Radius')
+    plt.ylabel('relative Häufigkeit')
+    plt.title(
+        'Histogram der relativen Häufigkeit realtiver Radien für verschiedene Auflösungen (GPD)',
+        wrap=True)
+    # plt.text(23, 45, r'$\mu=15, b=3$')
+    plt.legend([str(x) + " GPD" for x in gpds])
     plt.ylim([0, 1])
+    plt.xticks(bins, minor=True)
+    plt.xticks([0.85, 0.9, 0.95, 1.0])
+    plt.savefig("/home/max/Desktop/plots/roundness/Histogram.png")
     plt.show()
-    #plt.savefig("/home/max/Desktop/roundness_histograms/Histogram_GPD" + str(gridpoints_per_diameter))
 
-if True:
+if False:
     ### HISTOGRAM for radii_q
-    n, bins, patches = plt.hist(x=rq_rel_list,  #bins='auto',
+    n, bins, patches = plt.hist(x=rq_rel_list, bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
                                 alpha=0.7,
                                 rwidth=0.85,  #density=True,  # density macht nur % draus, durch *100
-                                align="left",
+                                align="mid",
                                 weights=rq_rel_list_weights  # y-Achse
                                 )
     plt.grid(axis='y', alpha=0.75)
-    plt.xlabel('rel. radius')
-    plt.ylabel('Frequency')
-    plt.title('Histogram of relative radius (with q-multiplicity) distribution for GPD variants for DpY='+str(domain_width_in_D))
-    plt.text(23, 45, r'$\mu=15, b=3$')
-    plt.legend([str(x) for x in gpds])
+    plt.xlabel('relativer Radius')
+    plt.ylabel('relative Häufigkeit')
+    plt.title('Histogram der relativen Häufigkeit realtiver Radien (mit q-Multiplizität) für Verschiedene Auflösungen (GPD)', wrap=True)
+    #plt.text(23, 45, r'$\mu=15, b=3$')
+    plt.legend([str(x)+" GPD" for x in gpds])
     plt.ylim([0, 1])
+    plt.xticks(bins, minor=True)
+    plt.xticks([0.85,0.9,0.95,1.0])
+    plt.savefig("/home/max/Desktop/plots/roundness/Histogram_q.png")
     plt.show()
 
-### PLOT mean radius over GPD
-plt.figure()
-plt.plot(gpds, r_rel_mean_list, gpds, r_rel_mean_PU_list, gpds, rq_rel_mean_list, gpds, rq_rel_mean_PU_list, gpds, r_rel_max_list, gpds, r_rel_min_list)
-plt.legend(["LU", "PU", "q LU", "q PU", "max LU", "min LU"])
-plt.title("mean (max, min) relative radius for varying GPD and DpY="+str(domain_width_in_D))
-plt.grid(visible=True)
-plt.show()
 
-### PLOT rand_mask
-#plt.figure()
-#plt.imshow(obstacle_mask)
-#plt.imshow(rand_mask)
-#plt.show()
-#plt.savefig("/home/max/Desktop/GPD_shapes/GPD_Histogram"+str(gridpoints_per_diameter))
+if False:
+    ### PLOT mean radius over GPD
+    plt.figure()
+    lines = plt.plot(gpds, r_rel_mean_list,
+                     #gpds, r_rel_mean_PU_list,
+                     gpds, rq_rel_mean_list,
+                     #gpds, rq_rel_mean_PU_list,
+                     gpds, r_rel_max_list,
+                     gpds, r_rel_min_list)
+    plt.setp(lines, ls="--", lw=1, marker=".")
+    plt.legend([r"$\bar{r}$ Gitterpunte einfach gezählt",
+                #"PU",
+                r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
+                #"q PU",
+                "$r_{max}$",
+                "$r_{min}$"])
+    plt.title("Mittlerer, maximaler und minimaler relativer Radius in Abhängigkeit des Durchmessers in Gitterpunkten (GPD) für DpY = "+str(domain_width_in_D), wrap=True)
+    plt.grid(visible=True)
+    plt.ylim([0.6,1.01])
+    plt.xlim([0,101])
+    plt.xlabel("GPD")
+    plt.savefig("/home/max/Desktop/plots/roundness/mittlererRadius")
+    plt.show()
+
 pass
