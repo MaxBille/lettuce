@@ -155,7 +155,7 @@ for i in gpds:
     print("radii: ", Counter(radii))
     print("radii_q: ", Counter(radii))
 
-    if True:
+    if False:
         ### PLOT rand_mask
         plt.figure()
         plt.imshow(rand_mask)
@@ -167,7 +167,7 @@ for i in gpds:
         plt.savefig("/home/max/Desktop/plots/roundness/other_masks/maskGPD" + str(gridpoints_per_diameter) + ".png")
         plt.show()
 
-if False:
+if True:
     ### HISTOGRAM for radii
     n, bins, patches = plt.hist(x=r_rel_list,  bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
@@ -176,6 +176,7 @@ if False:
                                 align="mid",
                                 weights=r_rel_list_weights  # y-Achse
                                 )
+    plt.grid(axis='y', alpha=0.75)
     plt.xlabel('relativer Radius')
     plt.ylabel('relative Häufigkeit')
     plt.title(
@@ -189,7 +190,7 @@ if False:
     plt.savefig("/home/max/Desktop/plots/roundness/Histogram.png")
     plt.show()
 
-if False:
+if True:
     ### HISTOGRAM for radii_q
     n, bins, patches = plt.hist(x=rq_rel_list, bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
