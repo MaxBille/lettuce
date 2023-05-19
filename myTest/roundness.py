@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-# List of Diameters to measure:
+# List of Diameters (in GPD) to measure:
 gpds = [9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100] #(np.arange(150)+5)
 gpds = [20,21,22]
 #gpds = np.arange(0,150)+5
+
+# lists for plotting
 r_rel_list = []
 r_rel_list_weights = []
 rq_rel_list = []
@@ -21,14 +23,16 @@ rq_rel_mean_PU_list = []
 r_rel_max_list = []
 r_rel_min_list = []
 
+# calculate radii etc. for all GPDs
 for i in gpds:
     print("#######")
     gridpoints_per_diameter = i  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
     domain_width_in_D = 1+(2/gridpoints_per_diameter)  # D/Y 19  -> this defines the domain-size and total number of Lattice-Nodes
     domain_length_in_D = 1+(2/gridpoints_per_diameter) #2*domain_width_in_D 2*domain_width_in_D # D/X
 
+    ### GPD-correction doesn't make sense here, but keep in mind the combination of GPD and DpY is not completely arbitrary
     # if DpY is even, resulting GPD can't be odd for symmetrical cylinder and channel
-    # ...if DpY is even, GPD will be corrected to even GPD for symemtrical cylinder
+    # ...if DpY is even, GPD will be corrected to even GPD for symmetrical cylinder
     # ...use odd DpY to use odd GPD
     gpd_correction=False
     if False:#domain_width_in_D % 2 == 0 and gridpoints_per_diameter % 2 != 0:
@@ -99,9 +103,9 @@ for i in gpds:
 
     rand_x, rand_y = np.where(rand_mask)  # Liste aller Rand-x- und y-Koordinaten
     x_pos = sum(rand_x)/len(rand_x)  # x_Koordinate des Kreis-Zentrums
-    y_pos = sum(rand_y)/len(rand_y)  # y-Koordiante des Kreis-Zentrums
+    y_pos = sum(rand_y)/len(rand_y)  # y-Koordinate des Kreis-Zentrums
 
-    #radii_q = np.sqrt(np.power(np.array(rand_xq)-x_pos, 2) + np.power(np.array(rand_yq)-y_pos, 2))  # Liste der Radien in LU (multiplizität, falls ein Randpunkt mehrere Links zu Fluidknoten hat
+    #DOESN'T WORK: radii_q = np.sqrt(np.power(np.array(rand_xq)-x_pos, 2) + np.power(np.array(rand_yq)-y_pos, 2))  # Liste der Radien in LU (multiplizität, falls ein Randpunkt mehrere Links zu Fluidknoten hat
 
     # calculate all radii and r_max and r_min
     r_max = 0
@@ -123,12 +127,13 @@ for i in gpds:
     radii_relative = radii / radius_LU
     radii_q_relative = radii_q / radius_LU
 
+    # append to lists for plotting
     r_rel_list.append(radii_relative)
     r_rel_list_weights.append(np.ones_like(radii_relative) / len(radii_relative))
     rq_rel_list.append(radii_q_relative)
     rq_rel_list_weights.append(np.ones_like(radii_q_relative) / len(radii_q_relative))
 
-    # mean radius
+    # calc. mean radius
     r_rel_mean = sum(radii_relative)/len(radii_relative)
     rq_rel_mean_q = sum(radii_q_relative)/len(radii_q_relative)
 
@@ -155,7 +160,7 @@ for i in gpds:
     print("radii: ", Counter(radii))
     print("radii_q: ", Counter(radii))
 
-    if False:
+    if False:  # toggle mask output to .png
         ### PLOT rand_mask
         plt.figure()
         plt.imshow(rand_mask)
@@ -167,7 +172,7 @@ for i in gpds:
         plt.savefig("/home/max/Desktop/plots/roundness/other_masks/maskGPD" + str(gridpoints_per_diameter) + ".png")
         plt.show()
 
-if True:
+if True:  # toggle HISTOGRAMM of radii
     ### HISTOGRAM for radii
     n, bins, patches = plt.hist(x=r_rel_list,  bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
@@ -190,7 +195,7 @@ if True:
     plt.savefig("/home/max/Desktop/plots/roundness/Histogram.png")
     plt.show()
 
-if True:
+if True:  # toggle HISTOGRAMM of radii with q-multiplicity (links taken into account)
     ### HISTOGRAM for radii_q
     n, bins, patches = plt.hist(x=rq_rel_list, bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
@@ -212,7 +217,7 @@ if True:
     plt.show()
 
 
-if False:
+if False:  # toggle plot for mean, max, min radius over all GPD
     ### PLOT mean radius over GPD
     plt.figure()
     lines = plt.plot(gpds, r_rel_mean_list,
