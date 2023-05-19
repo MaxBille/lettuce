@@ -42,7 +42,7 @@ class BounceBackBoundary:
 
 
 class FullwayBounceBackBoundary:
-    """Fullway Bounce-Back Boundary
+    """Fullway Bounce-Back Boundary (with added force_on_boundary calculation)
     - inverts populations within two substeps
     - call() must be called after Streaming substep
     - calc_force_on_boundary() must be called after collision substep and before streaming substep
@@ -54,28 +54,25 @@ class FullwayBounceBackBoundary:
         self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
         self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
-        # create f_mask, needed for force-calculation
+        ### create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary))
         if self.lattice.D == 2:
-            nx, ny = mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
+            nx, ny = mask.shape  # domain size in x and y
             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
-                # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
-                # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
+                # f_mask: [q, nx, ny], marks all fs which point from fluid to solid (boundary)
             a, b = np.where(mask)
-                # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
-                # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
-            for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
-                for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
-                    try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
+                # np.arrays: list of (a) x-coordinates and (b) y-coordinates in the boundary.mask
+                # ...to enable iteration over all boundary/wall/object-nodes
+            for p in range(0, len(a)):  # for all TRUE-nodes in boundary.mask
+                for i in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                    try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
                         if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
-                            # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
-                            # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
-                            # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
+                            # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
+                            # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
                             self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1
-                            # f_mask[q,x,y]
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
-        if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
+        if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
             nx, ny, z = mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
             a, b, c = np.where(mask)
@@ -89,7 +86,7 @@ class FullwayBounceBackBoundary:
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
 
     def __call__(self, f):
-        # FULLWAY-BB: inverts populations on all boundary nodes
+        # FULLWAY-BBBC: inverts populations on all boundary nodes
         f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         return f
 
@@ -98,29 +95,30 @@ class FullwayBounceBackBoundary:
         return self.mask
 
     def calc_force_on_boundary(self, f):
-        # calculate force on boundary by momentum exchange method (MEA, MEM):
-            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
+        # calculate force on boundary by momentum exchange method (MEA, MEM) according to Kruger et al., 2017, pp.215-217:
+            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary) is summed for all...
             # ...populations pointing at the surface of the boundary
-        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
-        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT / v1.1 - M.Kliemank
-        #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT / v.1.2 - M.Bille (allgemeine dx und dt=dx, dx als Funktionsparameter, wurde in simulaton.py übergeben)
-        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # BERECHNE KRAFT / v2.0 - M.Bille: dx_lu = dt_lu ist immer 1 (!). Vermeide hier unnötige mini_Rechenoperationen etc.
-            # summiert alle Kräfte in x und in y (und z) Richtung auf,
-            # tmp: f an allen Stellen, die in f_mask markiert sind
-            # tmp: 9 x nx x ny
-            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
-            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
-            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
-            # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
-                # eigentlich rechnet man hier einen DELTA P aus
-                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
+        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # all populations f in the fluid region, which point at the boundary
+        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
+        #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
+        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
+            # GERMAN explanation:
+                # summiert alle Kräfte in x und in y (und z) Richtung auf,
+                # tmp: f an allen Stellen, die in f_mask markiert sind
+                # tmp: 9 x nx x ny
+                # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+                # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+                # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+                # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+                # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+                    # eigentlich rechnet man hier einen DELTA P aus
+                    # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+                    # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
         return self.force  # force in x and y (and z) direction
 
 
 class HalfwayBounceBackBoundary:
-    """Halfway Bounce Back Boundary
+    """Halfway Bounce Back Boundary (with added force_on_boundary calculation)
     - inverts populations within one substep
     - call() must be called after Streaming substep
     - calc_force_on_boundary() must be called after collision substep and before streaming substep
@@ -161,9 +159,6 @@ class HalfwayBounceBackBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
-        #print("f_mask size:",self.f_mask.element_size()*self.f_mask.nelement())
-        #print("mask size:", self.mask.element_size() * self.mask.nelement())
-        #print("force size:", self.force.element_size() * self.force.nelement())
 
     def __call__(self, f, f_collided):
         # HALFWAY-BB: overwrite all populations (on fluid nodes) which came from boundary with pre-streaming populations (on fluid nodes) which pointed at boundary
@@ -171,16 +166,17 @@ class HalfwayBounceBackBoundary:
             #print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
             #print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
             #print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
-        f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)  # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
+        f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
+            # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
             # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
             # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
-            # es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
+            # (?) es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
         return f
 
     def make_no_stream_mask(self, f_shape):
         # ?? no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-        assert self.mask.shape == f_shape[1:]  # all dimensions except the 0th (q)
-        return self.mask  #| self.mask
+        assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
+        return self.mask
 
     def make_no_collision_mask(self, f_shape):
         assert self.mask.shape == f_shape[1:]
@@ -194,17 +190,18 @@ class HalfwayBounceBackBoundary:
         # self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT / v1.1 - M.Kliemank
         # self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT / v.1.2 - M.Bille (allgemeine dx und dt=dx, dx als Funktionsparameter, wurde in simulaton.py übergeben)
         self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # BERECHNE KRAFT / v2.0 - M.Bille: dx_lu = dt_lu ist immer 1 (!). Vermeide hier unnötige mini_Rechenoperationen etc.
-        # summiert alle Kräfte in x und in y (und z) Richtung auf,
-        # tmp: f an allen Stellen, die in f_mask markiert sind
-        # tmp: 9 x nx x ny
-        # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
-        # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-        # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
-        # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
-        # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
-        # eigentlich rechnet man hier einen DELTA P aus
-        # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-        # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
+        # GERMAN explanation:
+            # summiert alle Kräfte in x und in y (und z) Richtung auf,
+            # tmp: f an allen Stellen, die in f_mask markiert sind
+            # tmp: 9 x nx x ny
+            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
+            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
+            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
+            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
+            # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
+                # eigentlich rechnet man hier einen DELTA P aus
+                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
+                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
         return self.force  # force in x and y direction
 
 
