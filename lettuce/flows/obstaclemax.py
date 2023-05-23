@@ -8,7 +8,7 @@ from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayB
 
 class ObstacleMax:
     """
-        (!) refined version of flow/obstacle.py (so far only for 2D ibstacles)
+        (!) refined version of flow/obstacle.py (so far only for 2D obstacles)
         Flow class to simulate the flow around an object (obstacle_mask).
         It consists of one inflow (equilibrium boundary)
         and one outflow (anti-bounce-back-boundary), leading to a flow in positive x direction.
@@ -20,7 +20,7 @@ class ObstacleMax:
         perturb_init: True = slight perturbation in the initial condition to trigger vKarman vortex street in symmetrical systems (for Re>46)
         u_init: initial velocity profile: 0 = uniform u=0, 1 = uniform u=u_char, 2 = parabolic (poiseuille like)
 
-        Attributes
+        Attributes (selection)
         ----------
         obstacle_mask : np.array with dtype = np.bool
             Boolean mask to define the obstacle. The shape of this object is the shape of the grid.
@@ -60,12 +60,12 @@ class ObstacleMax:
         # generate parabolic velocity profile for inlet BC if lateral_walls=True (== channel-flow)
         self.u_inlet = self.units.characteristic_velocity_pu * self._unit_vector()
         if self.lateral_walls:
-            ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
-            ## How to Parabel:
-            ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
-            ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
-            ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
-            ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
+            ## parabolic velocity profile, zeroing on the edges
+            ## How to parabola:
+            ## 1.parabola in factoriezed form (GER: "Nullstellenform"): y = (x-x1)*(x-x2)
+            ## 2.parabola with a maximum and zero at x1=0 und x2=x0: y=-x*(x-x0)
+            ## 3.scale parabola, to make y_s(x_s)=1 the maximum: y=-x*(x-x0)*(1/(x0/2)²)
+            ## (4. optional) scale amplitude with 1.5 to have a mean velocity of 1, also making the integral of a homogeneous velocity profile with u=1 and the parabolic profile being equal
             ny = self.shape[1]  # number of gridpoints in y direction
             ux_temp = np.zeros((1, ny))  # variable for x-velocities on inlet boundary
             y_coordinates = np.linspace(0, ny, ny)  # linspace() creates n points between 0 and ny, including 0 and ny:

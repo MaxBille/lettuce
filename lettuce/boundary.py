@@ -15,14 +15,17 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 """
 
+# To Do:
+#  - the inits for Halfway and Fullway Bounce Back with force calculation (neighbor search) can be outsourced to a function taking mask and lattice and returning tensor(f_mask)
+#  - same for the calc_force_on_boundary method
+#  - fullway and halfway bounce back could be fitted into one class and specified by parameter (hw/fw) determining the use of how call acts and if no_stream is used (hw)
+
 import torch
 import numpy as np
 from lettuce import (LettuceException)
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
-           "AntiBounceBackOutlet", "EquilibriumBoundaryPU",
-           #"EquilibriumInletPU",
-           "EquilibriumOutletP"]
+           "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
 
 
 class BounceBackBoundary:
@@ -43,7 +46,7 @@ class BounceBackBoundary:
 
 class FullwayBounceBackBoundary:
     """Fullway Bounce-Back Boundary (with added force_on_boundary calculation)
-    - inverts populations within two substeps
+    - fullway = inverts populations within two substeps
     - call() must be called after Streaming substep
     - calc_force_on_boundary() must be called after collision substep and before streaming substep
     """
@@ -102,52 +105,52 @@ class FullwayBounceBackBoundary:
         #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
         #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
         self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
-            # GERMAN explanation:
-                # summiert alle Kräfte in x und in y (und z) Richtung auf,
-                # tmp: f an allen Stellen, die in f_mask markiert sind
-                # tmp: 9 x nx x ny
-                # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
-                # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-                # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
-                # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
-                # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
-                    # eigentlich rechnet man hier einen DELTA P aus
-                    # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-                    # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
+            # explanation for 2D:
+                # sums forces in x and in y (and z) direction,
+                # tmp: all f, that are marked in f_mask
+                    # tmp.size: 9 x nx x ny (for 2D)
+                # self.lattice.e: 9 x 2 (for 2D)
+                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
+                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
+                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
+                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
+                    # theoretically DELTA P (difference in momentum density) is calculated
+                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
+                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
         return self.force  # force in x and y (and z) direction
 
 
 class HalfwayBounceBackBoundary:
     """Halfway Bounce Back Boundary (with added force_on_boundary calculation)
-    - inverts populations within one substep
+    - halfway = inverts populations within one substep
     - call() must be called after Streaming substep
     - calc_force_on_boundary() must be called after collision substep and before streaming substep
     """
 
     def __init__(self, mask, lattice):
         self.mask = lattice.convert_to_tensor(mask)
-        self.lattice = lattice  # das self wird hier benötigt, da auf lattice auch außerhalb der init zugegriffen werden können soll
+        self.lattice = lattice
         self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # force in all D dimensions (x,y,(z))
-        # create f_mask, needed for force-calculation
+        ### create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary))
         if self.lattice.D == 2:
-            nx, ny = mask.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Simulationsdomain)
-            self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)  # f_mask: [stencilVektor-Zahl, nx, ny], Markierung aller Populationen, die im nächsten Streaming von Fluidknoten auf Boundary-Knoten strömen
-                # ...zur markierung aller auf die Boundary (bzw. das Objekt, die Wand) zeigenden Stencil-Vektoren bzw. Populationen
-            a, b = np.where(mask)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der boundary-mask
-                # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
-            for p in range(0, len(a)):  # für alle TRUE-Punkte der boundary-mask
-                for i in range(0, self.lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
-                    try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
+            nx, ny = mask.shape  # domain size in x and y
+            self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
+                # f_mask: [q, nx, ny], marks all fs which point from fluid to solid (boundary)
+            a, b = np.where(mask)
+                # np.arrays: list of (a) x-coordinates and (b) y-coordinates in the boundary.mask
+                # ...to enable iteration over all boundary/wall/object-nodes
+            for p in range(0, len(a)):  # for all TRUE-nodes in boundary.mask
+                for i in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                    try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
                         if not mask[a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]]:
-                            # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächepunkt des Objekts (selbst True mit Nachbar False)
-                            # ...wird der an diesem Fluidknoten antiparallel dazu liegende Stencil-Vektor markiert:
-                            # markiere alle "zur Boundary zeigenden" Populationen im Fluid-Bereich (also den unmittelbaren Nachbarknoten der Boundary)
+                            # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
+                            # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
                             self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1
                             # f_mask[q,x,y]
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
-        if self.lattice.D == 3:  # entspricht 2D, nur halt in 3D...guess what...
+        if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
             nx, ny, z = mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, z), dtype=bool)
             a, b, c = np.where(mask)
@@ -183,26 +186,26 @@ class HalfwayBounceBackBoundary:
         return self.mask
 
     def calc_force_on_boundary(self, f):
-        # calculate force on boundary by momentum exchange method (MEA, MEM):
-            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary)is summed for all...
+        # calculate force on boundary by momentum exchange method (MEA, MEM) according to Kruger et al., 2017, pp.215-217:
+            # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary) is summed for all...
             # ...populations pointing at the surface of the boundary
-        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # alle Populationen f, welche auf die Boundary zeigen
-        # self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # BERECHNET KRAFT / v1.1 - M.Kliemank
-        # self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # BERECHNET KRAFT / v.1.2 - M.Bille (allgemeine dx und dt=dx, dx als Funktionsparameter, wurde in simulaton.py übergeben)
-        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # BERECHNE KRAFT / v2.0 - M.Bille: dx_lu = dt_lu ist immer 1 (!). Vermeide hier unnötige mini_Rechenoperationen etc.
-        # GERMAN explanation:
-            # summiert alle Kräfte in x und in y (und z) Richtung auf,
-            # tmp: f an allen Stellen, die in f_mask markiert sind
-            # tmp: 9 x nx x ny
-            # self.lattice.e: 9 x 2 (2D) bzw. 9 x 3 (3D)
-            # Zuordnung der Multiplikation über die 9 Einheitsvektoren (Richtungen, indexname i)
-            # Vorzeichen kommt über die Koordianten der Stencil-Einheitsvektoren (e[0 bis 8])
-            # übrig bleiben nur zwei (drei) Koordinatenrichtungen (indexname d)
-            # "dx**self-lattice.D" = dx³ (3D) bzw. dx² (2D) als Vorfaktor, welcher einheitenmäßig aus Impulsdichte einen Impuls macht
-                # eigentlich rechnet man hier einen DELTA P aus
-                # unter Annahme des stetigen Impulsaustauschs über dt, kann die Kraft als F= dP/dt berechnet werden
-                # ...deshalb wird hier nochmal durch dt=dx geteilt (weil c_i=1=dx/dt=1 kann das aber augelassen werden (v2.0) !)
-        return self.force  # force in x and y direction
+        tmp = torch.where(self.f_mask, f, torch.zeros_like(f))  # all populations f in the fluid region, which point at the boundary
+        #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
+        #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
+        self.force = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
+            # explanation for 2D:
+                # sums forces in x and in y (and z) direction,
+                # tmp: all f, that are marked in f_mask
+                    # tmp.size: 9 x nx x ny (for 2D)
+                # self.lattice.e: 9 x 2 (for 2D)
+                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
+                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
+                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
+                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
+                    # theoretically DELTA P (difference in momentum density) is calculated
+                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
+                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
+        return self.force  # force in x and y (and z) direction
 
 
 class EquilibriumBoundaryPU:
@@ -213,6 +216,7 @@ class EquilibriumBoundaryPU:
 
     def __init__(self, mask, lattice, units, velocity, pressure=0):
         # parameter input (u, p) in PU!
+        # u can be a field (individual ux, uy, (uz) for all boundary nodes) or vector (uniform ux, uy, (uz)))
         self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
         self.units = units
@@ -227,52 +231,6 @@ class EquilibriumBoundaryPU:
         feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
         f = torch.where(self.mask, feq, f)
         return f
-
-
-# class EquilibriumInletPU:
-#     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
-#     Note that this behavior is generally not compatible with the Navier-Stokes equations.
-#     This boundary condition should only be used if no better options are available.
-#     """
-#
-#     def __init__(self, mask, lattice, units, velocity, pressure=0):
-#         # parameter input (u, p) in PU!
-#         self.mask = lattice.convert_to_tensor(mask)
-#         self.lattice = lattice
-#         self.units = units
-#         self.velocity = lattice.convert_to_tensor(velocity)  # inlet-velocity in PU
-#         self.pressure = lattice.convert_to_tensor(pressure)  # inlet-pressure in PU
-#         self.u_inlet = self.units.convert_velocity_to_lu(self.velocity) # ein Tensor: tensor([0.0289, 0.0000], device='cuda:0')
-#         ### wurde ausgelagert in obstaclemax.py und wird in der velocity direkt als Verteilung übergeben (!)
-#         # calculate uniform or parabolic inlet-velocity-distibution
-#         # u_in_parabel = False
-#         # if u_in_parabel:
-#         #     ## Parabelförmige Geschwindigkeit, vom zweiten bis vorletzten Randpunkt (keine Interferenz mit lateralen Wänden (BBB  oder periodic))
-#         #         ## How to Parabel:
-#         #         ## 1.Parabel in Nullstellenform: y = (x-x1)*(x-x2)
-#         #         ## 2.nach oben geöffnete Parabel mit Nullstelle bei x1=0 und x2=x0: y=-x*(x-x0)
-#         #         ## 3.skaliere Parabel, sodass der Scheitelpunkt immer bei ys=1.0 ist: y=-x*(x-x0)*(1/(x0/2)²)
-#         #         ## (4. optional) skaliere Amplitude der Parabel mit 1.5, um dem Integral einer homogenen Einstromgeschwindigkeit zu entsprechen
-#         #     ny = mask.shape[1]  # Gitterpunktzahl in y-Richtung
-#         #     ux_temp = np.zeros((1, ny))  # x-Geschwindigkeiten der Randbedingung
-#         #     y_coordinates = np.linspace(0, ny, ny)  # linspace() erzeugt n Punkte zwischen 0 und ny inklusive 0 und ny, so wird die Parabel auch symmetrisch und ist trotzdem an den Rändern NULL
-#         #     ux_temp[:, 1:-1] = - np.array(self.u_inlet.cpu()).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1/(ny/2)**2
-#         #         # (!) es muss die charakteristische Geschwindigkeit in LU genutzt werden (!) -> der Unterschied PU/LU ist u.U. Größenordnungen und es kommt bei falscher Nutzung zu Schock/Überschall und somit Sim-Crash
-#         #         # Skalierungsfaktor 3/2=1.5 für die Parabelamplitude, falls man im Integral der Konstantgeschwindigkeit entsprechenn möchte.
-#         #         # in 2D braucht u1 dann die Dimension 1 x ny (!)
-#         #     uy_temp = np.zeros_like(ux_temp)  # y-Geschwindigkeit = 0
-#         #     self.u_inlet = np.stack([ux_temp, uy_temp], axis=0)  # verpacke u-Feld
-#         #     self.u_inlet = self.lattice.convert_to_tensor(self.u_inlet)  # np.array to torch.tensor
-#         # print(self.u_inlet)
-#
-#     def __call__(self, f):
-#         # convert PU-inputs to LU, calc feq and overwrite f with feq where mask==True
-#         rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
-#         feq = self.lattice.equilibrium(rho, self.u_inlet)  # Berechne Gleichgewicht mit neuer Geschwindigkeit
-#         feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])  # erweitere auf komplettes Feld, falls nötig (feq "breit" ziehen in x-Richtung)
-#         f = torch.where(self.mask, feq, f)  # überschreibe f am Einlass mit feq
-#         return f
-
 
 class AntiBounceBackOutlet:
     """Allows distributions to leave domain unobstructed through this boundary.

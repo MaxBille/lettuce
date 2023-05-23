@@ -152,12 +152,12 @@ class Vorticity(Observable):
         dx = self.flow.units.convert_length_to_pu(1.0)
         grad_u0 = torch_gradient(u0, dx=dx, order=6)
         grad_u1 = torch_gradient(u1, dx=dx, order=6)
-        vorticity = (grad_u0[1] - grad_u1[0]) * (grad_u0[1] - grad_u1[0])  # gegenüber Enstrophy fehlt hier die Summation
+        vorticity = (grad_u0[1] - grad_u1[0]) * (grad_u0[1] - grad_u1[0])  # fyi.: no summation in comparison to Enstrophy
         if self.lattice.D == 3:
             u2 = self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[2])
             grad_u2 = torch_gradient(u2, dx=dx, order=6)
             vorticity += (grad_u2[1] - grad_u1[2]) * (grad_u2[1] - grad_u1[2])\
-                + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))  # gegenüber Enstrophy fehlt hier die Summation
+                + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))  # fyi.: no summation in comparison to Enstrophy
 
         return vorticity * dx ** self.lattice.D
 
@@ -168,42 +168,20 @@ class DragCoefficient(Observable):
 
     calculates the density, gets the force in x direction on the obstacle boundary,
     calculates the coefficient of drag
-
-    M.K.'s non used code is commented out by "##"
     """
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
-        self.forceVal = simulation.forceVal
-      #  self.area_pu = area  # crosssectional area of obstacle (! length in 2D -> area-dimension = self.lattice.D-1)
-        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1)
-        #self.rho_max_list = []
-        #self.rho_min_list = []
-        #self.rho_mean_list = []
-        ## self.lattice = lattice
-        ## self.flow = flow
-        ## self.boundary = []
-        ## for boundary in simulation._boundaries:
-        ##     if isinstance(boundary, BounceBackBoundary):
-        ##         boundary.output_force = True
-        ##         self.boundary.append(boundary)
+        self.forceVal = simulation.forceVal  # depends on the variable forceVal being defined in the simulation-class
+        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle i LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
 
     def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
+        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        # rho_mean (excluding boundary region):
         rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
-        #self.rho_max_list.append(self.lattice.convert_to_numpy(torch.max(rho_tmp[~rho_tmp.isnan()])))
-        #self.rho_min_list.append(self.lattice.convert_to_numpy(torch.min(rho_tmp[~rho_tmp.isnan()])))
-        #self.rho_mean_list.append(self.lattice.convert_to_numpy(rho))
-       # rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
-        force_x_lu = self.forceVal[-1][0]
-       # force_x_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][0]) # Fx ist die Kraft in x-Richtung, force sind die Kraft in x und in y-Richtung (+z in 3D)
-        ## f = torch.where(self.mask, f, torch.zeros_like(f))
-        ## f[0, ...] = 0
-        ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
-        #drag_coefficient = force_x_pu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_pu)  # drag_coefficient in PU
-        #PU: drag_coefficient = force_x_pu / (0.5 * rho_pu * self.flow.units.characteristic_velocity_pu ** 2 * self.area_pu)  # drag_coefficient in PU
-        drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # drag_coefficient in LU
+        force_x_lu = self.forceVal[-1][0]  # get current force on obstacle in x direction
+        drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
         return drag_coefficient
 
 
@@ -213,36 +191,19 @@ class LiftCoefficient(Observable):
 
         calculates the density, gets the force in y direction on the obstacle boundary,
         calculates the coefficient of lift
-
-        M.K.'s non used code is commented out by "##"
         """
 
     def __init__(self, lattice, flow, simulation, area):
         super().__init__(lattice, flow)
         self.forceVal = simulation.forceVal
-      #  self.area_pu = area  # crosssectional area of obstacle
         self.area_lu = area * (self.flow.units.characteristic_length_lu / self.flow.units.characteristic_length_pu) ** (
                     self.lattice.D - 1)
-        ## self.lattice = lattice
-        ## self.flow = flow
-        ## self.boundary = []
-        ## for boundary in simulation._boundaries:
-        ##     if isinstance(boundary, BounceBackBoundary):
-        ##         boundary.output_force = True
-        ##         self.boundary.append(boundary)
 
     def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan),
-                              self.lattice.rho(f))
+        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        # rho_mean (excluding boundary region):
+        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
-      #  rho_pu = self.flow.units.convert_density_to_pu(rho)  # what about "characteristic mass"?
-        force_y_lu = self.forceVal[-1][1]
-      #  force_y_pu = self.flow.units.convert_force_to_pu(self.forceVal[-1][1]) # Fy ist die Kraft in y-Richtung, force sind die Kraft in x (force[0]) und in y-Richtung (force[1])
-        ## f = torch.where(self.mask, f, torch.zeros_like(f))
-        ## f[0, ...] = 0
-        ## Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
-        #lift_coefficient = force_y / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area)
-        #lift_coefficient = force_y_pu / (0.5 * rho_pu * self.flow.units.characteristic_velocity_pu ** 2 * self.area_pu)  # lift_coefficient in PU
-        lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # lift_coefficient in LU
+        force_y_lu = self.forceVal[-1][1] # get current force on obstacle in y direction
+        lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate lift_coefficient in LU
         return lift_coefficient

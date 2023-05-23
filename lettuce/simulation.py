@@ -29,10 +29,10 @@ class Simulation:
         self.lattice = lattice
         self.collision = collision
         self.streaming = streaming
-        self.i = 0  # Laufindex i für Schrittzahl
-        # M.Bille: Kraftberechnung auf Objekt/BBB
-        self.forceVal = []  # Liste der Kräfte (in x und y) über alle Schritte
-        self.hwbb_present = False
+        self.i = 0  # index of the currenc timestep
+        # M.Bille: additional variables for force-calculation on obstacle or bounce back boundary condition
+        self.forceVal = []  # list of forces over all steps
+        self.hwbb_present = False  # flag: True: Halfway Bounce Back Algorithm, False: Fullway Bounce Back Algorithm
 
         # CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -51,7 +51,7 @@ class Simulation:
         rho = lattice.convert_to_tensor(flow.units.convert_pressure_pu_to_density_lu(p))
         self.f = lattice.equilibrium(rho, lattice.convert_to_tensor(u))
 
-        # list for reporters
+        # list of reporters
         self.reporters = []
 
         # Define masks, where the collision or streaming are not applied
@@ -59,12 +59,11 @@ class Simulation:
         x = flow.grid  # meshgrid, dimensions: D x nx x ny (x nz)
         self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(x[0], dtype=bool))  # dimensions: nx x ny (x nz)
         no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))
-            # warum kein "self."? - vielleicht, weil es außerhalb der init nicht mehr gebraucht wird
-            # ...(no_collision_mask wird für die collision gebraucht im call (s.u.), die no_streaming_mask wird aber direkt in der init
-            # ...noch auf streaming.no_streaming_mask geschrieben (s.u.)
+            # "self" and "no self" because no_stream_mask is written to streaming-object in the init,
+            # ... no_collision_mask is used in the simulation.step()
 
         # retrieve no-streaming and no-collision markings from all boundaries
-        self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
+        self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state -> WHY?
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
                 # get no-collision markings from boundaries
@@ -79,20 +78,21 @@ class Simulation:
         # define f_collided (post-collision, pre-streaming f), if HalfwayBounceBackBoundary is used
         for boundary in self._boundaries:
             if isinstance(boundary, HalfwayBounceBackBoundary):
-                self.hwbb_present = True  # marks if Halfway Bounce Back Boundary is in use and f_collided is needed
+                self.hwbb_present = True  # mark if Halfway Bounce Back Boundary is in use and f_collided is needed
                 self.f_collided = deepcopy(self.f)
 
         # get pointer on obstacle_boundary for force_calculation
         self.obstacle_boundary = None
         if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
-            self.obstacle_boundary = self._boundaries[-1]  # obst.b. should be the last boundary in the list
+            self.obstacle_boundary = self._boundaries[-1]  # the bounce back boundary for the obstacle should be the last boundary in the list
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
         M.Bille: added force_calculation on object/boundaries
+        M.Bille: added halfway bounce back boundary
         """
         start = timer()
-        if self.i == 0:  # if this is the first timestep, calc. initial forceOnObject and call reporters
+        if self.i == 0:  # if this is the first timestep, calc. initial force on Object/walls/boundary/obstacle and call reporters
             # Perform force calculation on obstacle_boundary
             if self.obstacle_boundary is not None:
                 self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
