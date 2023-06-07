@@ -174,6 +174,8 @@ class HalfwayBounceBackBoundary:
             # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
             # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
             # (?) es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
+            # ...ist das so, oder entsteht dadurch "Strömung" innerhalb des Obstacles? Diese hat zwar keinen direkten Einfluss auf die Größen im Fluidbereich,
+            # ... lässt aber in der Visualisierung Werte ungleich Null innerhalb von Objekten entstehen und Mittelwerte etc. könnten davon beeinflusst werden. (?)
         return f
 
     def make_no_stream_mask(self, f_shape):
