@@ -84,13 +84,13 @@ class ObstacleMax:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
-        self.solid_mask[np.where(self.obstacle_mask)] = 1
+        self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u_max_lu = self.units.characteristic_velocity_lu * self._unit_vector()
         u_max_lu = append_axes(u_max_lu, self.units.lattice.D)
-        self.solid_mask[np.where(self.obstacle_mask)] = 1  # is this line still needed? obstacle_mask.setter should add obstacle_mask to solid_mask
+        self.solid_mask[np.where(self.obstacle_mask)] = 1  # This line is needed, because the obstacle_mask.setter does not define the solid_mask properly (see above)
         ### initial velocity field: "u_init"-parameter
         # 0: uniform u=0
         # 1: uniform u=1

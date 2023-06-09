@@ -181,6 +181,8 @@ class HalfwayBounceBackBoundary:
     def make_no_stream_mask(self, f_shape):
         # ?? no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
         assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
+            # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+            # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
         return self.mask
 
     def make_no_collision_mask(self, f_shape):
