@@ -31,7 +31,7 @@ class Simulation:
         self.streaming = streaming
         self.i = 0  # index of the currenc timestep
         # M.Bille: additional variables for force-calculation on obstacle or bounce back boundary condition
-        self.forceVal = []  # list of forces over all steps
+#OLD        self.forceVal = []  # list of forces over all steps
         self.hwbb_present = False  # flag: True: Halfway Bounce Back Algorithm, False: Fullway Bounce Back Algorithm
 
         # CHECK initial solution for correct dimensions
@@ -81,10 +81,10 @@ class Simulation:
                 self.hwbb_present = True  # mark if Halfway Bounce Back Boundary is in use and f_collided is needed
                 self.f_collided = deepcopy(self.f)
 
-        # get pointer on obstacle_boundary for force_calculation
-        self.obstacle_boundary = None
-        if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
-            self.obstacle_boundary = self._boundaries[-1]  # the bounce back boundary for the obstacle should be the last boundary in the list
+#OLD        # get pointer on obstacle_boundary for force_calculation
+#OLD        self.obstacle_boundary = None
+#OLD        if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
+#OLD            self.obstacle_boundary = self._boundaries[-1]  # the bounce back boundary for the obstacle should be the last boundary in the list
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -93,9 +93,9 @@ class Simulation:
         """
         start = timer()
         if self.i == 0:  # if this is the first timestep, calc. initial force on Object/walls/boundary/obstacle and call reporters
-            # Perform force calculation on obstacle_boundary
-            if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
+#OLD             # Perform force calculation on obstacle_boundary
+#OLD            if self.obstacle_boundary is not None:
+#OLD               self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
@@ -106,9 +106,9 @@ class Simulation:
             if self.hwbb_present:
                 self.f_collided = deepcopy(self.f)
 
-            ### CALCULATE FORCES ON OBSTACLE BOUNDARY
-            if self.obstacle_boundary is not None:
-                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
+#OLD -> force-calculation is now integrated in the boundary condition call below            ### CALCULATE FORCES ON OBSTACLE BOUNDARY
+#OLD            if self.obstacle_boundary is not None:
+#OLD                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
 
             ### STREAMING
             self.f = self.streaming(self.f)
