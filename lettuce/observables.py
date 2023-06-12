@@ -162,7 +162,7 @@ class Vorticity(Observable):
         return vorticity * dx ** self.lattice.D
 
 
-class DragCoefficient(Observable):
+class OLD_DragCoefficient(Observable):
     """The drag coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
     modified version of M.Kliemank's Drag Coefficient Code
 
@@ -184,8 +184,30 @@ class DragCoefficient(Observable):
         drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
         return drag_coefficient
 
+class DragCoefficient(Observable):
+    """The drag coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
+    modified version of M.Kliemank's Drag Coefficient Code
 
-class LiftCoefficient(Observable):
+    calculates the density, gets the force in x direction on the obstacle boundary,
+    calculates the coefficient of drag
+    """
+
+    def __init__(self, lattice, flow, obstacle_boundary, area):
+        super().__init__(lattice, flow)
+        self.obstacle_boundary = obstacle_boundary
+        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle i LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
+
+    def __call__(self, f):
+        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        # rho_mean (excluding boundary region):
+        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
+        rho = torch.nanmean(rho_tmp)
+        force_x_lu = self.obstacle_boundary.force_sum[0]  # get current force on obstacle in x direction
+        drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
+        return drag_coefficient
+
+
+class OLD_LiftCoefficient(Observable):
     """The lift coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
         modified version of M.Kliemank's lift Coefficient Code
 
@@ -207,3 +229,38 @@ class LiftCoefficient(Observable):
         force_y_lu = self.forceVal[-1][1] # get current force on obstacle in y direction
         lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate lift_coefficient in LU
         return lift_coefficient
+
+class LiftCoefficient(Observable):
+    """The lift coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
+        modified version of M.Kliemank's lift Coefficient Code
+
+        calculates the density, gets the force in y direction on the obstacle boundary,
+        calculates the coefficient of lift
+        """
+
+    def __init__(self, lattice, flow, obstacle_boundary, area):
+        super().__init__(lattice, flow)
+        self.obstacle_boundary = obstacle_boundary
+        self.area_lu = area * (self.flow.units.characteristic_length_lu / self.flow.units.characteristic_length_pu) ** (
+                    self.lattice.D - 1)
+
+    def __call__(self, f):
+        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        # rho_mean (excluding boundary region):
+        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
+        rho = torch.nanmean(rho_tmp)
+        force_y_lu = self.obstacle_boundary.force_sum[1] # get current force on obstacle in y direction
+        lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate lift_coefficient in LU
+        return lift_coefficient
+
+class ForceOnBoundary(Observable):
+    """Force on a bounce back boundary, calculated by momentum exchange method (see boundary.py)
+        returns the force-field (individual force on nodes) and the force_sum (summed force vector on whole boundary)
+        12.06.23: not tested yet
+        """
+    def __init__(self, lattice, flow, obstacle_boundary):
+        super().__init__(lattice, flow)
+        self.obstacle_boundary = obstacle_boundary
+
+    def __call__(self, f):
+        return self.obstacle_boundary.force, self.obstacle_boundary.force_sum
