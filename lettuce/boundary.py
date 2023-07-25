@@ -25,7 +25,34 @@ import numpy as np
 from lettuce import (LettuceException)
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
-           "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
+           "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary"]
+
+
+class SlipBoundary:
+    """bounces back in a direction given as 0, 1, or 2 for x, y, or z, respectively
+        based on fullway bounce back algorithm (population remains in the wall for 1 time step)
+    """
+
+    # todo: transfer opposite-calculation to init to save ressoureves. I think the opposite-stencil only has to be computed once!
+    def __init__(self, mask, lattice, direction):
+        self.mask = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+        self.bb_direction = direction
+
+    def __call__(self, f):
+        e = self.lattice.stencil.e
+        bb_direction = self.bb_direction
+        opposite_stencil = np.array(e)
+        opposite_stencil[:, bb_direction] = -e[:, bb_direction]
+        self.opposite = []
+        for opp_dir in opposite_stencil:
+            self.opposite.append(np.where(np.array(e == opp_dir).all(axis=1))[0][0])
+        f = torch.where(self.mask, f[self.opposite], f)
+        return f
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]
+        return self.mask
 
 
 class BounceBackBoundary:

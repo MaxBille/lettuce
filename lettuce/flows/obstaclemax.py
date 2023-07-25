@@ -70,7 +70,7 @@ class ObstacleMax:
             ux_temp = np.zeros((1, ny))  # variable for x-velocities on inlet boundary
             y_coordinates = np.linspace(0, ny, ny)  # linspace() creates n points between 0 and ny, including 0 and ny:
                 # top and bottom velocity values will be zero to agree with wall-boundary-condition
-            ux_temp[:, 1:-1] = - np.array(self.u_inlet).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2  # paraboplic velocity profile
+            ux_temp[:, 1:-1] = - np.array(self.u_inlet).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2  # parabolic velocity profile
             # scale with 1.5 to achieve a mean velocity of u_char!
             # in 2D u1 needs Dimension 1 x ny (!)
             uy_temp = np.zeros_like(ux_temp)  # y-velocities = 0
