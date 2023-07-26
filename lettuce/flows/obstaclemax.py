@@ -116,10 +116,10 @@ class ObstacleMax:
             ny = x[1].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
-                u[0][1] += np.sin(np.arange(0, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
             else:
                 # multiply scaled down perturbation
-                u[0][1] *= 1 + np.sin(np.arange(0, ny) / ny * 2 * np.pi) * 0.3
+                u[0][1] *= 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
         return p, u
 
     @property

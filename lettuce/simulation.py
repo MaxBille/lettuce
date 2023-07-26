@@ -29,12 +29,12 @@ class Simulation:
         self.lattice = lattice
         self.collision = collision
         self.streaming = streaming
-        self.i = 0  # index of the currenc timestep
+        self.i = 0  # index of the current timestep
         # M.Bille: additional variables for force-calculation on obstacle or bounce back boundary condition
 #OLD        self.forceVal = []  # list of forces over all steps
         self.hwbb_present = False  # flag: True: Halfway Bounce Back Algorithm, False: Fullway Bounce Back Algorithm
 
-        # CHECK initial solution for correct dimensions
+        # CALCULATE INITIAL SOLUTION of flow and CHECK initial solution for correct dimensions
         grid = flow.grid
         p, u = flow.initial_solution(grid)
         assert list(p.shape) == [1] + list(grid[0].shape), \
@@ -54,7 +54,7 @@ class Simulation:
         # list of reporters
         self.reporters = []
 
-        # Define masks, where the collision or streaming are not applied
+        # Define masks, where collision or streaming are not applied
         # (initialized with 0, later specified by e.g. boundary conditions)
         x = flow.grid  # meshgrid, dimensions: D x nx x ny (x nz)
         self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(x[0], dtype=bool))  # dimensions: nx x ny (x nz)
