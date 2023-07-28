@@ -24,13 +24,13 @@ parser.add_argument("--re", default=200, type=float, help="Reynolds number")
 parser.add_argument("--n_steps", default=100000, type=int, help="number of steps to simulate, overwritten by t_target, if t_target is >0")
 parser.add_argument("--gpd", default=20, type=int, help="number of gridpoints per diameter")
 parser.add_argument("--dpy", default=19, type=int, help="domain height in diameters")
-parser.add_argument("--dpz", default=1, type=int, help="domain width in diameters")
+parser.add_argument("--dpz", default=1, type=float, help="domain width in diameters")
 parser.add_argument("--lateral_walls", default='periodic', help="boundary condition in y direction (periodic, bounceback, slip)")
 parser.add_argument("--bb_type", default='fwbb', help="bounce back algorithm (fwbb, hwbb)")
 parser.add_argument("--t_target", default=0, type=float, help="time in PU to simulate")
 parser.add_argument("--collision", default="bgk", help="collision operator (bgk, kbc, reg)")
 parser.add_argument("--name", default="3Dcylinder", help="name of the simulation, appears in output directory name")
-parser.add_argument("--stencil", defaul="D3Q27", help="stencil (D3Q27, D3Q19, D3Q15)")
+parser.add_argument("--stencil", default="D3Q27", help="stencil (D3Q27, D3Q19, D3Q15)")
 
 args = vars(parser.parse_args())
 
@@ -98,7 +98,7 @@ if output_save:  # toggle output of parameters, observables and vti/vtk files
     #output_path = "/mnt/ScratchHDD1/Max_Scratch/lbm_simulations"  # lokal HBRS
     #output_path = "/home/max/Documents/lbm_simulations"  # lokal Bonn
     output_path = "/home/mbille3s/02_lbm_simulations"  # cluster HBRS
-    dir_name = "/data_" + str(timestamp) + name  # create directory name for all outputs to be saved in
+    dir_name = "/data_" + str(timestamp) + "_" + name  # create directory name for all outputs to be saved in
     os.makedirs(output_path+dir_name)
     
     vtk_path = output_path+dir_name+"/vtk/out"  # subdirectory for vtk/vti output

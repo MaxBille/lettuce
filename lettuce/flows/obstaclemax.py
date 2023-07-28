@@ -50,12 +50,16 @@ class ObstacleMax:
 
         self.solid_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all solid nodes (obstacle, walls, ...)
         self.in_mask = np.zeros(self.grid[0].shape, dtype=bool)  # marks all inlet nodes
-        self.in_mask[0, 1:-1] = True  # inlet on the left
+       # self.in_mask[0, 1:-1] = True  # inlet on the left
         self.wall_mask = np.zeros_like(self.solid_mask)  # marks lateral walls
+        self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc.)
+
         if self.lateral_walls:
             self.wall_mask[:, [0, -1]] = True
             self.solid_mask[np.where(self.wall_mask)] = 1
-        self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc.)
+            self.in_mask[0, 1:-1] = True  # inlet on the left, except for top and bottom wall (y=0, y=y_max)
+        else: # if lateral_wals == 'periodic'
+            self.in_mask[0, :] = True  # inlet on the left (x=0)
 
         # generate parabolic velocity profile for inlet BC if lateral_walls=True (== channel-flow)
         self.u_inlet = self.units.characteristic_velocity_pu * self._unit_vector()

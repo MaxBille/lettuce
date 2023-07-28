@@ -35,8 +35,8 @@ class ObstacleMax3D:
 
         if self.lateral_walls == 'bounceback' or self.lateral_walls == 'slip':  # if top and bottom are link-based BC
             self.wall_mask[:, [0, -1], :] = True  # top and bottom domain boundary
-            self.in_mask[0, 1:-1, :] = True  # inlet on the left (x=0), except for top and bottom wall (y=0, y=y_max)
             self.solid_mask[np.where(self.wall_mask)] = 1
+            self.in_mask[0, 1:-1, :] = True  # inlet on the left (x=0), except for top and bottom wall (y=0, y=y_max)
         else:  # if lateral_walls == 'periodic' (not link-based BC)
             self.in_mask[0, :, :] = True  # inlet on the left (x=0)
 
@@ -103,7 +103,7 @@ class ObstacleMax3D:
             ny = x[1].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
-                amplitude = np.sin(np.linspace(0, ny,ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 0.5
+                amplitude = np.sin(np.linspace(0, ny,ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
                 plane_yz = np.ones_like(u[0,1,:,:])
                 #plane_yz_amplitude = np.einsum('y,yz->yz', amplitude, plane_yz)
                 u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
