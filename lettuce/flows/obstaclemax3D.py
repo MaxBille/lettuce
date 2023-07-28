@@ -9,8 +9,8 @@ class ObstacleMax3D:
                  x_lu=10,y_lu=5,z_lu=10, lateral_walls='periodic', bb_type='fwbb', perturb_init=True, u_init=0):
         self.shape = (int(x_lu), int(y_lu), int(z_lu))  # shape of the domain in LU (length, height, width)
         self.char_length_pu = char_length_pu  # characteristic length
-        # self.x_lu = x_lu  # domain length (kann das nciht auch über "shape" abgegriffen werden?)
-        # self.y_lu = y_lu  # domain heigth ('')
+        # self.x_lu = x_lu  # domain length (kann das nicht auch über "shape" abgegriffen werden?)
+        # self.y_lu = y_lu  # domain height ('')
         # self.z_lu = z_lu  # domain width ('')
 
         self.perturb_init = perturb_init  # toggle: introduce asymmetry in initial solution to trigger v'Karman Vortex Street
