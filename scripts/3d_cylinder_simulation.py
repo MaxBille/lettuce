@@ -73,22 +73,20 @@ perturb_init = True   # perturb initial symmetry by small sine-wave in initial v
 lateral_walls=args["lateral_walls"]  # type of top/bottom boundary: 'bounceback' = frictious wall, 'periodic' = periodic boundary, 'slip' = non-frictious wall
 bb_type=args["bb_type"]  # choose algorithm for bounceback-boundaries: fullway 'fwbb' or halfway 'hwbb'
 cylinder = True    # obstacle: True = cylinder, False = no obstacle
-drag_out = True    # report drag_coefficient
-lift_out = True    # report lift_coefficient
 vtk_fps = 10    # FramesPerSecond (PU) for vtk-output
-output_vtk = False   # vtk-output. is overwritten by output_save=False (see below)
 
 gridpoints = gridpoints_per_diameter**3*domain_length_in_D*domain_height_in_D*domain_width_in_D # calc. total number of gridpoints
 
 ##################################################
 # DATA OUTPUT SETTINGS (observables, stats and vtk)
 
-output_save = True  # output/log parameters, observables and vtk or vti (if output_vtk=True)
+output_data = True  # output/log parameters, observables and vtk or vti (if output_vtk=True)
+output_vtk = False   # vtk-output. is overwritten by output_data=False (see below)
 
 # naming: specify batch number, batch name, version name/number and parameters to put in directory- and datafile-names
 name = args["name"]
 
-if output_save:  # toggle output of parameters, observables and vti/vtk files
+if output_data:  # toggle output of parameters, observables and vti/vtk files
     # (see above) output_vtk = True    # vtk-reporter outputs vtk or vti files for visualization in Paraview
 
     timestamp = datetime.datetime.now()
@@ -154,13 +152,13 @@ tau = flow.units.relaxation_parameter_lu
 # collision operator
 if args["collision"] == "kbc":
     collision = lt.KBCCollision2D(lattice,tau)
-    collision_name ="kbc"
+    collision_choice ="kbc"
 elif args["collision"] == "reg":
     collision = lt.RegularizedCollision(lattice, tau)
-    collision_name ="reg"
+    collision_choice ="reg"
 else:
     collision = lt.BGKCollision(lattice, tau)
-    collision_name ="bgk"
+    collision_choice ="bgk"
 
 # solver
 sim = lt.Simulation(flow, lattice, 
@@ -178,16 +176,14 @@ if output_vtk == True:
     sim.reporters.append(VTKreport)
 
 # Observable reporter: drag coefficient
-if drag_out == True:
-    DragObservable = lt.DragCoefficient(lattice, flow, sim._boundaries[-1],area=setup_diameter*flow.units.convert_length_to_pu(gridpoints_per_diameter*domain_width_in_D))  # create observable // ! area A=2*r is in PU
-    Dragreport = lt.ObservableReporter(DragObservable, out=None)  # create reporter and link to created observable
-    sim.reporters.append(Dragreport)  # append reporter to reporter-list of simulator/solver
+DragObservable = lt.DragCoefficient(lattice, flow, sim._boundaries[-1],area=setup_diameter*flow.units.convert_length_to_pu(gridpoints_per_diameter*domain_width_in_D))  # create observable // ! area A=2*r is in PU
+Dragreport = lt.ObservableReporter(DragObservable, out=None)  # create reporter and link to created observable
+sim.reporters.append(Dragreport)  # append reporter to reporter-list of simulator/solver
     
 # Observable reporter: lift coefficient
-if lift_out == True:
-    LiftObservable = lt.LiftCoefficient(lattice, flow, sim._boundaries[-1],area=setup_diameter*flow.units.convert_length_to_pu(gridpoints_per_diameter*domain_width_in_D))
-    Liftreport = lt.ObservableReporter(LiftObservable, out=None)
-    sim.reporters.append(Liftreport)
+LiftObservable = lt.LiftCoefficient(lattice, flow, sim._boundaries[-1],area=setup_diameter*flow.units.convert_length_to_pu(gridpoints_per_diameter*domain_width_in_D))
+Liftreport = lt.ObservableReporter(LiftObservable, out=None)
+sim.reporters.append(Liftreport)
 
 ##################################################
 #PRINT PARAMETERS prior to simulation:
@@ -225,7 +221,7 @@ ax.set_ylabel("Coefficient of Drag Cd")
 ax.set_ylim([0.5, 2.0])  # change y-limits
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
-if output_save:
+if output_data:
     plt.savefig(output_path+dir_name+"/drag_coefficient.png")
     np.savetxt(output_path+dir_name+"/drag_coefficient.txt", drag_coefficient, header="stepLU  |  timePU  |  Cd  FROM str(timestamp)")
 
@@ -283,7 +279,7 @@ ax.set_ylim([-1.1,1.1])
 
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
-if output_save:
+if output_data:
     plt.savefig(output_path+dir_name+"/lift_coefficient.png")
     np.savetxt(output_path+dir_name+"/lift_coefficient.txt", lift_coefficient, header="stepLU  |  timePU  |  Cl  FROM str(timestamp)")
 Cl_min = lift_coefficient[int(lift_coefficient[:,2].shape[0]*0.5):,2].min()
@@ -308,7 +304,7 @@ ax2.set_ylim([-1.1,1.1])
 
 fig.legend(loc="upper left", bbox_to_anchor=(0,1), bbox_transform=ax.transAxes)
 
-if output_save:
+if output_data:
     plt.savefig(output_path+dir_name+"/dragAndLift_coefficient.png")
 
 # STROUHAL number: (only makes sense for Re>46 and if periodic state is reached)
@@ -330,7 +326,7 @@ try:
     #print("max. Amplitude np.abx(X).max():", np.abs(X).max())   # for debugging
     plt.ylim(0,np.abs(X[:int(X.shape[0]*0.5)]).max())   # ylim, where highes peak is on left half of full spectrum
 
-    if output_save:
+    if output_data:
         plt.savefig(output_path+dir_name+"/fft_Cl.png")
 
     freq_res = freq[1]-freq[0]   # frequency-resolution
@@ -347,7 +343,7 @@ except:
 # OUTPUT DATA and stats to directory
 
 # output data
-if output_save:
+if output_data:
     output_file = open(output_path+dir_name+"/"+timestamp + "_parameters_and_observables.txt", "a")
     output_file.write("DATA for "+timestamp)
     output_file.write("\n\n###################\n\nSIM-Parameters")
@@ -367,7 +363,7 @@ if output_save:
     output_file.write("\nu_init = " + str(u_init))
     output_file.write("\nperturb_init = " + str(perturb_init))
     output_file.write("\nlateral_walls = " + str(lateral_walls))
-    output_file.write("\ncollision = " + str(collision_name))
+    output_file.write("\ncollision = " + str(collision_choice))
     output_file.write("\nbb_type = " + str(bb_type))
     output_file.write("\nvtk_fps = " + str(vtk_fps))
     output_file.write("\noutput_vtk = " + str(output_vtk))
@@ -407,7 +403,7 @@ if output_save:
     output_file.close()
 
 #output copyable numbers for EXCEL etc.
-if output_save:
+if output_data:
     output_file = open(output_path+dir_name+"/"+timestamp + "_parameters_and_observables_copyable.txt", "a")
     output_file.write("DATA for "+timestamp)
     output_file.write("\n\n###################\n\nSIM-Parameters: Re, Ma, n_steps, setup_diameter, flow_velocity,GPD, DpY, DpX,u_init, perturb_init, bb_wall, vtk_fps, output_vtk, shape_LU, gridpoints, output_dir, radius_LU, x_pos_LU, y_pos_LU, tau, T_PU, runtime, MLUPS")
@@ -423,7 +419,7 @@ if output_save:
     output_file.write("\n"+str(u_init))
     output_file.write("\n"+str(perturb_init))
     output_file.write("\n"+str(lateral_walls))
-    output_file.write("\n"+str(collision_name))
+    output_file.write("\n"+str(collision_choice))
     output_file.write("\n"+str(bb_type))
     output_file.write("\n"+str(vtk_fps))
     output_file.write("\n"+str(output_vtk))
