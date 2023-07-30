@@ -195,7 +195,7 @@ class DragCoefficient(Observable):
     def __init__(self, lattice, flow, obstacle_boundary, area):
         super().__init__(lattice, flow)
         self.obstacle_boundary = obstacle_boundary
-        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle i LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
+        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle in LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
 
     def __call__(self, f):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region

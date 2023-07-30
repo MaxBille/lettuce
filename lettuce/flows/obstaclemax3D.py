@@ -71,7 +71,7 @@ class ObstacleMax3D:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
-        self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
+        #self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
@@ -129,6 +129,7 @@ class ObstacleMax3D:
             self.units.lattice, self.units,
             #self.units.characteristic_velocity_pu * self._unit_vector())
             self.u_inlet)  # works with a 1 x D vector or an ny x D vector thanks to einsum-magic in EquilibriumBoundaryPU
+
         # lateral walls ("top and bottom walls", x[:], y[0,-1], z[:])
         lateral_boundary = None  # stays None if lateral_walls == 'periodic'
         if self.lateral_walls == 'bounceback':
@@ -138,8 +139,10 @@ class ObstacleMax3D:
                 lateral_boundary = FullwayBounceBackBoundary(self.wall_mask, self.units.lattice)
         elif self.lateral_walls == 'slip':
             lateral_boundary = SlipBoundary(self.wall_mask, self.units.lattice, 1)  # slip on xz-plane
+
         # outlet ("right side", x[-1],y[:], z[:])
         outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0, 0])  # outlet in positive x-direction
+
         # obstacle (for example: obstacle "cylinder" with radius centered at position x_pos, y_pos, z_pos) -> to be set via obstacle_mask.setter
         obstacle_boundary = None
         # (!) the obstacle_boundary should alway be the last boundary in the list of boundaries to correctly calculate forces on the obstacle

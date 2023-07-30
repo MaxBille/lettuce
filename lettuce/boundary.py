@@ -170,21 +170,22 @@ class FullwayBounceBackBoundary:
             a, b = np.where(mask)
                 # np.arrays: list of (a) x-indizes and (b) y-indizes in the boundary.mask
                 # ...to enable iteration over all boundary/wall/object-nodes
-            border_direction = np.zeros((len(a), 2), dtype=int)  # to treat nods that are neighboring the domain-border
             for p in range(0, len(a)):  # for all TRUE-nodes in boundary.mask
-                # mark if node is neighboring the domain-border and if so, in which direction
-                if a[p]==0:
-                    border_direction[p,0]=-1
-                elif a[p]==nx-1:
-                    border_direction[p,0]=+1
-                if b[p]==0:
-                    border_direction[p,1]=-1
-                elif b[p]==ny-1:
-                    border_direction[p,1]=+1
-
                 for i in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                    # check for boundary-nodes neighboring the domain-border.
+                    # ...they have to take the periodicity into account...
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1:  # searching border on left
+                        border[0] = -1
+                    elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1:  # searching border on right
+                        border[0] = 1
+                    if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1:  # searching border on left
+                        border[1] = -1
+                    elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1:  # searching border on right
+                        border[1] = 1
                     try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border_direction[p,0]*nx, b[p] + self.lattice.stencil.e[i, 1] - border_direction[p,1]*ny]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0]*nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1]*ny]:
                             # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
                             # ...the direction pointing from the fluid neighbour to solid p is marked on the solid p
                             #OLD: self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1]] = 1
@@ -196,41 +197,36 @@ class FullwayBounceBackBoundary:
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, nz), dtype=bool)
 #            self.force = np.zeros((nx, ny, nz, 3))
             a, b, c = np.where(mask)
-            border_direction = np.zeros((len(a), 3), dtype=int)  # to treat nodes that are neighboring the domain-border
-            single_layer = np.ones_like(border_direction)  # to treat nodes that are neighboring the domain-border on both sides (single layer 3D = fake-2D-simulation)
             for p in range(0, len(a)):
-                # mark if node is neighboring the domain-border and if so, in which direction
-                if a[p] == 0:
-                    border_direction[p, 0] = -1
-                    if a[p] == nx - 1: # single layer
-                        border_direction[p, 0] = 0
-                        single_layer[p, 0] = 0
-                elif a[p] == nx - 1:
-                    border_direction[p, 0] = +1
-
-                if b[p] == 0:
-                    border_direction[p, 1] = -1
-                    if b[p] == ny - 1: # single layer
-                        border_direction[p, 1] = 0
-                        single_layer[p, 1] = 0
-                elif b[p] == ny - 1:
-                    border_direction[p, 1] = +1
-
-                if c[p] == 0:
-                    border_direction[p, 2] = -1
-                    if c[p] == nz-1: # single layer
-                        border_direction[p, 2] = 0
-                        single_layer[p, 2] = 0
-                elif c[p] == nz-1:
-                    border_direction[p, 2] = +1
-
                 for i in range(0, self.lattice.Q):
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1:  # searching border on left
+                        border[0] = -1
+                    elif a[p] == nx-1 and self.lattice.e[i, 0] == 1:  # searching border on right
+                        border[0] = 1
+                    if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1:  # searching border on left
+                        border[1] = -1
+                    elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1:  # searching border on right
+                        border[1] = 1
+                    if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1:  # searching border on left
+                        border[2] = -1
+                    elif c[p] == nz-1 and self.lattice.e[i, 2] == 1:  # searching border on right
+                        border[2] = 1
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0]*single_layer[p, 0] - border_direction[p, 0]*nx, b[p] + self.lattice.stencil.e[i, 1]*single_layer[p, 1] - border_direction[p, 1]*nx, c[p] + self.lattice.stencil.e[i, 2]*single_layer[p, 2] - border_direction[p, 2]*nx]:
+                        #if not mask[a[p] + self.lattice.stencil.e[i, 0]*single_layer[p, 0] - border_direction[p, 0]*nx,
+                        #            b[p] + self.lattice.stencil.e[i, 1]*single_layer[p, 1] - border_direction[p, 1]*ny,
+                        #            c[p] + self.lattice.stencil.e[i, 2]*single_layer[p, 2] - border_direction[p, 2]*nz]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                    c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
                             #OLD: self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
                             self.f_mask[self.lattice.stencil.opposite[i], a[p], b[p], c[p]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
+#                if (b[p] == int(ny / 2)):
+#                    print("node ({},{}): m={}, bdz={}, slz={}".format(str(a[p]), str(c[p]), mask[a[p], b[p], c[p]], border_direction[p, 2], single_layer[p, 2]))
+#            print("border_direction\n", border_direction)
+#            print("single_layer\n", single_layer)
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
 
     def __call__(self, f):
@@ -389,24 +385,27 @@ class HalfwayBounceBackBoundary:
             a, b = np.where(mask)
                 # np.arrays: list of (a) x-coordinates and (b) y-coordinates in the boundary.mask
                 # ...to enable iteration over all boundary/wall/object-nodes
-            border_direction = np.zeros((len(a), 2), dtype=int)  # to treat nods that are neighboring the domain-border
             for p in range(0, len(a)):  # for all TRUE-nodes in boundary.mask
-                # mark if node is neighboring the domain-border and if so, in which direction (does not work for single layer in 2D!)
-                if a[p] == 0:
-                    border_direction[p, 0] = -1
-                elif a[p] == nx - 1:
-                    border_direction[p, 0] = +1
-                if b[p] == 0:
-                    border_direction[p, 1] = -1
-                elif b[p] == ny - 1:
-                    border_direction[p, 1] = +1
-
                 for i in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                    # check for boundary-nodes neighboring the domain-border.
+                    # ...they have to take the periodicity into account...
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1:  # searching border on left
+                        border[0] = -1
+                    elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1:  # searching border on right
+                        border[0] = 1
+                    if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1:  # searching border on left
+                        border[1] = -1
+                    elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1:  # searching border on right
+                        border[1] = 1
                     try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border_direction[p,0]*nx, b[p] + self.lattice.stencil.e[i, 1] - border_direction[p,1]*ny]:
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0]*nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1]*ny]:
                             # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
                             # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
-                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0] - border_direction[p,0]*nx, b[p] + self.lattice.stencil.e[i, 1] - border_direction[p,1]*ny] = 1
+                            self.f_mask[self.lattice.stencil.opposite[i],
+                                        a[p] + self.lattice.stencil.e[i, 0] - border[0]*nx,
+                                        b[p] + self.lattice.stencil.e[i, 1] - border[1]*ny] = 1
                             # f_mask[q,x,y]
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
@@ -415,38 +414,29 @@ class HalfwayBounceBackBoundary:
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, nz), dtype=bool)
 #            self.force = np.zeros((nx, ny, nz, 3))
             a, b, c = np.where(mask)
-            border_direction = np.zeros((len(a), 3), dtype=int)  # to treat nodes that are neighboring the domain-border
-            single_layer = np.ones_like(border_direction)  # to treat nodes that are neighboring the domain-border on both sides (single layer 3D = fake-2D-simulation)
             for p in range(0, len(a)):
-                # mark if node is neighboring the domain-border and if so, in which direction
-                if a[p] == 0:
-                    border_direction[p, 0] = -1
-                    if a[p] == nx - 1:  # single layer
-                        border_direction[p, 0] = 0
-                        single_layer[p, 0] = 0
-                elif a[p] == nx - 1:
-                    border_direction[p, 0] = +1
-
-                if b[p] == 0:
-                    border_direction[p, 1] = -1
-                    if b[p] == ny - 1:  # single layer
-                        border_direction[p, 1] = 0
-                        single_layer[p, 1] = 0
-                elif b[p] == ny - 1:
-                    border_direction[p, 1] = +1
-
-                if c[p] == 0:
-                    border_direction[p, 2] = -1
-                    if c[p] == nz - 1:  # single layer
-                        border_direction[p, 2] = 0
-                        single_layer[p, 2] = 0
-                elif c[p] == nz - 1:
-                    border_direction[p, 2] = +1
-
                 for i in range(0, self.lattice.Q):
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1:  # searching border on left
+                        border[0] = -1
+                    elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1:  # searching border on right
+                        border[0] = 1
+                    if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1:  # searching border on left
+                        border[1] = -1
+                    elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1:  # searching border on right
+                        border[1] = 1
+                    if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1:  # searching border on left
+                        border[2] = -1
+                    elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1:  # searching border on right
+                        border[2] = 1
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0] * single_layer[p, 0] - border_direction[p, 0] * nx, b[p] + self.lattice.stencil.e[i, 1] * single_layer[p, 1] -border_direction[p, 1] * nx,c[p] + self.lattice.stencil.e[i, 2] * single_layer[p, 2] - border_direction[p, 2] * nx]:
-                            self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0] * single_layer[p, 0] - border_direction[p, 0] * nx, b[p] + self.lattice.stencil.e[i, 1] * single_layer[p, 1] -border_direction[p, 1] * nx,c[p] + self.lattice.stencil.e[i, 2] * single_layer[p, 2] - border_direction[p, 2] * nx] = 1
+                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                    c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
+                            self.f_mask[self.lattice.stencil.opposite[i],
+                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                        c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
