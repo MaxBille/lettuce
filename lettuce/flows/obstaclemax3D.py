@@ -96,23 +96,33 @@ class ObstacleMax3D:
         else:
             u = u*0  # uniform u=0
 
-        ### perturb initial velocity field-symmetry to trigger 'von Karman' vortex street
+        ### perturb initial velocity field-symmetry (in y) to trigger 'von Karman' vortex street
         # perturb_init = True/False
         if self.perturb_init:
             # overlays a sine-wave over y-coordinate in the xz-plane at x_lu=2 (index 1)
             ny = x[1].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
-                amplitude = np.sin(np.linspace(0, ny,ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                amplitude = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
                 plane_yz = np.ones_like(u[0,1,:,:])
-                #plane_yz_amplitude = np.einsum('y,yz->yz', amplitude, plane_yz)
                 u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
-                #u[0][1][:] += np.sin(np.arange(0, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
             else:
                 # multiply scaled down perturbation
                 factor = 1 + np.sin(np.linspace(0, ny,ny) / ny * 2 * np.pi) * 0.3
                 u[0][1] = np.einsum('y,yz->yz', factor, u[0][1])
-                #u[0][1][:] *= 1 + np.sin(np.arange(0, ny) / ny * 2 * np.pi) * 0.3
+
+        if True: # perturb initial solution in z
+            nz = x[2].shape[1]
+            if u.max() < 0.5 * self.units.characteristic_velocity_lu:
+                # add perturbation for small velocities
+                amplitude = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                plane_yz = np.ones_like(u[0,1,:,:])
+                u[0][1] = np.einsum('z,yz->yz', amplitude, plane_yz)
+            else:
+                # multiply scaled down perturbation
+                factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3
+                u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
+
         return p, u
 
     @property
