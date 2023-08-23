@@ -2,7 +2,7 @@
 
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, HalfwayBounceBackBoundary, FullwayBounceBackBoundary,
+    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, InterpolatedBounceBackBoundary
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -77,7 +77,7 @@ class Simulation:
 
         # define f_collided (post-collision, pre-streaming f), if HalfwayBounceBackBoundary is used
         for boundary in self._boundaries:
-            if isinstance(boundary, HalfwayBounceBackBoundary):
+            if isinstance(boundary, HalfwayBounceBackBoundary) or isinstance(boundary, InterpolatedBounceBackBoundary):
                 self.hwbb_present = True  # mark if Halfway Bounce Back Boundary is in use and f_collided is needed
                 self.f_collided = deepcopy(self.f)
 
@@ -117,7 +117,7 @@ class Simulation:
             # apply boundary conditions
             for boundary in self._boundaries:
                 if boundary is not None:
-                    if isinstance(boundary, HalfwayBounceBackBoundary):
+                    if isinstance(boundary, HalfwayBounceBackBoundary) or isinstance(boundary, InterpolatedBounceBackBoundary):
                         self.f = boundary(self.f, self.f_collided)  # HalfwayBounceBackBoundary needs post-collision_pre-streaming f on boundary nodes to perform reflection of populations within the same timestep
                     else:
                         self.f = boundary(self.f)  # all non-HalfwayBounceBackBoundary-BoundaryConditions

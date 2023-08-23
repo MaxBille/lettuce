@@ -22,6 +22,7 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 import torch
 import numpy as np
+import time
 from lettuce import (LettuceException)
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
@@ -42,6 +43,8 @@ class InterpolatedBounceBackBoundary:
     """
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
+        t_init_start = time.time()
+        print("x_center = ", x_center,",y_center = " , y_center,", radius = ", radius)
         self.mask = lattice.convert_to_tensor(mask)  # location of solid-nodes
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
@@ -88,21 +91,25 @@ class InterpolatedBounceBackBoundary:
                             cy = self.lattice.stencil.e[self.lattice.stencil.opposite[i], 1]  # link-direction y to solid node
                             
                             # pq-formula
-                            h1 = (px * cx + py * cy - cx * x_center - cy * y_center) / (cx * cx + cy * cy)
-                            h2 = (px * px + py * py + x_center * x_center + y_center * y_center - radius * radius) / (cx * cx + cy * cy)
+                            h1 = (px * cx + py * cy - cx * x_center - cy * y_center) / (cx * cx + cy * cy)  # p/2
+                            h2 = (px * px + py * py + x_center * x_center + y_center * y_center
+                                  - 2 * px * x_center - 2 * py * y_center - radius * radius) / (cx * cx + cy * cy)  # q
 
                             d1 = - h1 + np.sqrt(h1 * h1 - h2)
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
-                            
+
+                            print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p],i,d1,d2,px,py,cx,cy)
                             # distance (LU) from fluid node to the "true" boundary location
-                            if d1 <= 1:  # d should be between 0 and 1
+                            if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d1
-                            else:
+                            elif d2 <= 1 and np.isreal(d2):
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d2
+                            else:
+                                print("IBB WARNING: d1 is", d1,"; d2 is", d2, "for boundaryPoint x,y,ci", a[p],a[p],self.lattice.stencil.e[i, 0],self.lattice.stencil.e[i, 1])
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
@@ -133,10 +140,43 @@ class InterpolatedBounceBackBoundary:
                                         a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
                                         c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz] = 1
+
+                            # calculate intersection point of boundary surface and link ->
+                            # ...calculate distance between fluid node and boundary surface on the link
+                            px = a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx  # fluid node x-coordinate
+                            py = b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny  # fluid node y-coordinate
+                            # Z-coodinate not needed for cylinder ! #pz = c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz  # fluid node z-coordinate
+
+                            cx = self.lattice.stencil.e[
+                                self.lattice.stencil.opposite[i], 0]  # link-direction x to solid node
+                            cy = self.lattice.stencil.e[
+                                self.lattice.stencil.opposite[i], 1]  # link-direction y to solid node
+                            # Z-coodinate not needed for cylinder ! #cz = self.lattice.stencil.e[
+                            #    self.lattice.stencil.opposite[i], 2]  # link-direction z to solid node
+
+                            # pq-formula
+                            h1 = (px * cx + py * cy - cx * x_center - cy * y_center) / (cx * cx + cy * cy)  # p/2
+                            h2 = (px * px + py * py + x_center * x_center + y_center * y_center
+                                  - 2 * px * x_center - 2 * py * y_center - radius * radius) / (cx * cx + cy * cy)  # q
+
+                            d1 = - h1 + np.sqrt(h1 * h1 - h2)
+                            d2 = - h1 - np.sqrt(h1 * h1 - h2)
+
+                            #print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p], i, d1, d2, px, py, cx, cy)
+                            # distance (LU) from fluid node to the "true" boundary location
+                            if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
+                                self.d[self.lattice.stencil.opposite[i],
+                                       a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d1
+                            elif d2 <= 1 and np.isreal(d2):
+                                self.d[self.lattice.stencil.opposite[i],
+                                       a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d2
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
         self.d = self.lattice.convert_to_tensor(self.d)
+        print("IBB initialization took "+str(time.time()-t_init_start)+"seconds")
 
     def __call__(self, f, f_collided):
         # f_tmp = f_collided[i,x_b]_interpolation before bounce
@@ -164,6 +204,12 @@ class InterpolatedBounceBackBoundary:
         # ...in the whole domain (including the boundary region)!
         assert self.mask.shape == f_shape[1:]
         return self.mask
+
+    def calc_force_on_boundary(self, f_bounced, f_collided):
+        # momentum exchange according to Bouzidi et al. (2001), equation 11.8 in Kruger et al. (2017) p.445
+        tmp = torch.where(self.f_mask, f_collided, torch.zeros_like(f_bounced)) \
+              - torch.where(self.f_mask, f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))
+        self.force_sum = torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v3.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
 
 class SlipBoundary:
     """bounces back in a direction given as 0, 1, or 2 for x, y, or z, respectively
