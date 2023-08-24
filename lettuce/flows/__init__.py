@@ -11,6 +11,7 @@ from lettuce.flows.obstacle import Obstacle, Obstacle2D, Obstacle3D
 from lettuce.flows.obstaclemax import ObstacleMax
 from lettuce.flows.obstaclemax3D import ObstacleMax3D
 from lettuce.flows.cylinder2D import Cylinder2D
+from lettuce.flows.cylinder3D import Cylinder3D
 from lettuce.stencils import D2Q9, D3Q19
 
 flow_by_name = {
