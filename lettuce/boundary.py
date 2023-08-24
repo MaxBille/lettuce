@@ -44,7 +44,7 @@ class InterpolatedBounceBackBoundary:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
         t_init_start = time.time()
-        print("x_center = ", x_center,",y_center = " , y_center,", radius = ", radius)
+        print("0-based: x_center = ", x_center,",y_center = " , y_center,", radius = ", radius)
         self.mask = lattice.convert_to_tensor(mask)  # location of solid-nodes
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
@@ -188,6 +188,7 @@ class InterpolatedBounceBackBoundary:
         # ... d.h. f_collided[i,x_f] entspricht f[i,x_b]
         f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_tmp[self.lattice.stencil.opposite], f)
         #HWBB: f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
+        self.calc_force_on_boundary(f, f_collided)
         return f
 
     def make_no_stream_mask(self, f_shape):
@@ -206,9 +207,12 @@ class InterpolatedBounceBackBoundary:
         return self.mask
 
     def calc_force_on_boundary(self, f_bounced, f_collided):
-        # momentum exchange according to Bouzidi et al. (2001), equation 11.8 in Kruger et al. (2017) p.445
-        tmp = torch.where(self.f_mask, f_collided, torch.zeros_like(f_bounced)) \
-              - torch.where(self.f_mask, f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))
+        # momentum exchange according to Bouzidi et al. (2001), equation 11.8 in Kruger et al. (2017) p.445 // watch out for wrong signs. Kruger states "-", but "+" gives correct result
+        # ...original paper (Bouzidi 2001) and Ginzburg followup (2003) state a "+" as well...
+        #tmp = torch.where(self.f_mask, f_collided, torch.zeros_like(f_bounced)) \
+        #      - torch.where(self.f_mask, f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))
+        #tmp = torch.where(self.f_mask, f_collided - f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced)) #WRONG
+        tmp = torch.where(self.f_mask, f_collided + f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))  #RIGHT
         self.force_sum = torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v3.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
 
 class SlipBoundary:

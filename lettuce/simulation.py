@@ -30,9 +30,13 @@ class Simulation:
         self.collision = collision
         self.streaming = streaming
         self.i = 0  # index of the current timestep
-        # M.Bille: additional variables for force-calculation on obstacle or bounce back boundary condition
-#OLD        self.forceVal = []  # list of forces over all steps
-        self.hwbb_present = False  # flag: True: Halfway Bounce Back Algorithm, False: Fullway Bounce Back Algorithm
+
+        # M.Bille:
+        self.store_f_collided = False  # toggle if f is stored after collision and not overwritten through streaming,
+        # ...f_collided might be needed together with f_collided_and_streamed for boundary-conditions or calculation of
+        # ...momentum exchange (force on boundary, coefficient of drag etc.)
+        self.times = [[], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
+        self.time_avg = dict()
 
         # CALCULATE INITIAL SOLUTION of flow and CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -78,13 +82,8 @@ class Simulation:
         # define f_collided (post-collision, pre-streaming f), if HalfwayBounceBackBoundary is used
         for boundary in self._boundaries:
             if isinstance(boundary, HalfwayBounceBackBoundary) or isinstance(boundary, InterpolatedBounceBackBoundary):
-                self.hwbb_present = True  # mark if Halfway Bounce Back Boundary is in use and f_collided is needed
+                self.store_f_collided = True  # mark if a boundary is present which needs f_collided to be stored
                 self.f_collided = deepcopy(self.f)
-
-#OLD        # get pointer on obstacle_boundary for force_calculation
-#OLD        self.obstacle_boundary = None
-#OLD        if self._boundaries[-1] is not None:  # when obstacle == False, the obstacle_boundary is None
-#OLD            self.obstacle_boundary = self._boundaries[-1]  # the bounce back boundary for the obstacle should be the last boundary in the list
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -93,26 +92,22 @@ class Simulation:
         """
         start = timer()
         if self.i == 0:  # if this is the first timestep, calc. initial force on Object/walls/boundary/obstacle and call reporters
-#OLD             # Perform force calculation on obstacle_boundary
-#OLD            if self.obstacle_boundary is not None:
-#OLD               self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
+            time1 = timer()
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             # ...and store post-collision population for halfway-bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-            if self.hwbb_present:
+            if self.store_f_collided:
                 self.f_collided = deepcopy(self.f)
 
-#OLD -> force-calculation is now integrated in the boundary condition call below            ### CALCULATE FORCES ON OBSTACLE BOUNDARY
-#OLD            if self.obstacle_boundary is not None:
-#OLD                self.forceVal.append(self.obstacle_boundary.calc_force_on_boundary(self.f))
-
+            time2 = timer()
             ### STREAMING
             self.f = self.streaming(self.f)
 
+            time3 = timer()
             ### BOUNDARY
             # apply boundary conditions
             for boundary in self._boundaries:
@@ -125,9 +120,19 @@ class Simulation:
             # count step
             self.i += 1
 
+            time4 = timer()
             # call reporters
             self._report()
+
+            time5 = timer()
+            self.times[0].append(time2-time1)  # time to collide
+            self.times[1].append(time3-time2)  # time to stream
+            self.times[2].append(time4-time3)  # time to boundary
+            self.times[3].append(time5-time4)  # time to report
         end = timer()
+
+        # calculate individual runtimes (M.Bille)
+        self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]), time_streaming=sum(self.times[1])/len(self.times[1]), time_boundary=sum(self.times[2])/len(self.times[2]), time_reporter=sum(self.times[3])/len(self.times[3]))
 
         # calculate runtime and performance in MLUPS
         seconds = end - start
