@@ -22,7 +22,7 @@ class ObstacleMax:
 
         Attributes (selection)
         ----------
-        obstacle_mask : np.array with dtype = np.bool
+        obstacle_mask : np.array with dtype = bool
             Boolean mask to define the obstacle. The shape of this object is the shape of the grid.
             Initially set to zero (no obstacle).
 
