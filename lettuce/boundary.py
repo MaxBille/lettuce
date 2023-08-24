@@ -44,7 +44,6 @@ class InterpolatedBounceBackBoundary:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
         t_init_start = time.time()
-        print("0-based: x_center = ", x_center,",y_center = " , y_center,", radius = ", radius)
         self.interpolation_order = interpolation_order
         self.mask = lattice.convert_to_tensor(mask)  # location of solid-nodes
         self.lattice = lattice
@@ -99,7 +98,7 @@ class InterpolatedBounceBackBoundary:
                             d1 = - h1 + np.sqrt(h1 * h1 - h2)
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
 
-                            print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p],i,d1,d2,px,py,cx,cy)
+                            #print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p],i,d1,d2,px,py,cx,cy)
                             # distance (LU) from fluid node to the "true" boundary location
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
                                 self.d[self.lattice.stencil.opposite[i],
