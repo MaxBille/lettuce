@@ -45,6 +45,7 @@ class InterpolatedBounceBackBoundary:
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
         t_init_start = time.time()
         print("0-based: x_center = ", x_center,",y_center = " , y_center,", radius = ", radius)
+        self.interpolation_order = interpolation_order
         self.mask = lattice.convert_to_tensor(mask)  # location of solid-nodes
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
@@ -179,15 +180,20 @@ class InterpolatedBounceBackBoundary:
         print("IBB initialization took "+str(time.time()-t_init_start)+"seconds")
 
     def __call__(self, f, f_collided):
-        # f_tmp = f_collided[i,x_b]_interpolation before bounce
-        f_tmp = torch.where(self.d <= 0.5,  # if d<=1/2
-                            2*self.d*f_collided+(1-2*self.d)*f,  # interpolate from second fluid node
-                            (1/(2*self.d))*f_collided+(1-1/(2*self.d))*f_collided[self.lattice.stencil.opposite])  # else: interpolate from opposing populations on x_b
-        # (?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
-        # f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
-        # ... d.h. f_collided[i,x_f] entspricht f[i,x_b]
-        f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_tmp[self.lattice.stencil.opposite], f)
-        #HWBB: f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
+
+        if self.interpolation_order == 2:
+            print("warning: not implemented")
+        else:  #interpolation_order==1:
+            # f_tmp = f_collided[i,x_b]_interpolation before bounce
+            f_tmp = torch.where(self.d <= 0.5,  # if d<=1/2
+                                2*self.d*f_collided+(1-2*self.d)*f,  # interpolate from second fluid node
+                                (1/(2*self.d))*f_collided+(1-1/(2*self.d))*f_collided[self.lattice.stencil.opposite])  # else: interpolate from opposing populations on x_b
+            # (?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
+            # f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
+            # ... d.h. f_collided[i,x_f] entspricht f[i,x_b]
+            f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_tmp[self.lattice.stencil.opposite], f)
+            #HWBB: f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
+
         self.calc_force_on_boundary(f, f_collided)
         return f
 
