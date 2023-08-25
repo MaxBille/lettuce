@@ -4,22 +4,47 @@ from lettuce.util import append_axes
 from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, InterpolatedBounceBackBoundary, SlipBoundary
 
 
-class Cylinder3D:
+class ObstacleCylinder:
+    """
+        add description here: unified version of 2D and 3D cylinder flow
+        refined version of flow/obstacle.py, for cylinder-flow in 2D or 3D. The dimensions will be assumed from
+        lattice.D
 
+        Flow:
+        - inflow (EquilibriumBoundaryPU) at x=0, outflow (EquilibriumOutletP) at x=xmax
+        - further boundaries depend on parameters:
+            - lateral (y direction): periodic, no-slip wall, slip wall
+            - lateral (z direction): periodic (only if lattice.D==3)
+        - obstacle: cylinder obstacle centered at (y_lu/2, y_LU/2), with radius, uniform symmetry in z-direction
+            - obstacle mask has to be set externally?
+        - boundary condition for obstacle can be chosen: hwbb, fwbb, ibb1
+        - initial pertubation (trigger Von Kármán vortex street for Re>46) can be initialized in y and z direction
+        - initial velocity can be 0, u_char or a parabolic profile (parabolic if lateral_walls = "bounceback")
+        - inlet/inflow velocity can be uniform u_char or parabolic
+
+        Parameters:
+        ----------
+        <to fill>
+        ----------
+    """
     def __init__(self, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1,
                  x_lu=10, y_lu=5, z_lu=10, lateral_walls='periodic', bc_type='fwbb', perturb_init=True, u_init=0,
                  x_offset=0, y_offset=0, radius=0):
-        self.shape = (int(x_lu), int(y_lu), int(z_lu))  # shape of the domain in LU (length, height, width)
+        if lattice.D == 2:
+            self.shape = (int(x_lu), int(y_lu))  # shape of the domain in LU
+        elif lattice.D == 3:
+            self.shape = (int(x_lu), int(y_lu), int(z_lu))  # shape of the domain in LU (length, height, width)
+        else:
+            print("WARNING: lattice-Dimensions should be 2 or 3, choose a proper stencil! You dimensions are: ", lattice.D)
+
         self.char_length_pu = char_length_pu  # characteristic length
-        # self.x_lu = x_lu  # domain length (kann das nicht auch über "shape" abgegriffen werden?)
-        # self.y_lu = y_lu  # domain height ('')
-        # self.z_lu = z_lu  # domain width ('')
 
         # cylinder geometry in LU coordinates
         self.x_offset = x_offset
         self.y_offset = y_offset
         self.radius = radius
 
+        # flow and boundary settings
         self.perturb_init = perturb_init  # toggle: introduce asymmetry in initial solution to trigger v'Karman Vortex Street
         self.u_init = u_init  # toggle: initial solution velocity profile type
         self.lateral_walls = lateral_walls  # toggle: lateral walls to be bounce back (bounceback), slip wall (slip) or periodic (periodic)
@@ -40,13 +65,13 @@ class Cylinder3D:
         self.wall_mask = np.zeros_like(self.solid_mask)  # marks lateral (top+bottom) walls
         self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc.)
 
+        # indexing doesn't need z-Index for 3D, everything is breadcasted along z!
         if self.lateral_walls == 'bounceback' or self.lateral_walls == 'slip':  # if top and bottom are link-based BC
-            self.wall_mask[:, [0, -1], :] = True  # top and bottom domain boundary
-            self.solid_mask[np.where(self.wall_mask)] = 1
-            self.in_mask[0, 1:-1, :] = True  # inlet on the left (x=0), except for top and bottom wall (y=0, y=y_max)
-        else:  # if lateral_walls == 'periodic' (not link-based BC)
-            self.in_mask[0, :, :] = True  # inlet on the left (x=0)
-
+            self.wall_mask[:, [0, -1]] = True  # don't mark wall nodes as inlet
+            self.solid_mask[np.where(self.wall_mask)] = 1  # mark solid walls
+            self.in_mask[0, 1:-1] = True  # inlet on the left, except for top and bottom wall (y=0, y=y_max)
+        else:  # if lateral_wals == 'periodic', no walls
+            self.in_mask[0, :] = True  # inlet on the left (x=0)
 
         # generate parabolic velocity profile for inlet BC if lateral_walls (top and bottom) are bounce back walls (== channel-flow)
         self.u_inlet = self.units.characteristic_velocity_pu * self._unit_vector()  # u = [ux,uy,uz] = [1,0,0] in PU // uniform cahracteristic velocity in x-direction
@@ -59,16 +84,22 @@ class Cylinder3D:
             ## (4. optional) scale amplitude with 1.5 to have a mean velocity of 1, also making the integral of a homogeneous velocity profile with u=1 and the parabolic profile being equal
             (nx, ny, nz) = self.shape  # number of gridpoints in y direction
             parabola_y = np.zeros((1, ny))
-            y_coordinates = np.linspace(0, ny, ny)  # linspace() creates n points between 0 and ny, including 0 and ny:
+            y_coordinates = np.linspace(0, ny,
+                                        ny)  # linspace() creates n points between 0 and ny, including 0 and ny:
             # top and bottom velocity values will be zero to agree with wall-boundary-condition
-            parabola_y[:, 1:-1] = - np.array(self.u_inlet).max() * y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2  # parabolic velocity profile
-            # scale with 1.5 to achieve a mean velocity of u_char!
-            ones_z = np.ones(nz)
-            parabola_yz = parabola_y[:, :, np.newaxis] * ones_z
-            parabola_yz_zeros = np.zeros_like(parabola_yz)
-            # create u_xyz inlet yz-plane:
-            self.u_inlet = np.stack([parabola_yz, parabola_yz_zeros, parabola_yz_zeros], axis=0)  # stack/pack u-field
-
+            parabola_y[:, 1:-1] = - 1.5 * np.array(self.u_inlet).max() * y_coordinates[1:-1] * (
+                        y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2  # parabolic velocity profile
+            # scale with 1.5 to achieve a mean velocity of u_char! -> DIFFERENT FROM cylinder2D and cylinder3D (!)
+            if self.units.lattice.D == 2:
+                # in 2D u1 needs Dimension 1 x ny (!)
+                velocity_y = np.zeros_like(parabola_y)  # y-velocities = 0
+                self.u_inlet = np.stack([parabola_y, velocity_y], axis=0)  # stack/pack u-field
+            elif self.units.lattice.D == 3:
+                ones_z = np.ones(nz)
+                parabola_yz = parabola_y[:, :, np.newaxis] * ones_z
+                parabola_yz_zeros = np.zeros_like(parabola_yz)
+                # create u_xyz inlet yz-plane:
+                self.u_inlet = np.stack([parabola_yz, parabola_yz_zeros, parabola_yz_zeros], axis=0)  # stack/pack u-field
 
     @property
     def obstacle_mask(self):
@@ -78,7 +109,7 @@ class Cylinder3D:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
-        #self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
+        # self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
@@ -99,35 +130,40 @@ class Cylinder3D:
             # multiply parabolic profile with every column of the velocity field:
             y_coordinates = np.linspace(0, ny, ny)
             ux_factor[1:-1] = - y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2
-            u = np.einsum('k,ijkl->ijkl', ux_factor, u)
+            if self.units.lattice.D == 2:
+                u = np.einsum('k,ijk->ijk', ux_factor, u)
+            elif self.units.lattice.D == 3:
+                u = np.einsum('k,ijkl->ijkl', ux_factor, u)
         else:
             u = u*0  # uniform u=0
 
         ### perturb initial velocity field-symmetry (in y and z) to trigger 'von Karman' vortex street
         if self.perturb_init:  # perturb initial solution in y
-            # overlays a sine-wave over y-coordinate in the xz-plane at x_lu=2 (index 1)
+            # overlays a sine-wave on the second column of nodes x_lu=1 (index 1)
             ny = x[1].shape[1]
-            if u.max() < 0.5 * self.units.characteristic_velocity_lu:
-                # add perturbation for small velocities
-                amplitude = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
-                plane_yz = np.ones_like(u[0,1,:,:])
-                u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
-            else:
-                # multiply scaled down perturbation if velocity field is already near u_char
-                factor = 1 + np.sin(np.linspace(0, ny,ny) / ny * 2 * np.pi) * 0.3
-                u[0][1] = np.einsum('y,yz->yz', factor, u[0][1])
-
-        if self.perturb_init: # perturb initial solution in z
             nz = x[2].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
-                amplitude = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
-                plane_yz = np.ones_like(u[0,1,:,:])
-                u[0][1] = np.einsum('z,yz->yz', amplitude, plane_yz)
+                #OLD 2D: u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                amplitude = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                if self.units.lattice.D == 2:
+                    u[0][1] += amplitude
+                elif self.units.lattice.D == 3:
+                    plane_yz = np.ones_like(u[0, 1, :, :])
+                    u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
+                    factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
+                    u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
             else:
-                # multiply scaled down perturbation
-                factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3
-                u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
+                # multiply scaled down perturbation if velocity field is already near u_char
+                #OLD 2D: u[0][1] *= 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
+                factor = 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
+                if self.units.lattice.D == 2:
+                    u[0][1] *= factor
+                elif self.units.lattice.D == 3:
+                    plane_yz = np.ones_like(u[0, 1, :, :])
+                    u[0][1] = np.einsum('y,yz->yz', factor, u[0][1])
+                    factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
+                    u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
         return p, u
 
     @property
@@ -139,31 +175,36 @@ class Cylinder3D:
     def boundaries(self):
         # inlet ("left side", x[0],y[1:-1], z[:])
         inlet_boundary = EquilibriumBoundaryPU(
-                            self.in_mask,
-                            self.units.lattice, self.units,
-                            #self.units.characteristic_velocity_pu * self._unit_vector())
-                            self.u_inlet)  # works with a 1 x D vector or an ny x D vector thanks to einsum-magic in EquilibriumBoundaryPU
+            self.in_mask,
+            self.units.lattice, self.units,
+            # self.units.characteristic_velocity_pu * self._unit_vector())
+            self.u_inlet)  # works with a 1 x D vector or an ny x D vector thanks to einsum-magic in EquilibriumBoundaryPU
 
         # lateral walls ("top and bottom walls", x[:], y[0,-1], z[:])
         lateral_boundary = None  # stays None if lateral_walls == 'periodic'
         if self.lateral_walls == 'bounceback':
-            if self.bc_type == 'hwbb':  # use halfway bounce back
+            if self.bc_type == 'hwbb' or self.bc_type == 'HWBB':  # use halfway bounce back
                 lateral_boundary = HalfwayBounceBackBoundary(self.wall_mask, self.units.lattice)
             else:  # else use fullway bounce back
                 lateral_boundary = FullwayBounceBackBoundary(self.wall_mask, self.units.lattice)
-        elif self.lateral_walls == 'slip':
-            lateral_boundary = SlipBoundary(self.wall_mask, self.units.lattice, 1)  # slip on xz-plane
+        elif self.lateral_walls == 'slip' or self.bc_type == 'SLIP':  # use slip-walöl (symmetry boundary)
+            lateral_boundary = SlipBoundary(self.wall_mask, self.units.lattice, 1)  # slip on x(z)-plane
 
-        # outlet ("right side", x[-1],y[:], z[:])
-        outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0, 0])  # outlet in positive x-direction
+        # outlet ("right side", x[-1],y[:], (z[:]))
+        if self.units.lattice.D == 2:
+            outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0])  # outlet in positive x-direction
+        else: # self.units.lattice.D == 3:
+            outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0, 0])  # outlet in positive x-direction
 
-        # obstacle (for example: obstacle "cylinder" with radius centered at position x_pos, y_pos, z_pos) -> to be set via obstacle_mask.setter
+        # obstacle (for example: obstacle "cylinder" with radius centered at position x_pos, y_pos) -> to be set via obstacle_mask.setter
         obstacle_boundary = None
         # (!) the obstacle_boundary should alway be the last boundary in the list of boundaries to correctly calculate forces on the obstacle
         if self.bc_type == 'hwbb' or self.bc_type == 'HWBB':
             obstacle_boundary = HalfwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
         elif self.bc_type == 'ibb1' or self.bc_type == 'IBB1':
-            obstacle_boundary = InterpolatedBounceBackBoundary(self.obstacle_mask, self.units.lattice, x_center=(self.shape[1]/2 - 0.5), y_center=(self.shape[1]/2 - 0.5), radius=self.radius)
+            obstacle_boundary = InterpolatedBounceBackBoundary(self.obstacle_mask, self.units.lattice,
+                                                               x_center=(self.shape[1] / 2 - 0.5),
+                                                               y_center=(self.shape[1] / 2 - 0.5), radius=self.radius)
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
 

@@ -2,8 +2,6 @@ import numpy as np
 from lettuce.unit import UnitConversion
 from lettuce.util import append_axes
 from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, InterpolatedBounceBackBoundary, SlipBoundary
-    # EquilibriumInletPU,
-
 
 
 class Cylinder2D:
@@ -29,7 +27,7 @@ class Cylinder2D:
     """
 
     def __init__(self, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1,
-                 y_lu=5, x_lu=10, lateral_walls='periodic', bc_type='ibb1', perturb_init=True, u_init=0,
+                 y_lu=5, x_lu=10, lateral_walls='periodic', bc_type='fwbb', perturb_init=True, u_init=0,
                  x_offset=0, y_offset=0, radius=0):
         self.shape = (int(x_lu), int(y_lu))  # shape of the domain in LU
         self.char_length_pu = char_length_pu  # characteristic length
@@ -121,15 +119,14 @@ class Cylinder2D:
             u = u*0  # uniform u=0
 
         ### perturb initial velocity field-symmetry to trigger 'von Karman' vortex street
-        # perturb_init = True/False
-        if self.perturb_init:
-            # overlays a sine-wave on the second column of nodes
+        if self.perturb_init:  # perturb initial solution in y
+            # overlays a sine-wave on the second column of nodes x_lu=1 (index 1)
             ny = x[1].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
                 u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
             else:
-                # multiply scaled down perturbation
+                # multiply scaled down perturbation if velocity field is already near u_char
                 u[0][1] *= 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
         return p, u
 
@@ -146,6 +143,7 @@ class Cylinder2D:
                             self.units.lattice, self.units,
                             #self.units.characteristic_velocity_pu * self._unit_vector())
                             self.u_inlet) # works with a 1 x D vector or an ny x D vector thanks to einsum-magic in EquilibriumBoundaryPU
+
         # lateral walls ("top and bottom walls", x[:], y[0,-1])
         lateral_boundary = None  # stays None if lateral_walls == 'periodic'
         if self.lateral_walls == 'bounceback':
