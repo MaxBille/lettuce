@@ -27,28 +27,15 @@ class ObstacleCylinder:
         <to fill>
         ----------
     """
-    def __init__(self, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1,
-                 x_lu=10, y_lu=5, z_lu=10, lateral_walls='periodic', bc_type='fwbb', perturb_init=True, u_init=0,
-                 x_offset=0, y_offset=0, radius=0):
-        if lattice.D == 2:
-            self.shape = (int(x_lu), int(y_lu))  # shape of the domain in LU
-        elif lattice.D == 3:
-            self.shape = (int(x_lu), int(y_lu), int(z_lu))  # shape of the domain in LU (length, height, width)
-        else:
-            print("WARNING: lattice-Dimensions should be 2 or 3, choose a proper stencil! You dimensions are: ", lattice.D)
+    def __init__(self, shape, reynolds_number, mach_number, lattice, char_length_pu, char_length_lu, char_velocity_pu=1,
+                 lateral_walls='periodic', bc_type='fwbb', perturb_init=True, u_init=0,
+                 x_offset=0, y_offset=0):
+        # shape of the domain (2D or 3D):
+        if len(shape) != lattice.D:
+            raise ValueError(f"{lattice.D}-dimensional lattice requires {lattice.D}-dimensional `shape`")
+        self.shape = shape
 
         self.char_length_pu = char_length_pu  # characteristic length
-
-        # cylinder geometry in LU coordinates
-        self.x_offset = x_offset
-        self.y_offset = y_offset
-        self.radius = radius
-
-        # flow and boundary settings
-        self.perturb_init = perturb_init  # toggle: introduce asymmetry in initial solution to trigger v'Karman Vortex Street
-        self.u_init = u_init  # toggle: initial solution velocity profile type
-        self.lateral_walls = lateral_walls  # toggle: lateral walls to be bounce back (bounceback), slip wall (slip) or periodic (periodic)
-        self.bc_type = bc_type  # toggle: bounce back algorithm: halfway (hwbb) or fullway (fwbb)
 
         self.units = UnitConversion(
             lattice,
@@ -56,8 +43,14 @@ class ObstacleCylinder:
             mach_number=mach_number,
             characteristic_length_lu=char_length_lu,
             characteristic_length_pu=char_length_pu,
-            characteristic_velocity_pu=char_velocity_pu  ### reminder: u_char_lu = Ma * cs_lu = Ma * 1/sqrt(3)
+            characteristic_velocity_pu=char_velocity_pu  # reminder: u_char_lu = Ma * cs_lu = Ma * 1/sqrt(3)
         )
+
+        # flow and boundary settings
+        self.perturb_init = perturb_init  # toggle: introduce asymmetry in initial solution to trigger v'Karman Vortex Street
+        self.u_init = u_init  # toggle: initial solution velocity profile type
+        self.lateral_walls = lateral_walls  # toggle: lateral walls to be bounce back (bounceback), slip wall (slip) or periodic (periodic)
+        self.bc_type = bc_type  # toggle: bounce back algorithm: halfway (hwbb) or fullway (fwbb)
 
         # initialize masks (init with zeros)
         self.solid_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all solid nodes (obstacle, walls, ...)
@@ -65,7 +58,25 @@ class ObstacleCylinder:
         self.wall_mask = np.zeros_like(self.solid_mask)  # marks lateral (top+bottom) walls
         self._obstacle_mask = np.zeros_like(self.solid_mask)  # marks all obstacle nodes (for fluid-solid-force_calc.)
 
-        # indexing doesn't need z-Index for 3D, everything is breadcasted along z!
+        # cylinder geometry in LU (1-based indexing!)
+        self.x_offset = x_offset
+        self.y_offset = y_offset
+        self.radius = char_length_lu / 2
+        self.y_pos = self.shape[1] / 2 + 0.5 + self.y_offset  # y_position of cylinder-center in 1-based indexing
+        self.x_pos = self.y_pos + self.x_offset  # keep symmetry of cylinder in x and y direction
+
+        xyz = tuple(np.linspace(1, n, n) for n in self.shape)  # Tupel of index-lists (1-n (one-based!))
+        if self.units.lattice.D == 2:
+            x_lu, y_lu = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y-index
+        elif self.units.lattice.D == 3:
+            x_lu, y_lu, z_lu = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- and z-index
+        else:
+            print("WARNING: something went wrong in LU-gird-index generation!")
+
+        condition = np.sqrt((x_lu - self.x_pos) ** 2 + (y_lu - self.y_pos) ** 2) < self.radius
+        self.obstacle_mask[np.where(condition)] = 1
+
+        # indexing doesn't need z-Index for 3D, everything is broadcasted along z!
         if self.lateral_walls == 'bounceback' or self.lateral_walls == 'slip':  # if top and bottom are link-based BC
             self.wall_mask[:, [0, -1]] = True  # don't mark wall nodes as inlet
             self.solid_mask[np.where(self.wall_mask)] = 1  # mark solid walls
@@ -118,30 +129,29 @@ class ObstacleCylinder:
         self.solid_mask[np.where(self.obstacle_mask)] = 1  # This line is needed, because the obstacle_mask.setter does not define the solid_mask properly (see above)
         ### initial velocity field: "u_init"-parameter
         # 0: uniform u=0
-        # 1: uniform u=1
-        # 2: parabolic, amplitude u_char_lu (similar to poiseuille-flow)
+        # 1: uniform u=1 or parabolic (depends on lateral_walls -> bounceback => parabolic; slip, periodic => uniform)
         u = (1 - self.solid_mask) * u_max_lu
-        if self.u_init == 1:
-            # initiale velocity u=1 on every fluid node
-            u = (1 - self.solid_mask) * u_max_lu
-        elif self.u_init == 2:  # parabolic along y, uniform along x and z (similar to poiseuille-flow)
-            ny = self.shape[1]  # number of gridpoints in y direction
-            ux_factor = np.zeros(ny)  # vector for one column (u(x=0))
-            # multiply parabolic profile with every column of the velocity field:
-            y_coordinates = np.linspace(0, ny, ny)
-            ux_factor[1:-1] = - y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2
-            if self.units.lattice.D == 2:
-                u = np.einsum('k,ijk->ijk', ux_factor, u)
-            elif self.units.lattice.D == 3:
-                u = np.einsum('k,ijkl->ijkl', ux_factor, u)
+        if self.u_init == 0:
+            u = u * 0  # uniform u=0
         else:
-            u = u*0  # uniform u=0
+            if self.lateral_walls == 'bounceback':  # parabolic along y, uniform along x and z (similar to poiseuille-flow)
+                ny = self.shape[1]  # number of gridpoints in y direction
+                ux_factor = np.zeros(ny)  # vector for one column (u(x=0))
+                # multiply parabolic profile with every column of the velocity field:
+                y_coordinates = np.linspace(0, ny, ny)
+                ux_factor[1:-1] = - y_coordinates[1:-1] * (y_coordinates[1:-1] - ny) * 1 / (ny / 2) ** 2
+                if self.units.lattice.D == 2:
+                    u = np.einsum('k,ijk->ijk', ux_factor, u)
+                elif self.units.lattice.D == 3:
+                    u = np.einsum('k,ijkl->ijkl', ux_factor, u)
+            else:  # lateral_walls == periodic or slip
+                # initiale velocity u_PU=1 on every fluid node
+                u = (1 - self.solid_mask) * u_max_lu
 
         ### perturb initial velocity field-symmetry (in y and z) to trigger 'von Karman' vortex street
         if self.perturb_init:  # perturb initial solution in y
             # overlays a sine-wave on the second column of nodes x_lu=1 (index 1)
             ny = x[1].shape[1]
-            nz = x[2].shape[1]
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
                 #OLD 2D: u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
@@ -149,6 +159,7 @@ class ObstacleCylinder:
                 if self.units.lattice.D == 2:
                     u[0][1] += amplitude
                 elif self.units.lattice.D == 3:
+                    nz = x[2].shape[1]
                     plane_yz = np.ones_like(u[0, 1, :, :])
                     u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
                     factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
@@ -160,6 +171,7 @@ class ObstacleCylinder:
                 if self.units.lattice.D == 2:
                     u[0][1] *= factor
                 elif self.units.lattice.D == 3:
+                    nz = x[2].shape[1]
                     plane_yz = np.ones_like(u[0, 1, :, :])
                     u[0][1] = np.einsum('y,yz->yz', factor, u[0][1])
                     factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
@@ -168,6 +180,7 @@ class ObstacleCylinder:
 
     @property
     def grid(self):
+        # THIS IS NOT USED AT THE MOMENT. QUESTION: SHOULD THIS BE ONE- OR ZERO-BASED? Indexing or "node-number"?
         xyz = tuple(self.units.convert_length_to_pu(np.linspace(0, n, n)) for n in self.shape)  # tuple of lists of x,y,(z)-values/indices
         return np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
 

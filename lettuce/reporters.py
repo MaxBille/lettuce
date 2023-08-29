@@ -9,6 +9,9 @@ import os
 import numpy as np
 import torch
 import pyevtk.hl as vtk
+import datetime
+import gc
+from collections import Counter
 
 __all__ = [
     "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter"
@@ -157,3 +160,52 @@ class ObservableReporter:
                 self.out.append(entry)
             else:
                 print(*entry, file=self.out)
+
+class VRAMreporter:
+
+    def __init__(self, interval=1000, filename_base="./vram_data/vram_summary"):
+        self.interval = interval
+        self.filename_base = filename_base
+        directory = os.path.dirname(filename_base)
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
+    def __call__(self, i, t, f):
+        if i % self.interval == 0:
+            # export CUDA-VRAM-summary + index
+            # get tensors, export under generic filename
+            # export tensor-count
+            # count tensors and export tensor-count with byte-summary + index
+            timestamp = datetime.datetime.now()
+            timestamp = timestamp.strftime("%y%m%d") + "_" + timestamp.strftime("%H%M%S")
+            output_file = open(self.filename_base + "_" + timestamp + "_GPU_VRAM_summary_"+str(i)+".txt", "a")
+            output_file.write("DATA for " + timestamp + "\n\n")
+            output_file.write(torch.cuda.memory_summary(device="cuda:0"))
+            output_file.close()
+
+            ### list present torch tensors:
+            output_file = open(self.filename_base + "_temp_GPU_list_of_tensors.txt", "a")
+            total_bytes = 0
+            for obj in gc.get_objects():
+                try:
+                    if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                        output_file.write("\n" + str(obj.size()) + ", " + str(obj.nelement() * obj.element_size()))
+                        total_bytes = total_bytes + obj.nelement() * obj.element_size()
+                except:
+                    pass
+            #output_file.write("\n\ntotal bytes for tensors:" + str(total_bytes))
+            output_file.close()
+
+            ### count occurence of tensors in list of tensors:
+            my_file = open(oself.filename_base + "_temp_GPU_list_of_tensors.txt", "r")
+            data = my_file.read()
+            my_file.close()
+            data_into_list = data.split("\n")
+            c = Counter(data_into_list)
+            output_file = open(self.filename_base + "_" + timestamp + "_GPU_counted_tensors_"+str(i)+".txt", "a")
+            for k, v in c.items():
+                output_file.write("type,size,bytes: {}, number: {}\n".format(k, v))
+            output_file.write("\ntotal bytes for tensors:" + str(total_bytes))
+            output_file.close()
+
+            if os.path.exists(self.filename_base + "_temp_GPU_list_of_tensors.txt"):
+                os.remove(self.filename_base + "_temp_GPU_list_of_tensors.txt")
