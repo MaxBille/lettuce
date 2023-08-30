@@ -37,8 +37,8 @@ show = False
 
 # List of Diameters (in GPD) to measure:
 gpds = [9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100] #(np.arange(150)+5)
-#gpds = [20,21,22]
-gpds = np.arange(0,150)+5
+gpds = [2,5,10,11,12,20,21,22,52,53, 60,70,80,90,100, 150]
+#gpds = np.arange(0,150)+5
 
 # lists for plotting
 r_rel_list = []
@@ -186,8 +186,8 @@ for i in gpds:
     print("radii: ", Counter(radii))
     print("radii_q: ", Counter(radii_q))
     output_file.write("\nGPD: " + str(gridpoints_per_diameter))
-    output_file.write("\nGPD: " + str(Counter(radii)))
-    output_file.write("\nGPD: " + str(Counter(radii_q))+"\n\n")
+    output_file.write("\nradii: " + str(Counter(radii)))
+    output_file.write("\nradii_q: " + str(Counter(radii_q))+"\n\n")
 
     if True:  # toggle mask output to .png
         ### PLOT rand_mask
@@ -195,9 +195,26 @@ for i in gpds:
         plt.imshow(rand_mask)
         #plt.xticks(np.arange(gridpoints_per_diameter + 2), minor=True)
         #plt.yticks(np.arange(gridpoints_per_diameter + 2), minor=True)
-        plt.xticks([])
-        plt.yticks([])
+        ax = plt.gca()
+        xmin, xmax = ax.get_xlim()
+        ymax, ymin = ax.get_ylim()
+        if gridpoints_per_diameter >= 10:
+            plt.xticks(np.arange(0, xmax, int(xmax/10)))
+            plt.yticks(np.arange(0, ymax, int(ymax/10)))
+        else:
+            plt.xticks(np.arange(0, xmax, 1))
+            plt.yticks(np.arange(0, ymax, 1))
         plt.title("GPD = "+str(gridpoints_per_diameter))
+        ax.set_xticks(np.arange(-.5, xmax, 1), minor=True)
+        ax.set_yticks(np.arange(-.5, ymax, 1), minor=True)
+        if gridpoints_per_diameter < 30:
+            ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=2)
+        elif gridpoints_per_diameter < 70:
+            ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=1)
+        elif gridpoints_per_diameter < 100:
+            ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=0.5)
+        elif gridpoints_per_diameter < 150:
+            ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=0.25)
         plt.savefig(dir_name + "/masks/randMask_GPD" + str(gridpoints_per_diameter) + ".png")
         if show:
             plt.show()
