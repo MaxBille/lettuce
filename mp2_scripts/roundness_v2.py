@@ -17,16 +17,32 @@ import lettuce as lt
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import datetime
+import os
+import shutil
 
 ###INPUT1:
+timestamp = datetime.datetime.now()
+timestamp = timestamp.strftime("%y%m%d")+"_"+timestamp.strftime("%H%M%S")
+name = "roundness_criteria"
+dir_name = "./roundness_criteria/data_" + str(timestamp) + "_" + name
+if not os.path.isdir(dir_name):
+    os.mkdir(dir_name)
+if not os.path.isdir(dir_name+"/masks"):
+    os.mkdir(dir_name + "/masks")
+
+output_file = open(dir_name + "/console_output.txt", "a")
+
+show = False
+
 # List of Diameters (in GPD) to measure:
 gpds = [9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100] #(np.arange(150)+5)
-gpds = [20,21,22]
-#gpds = np.arange(0,150)+5
+#gpds = [20,21,22]
+gpds = np.arange(0,150)+5
 
 # lists for plotting
 r_rel_list = []
-r_rel_list_weights = []
+r_rel_list_weights = []  # weights needed for histogram
 rq_rel_list = []
 rq_rel_list_weights = []
 
@@ -39,34 +55,36 @@ rq_rel_mean_PU_list = []
 r_rel_max_list = []
 r_rel_min_list = []
 
+area_rel_list = []
+
 # calculate radii etc. for all GPDs
 for i in gpds:
+    output_file.write("#######")
     print("#######")
     gridpoints_per_diameter = i  # gp_per_D -> this defines the resolution ( D_LU = GPD+1)
     ### INPUT2
     domain_width_in_D = 1+(2/gridpoints_per_diameter)  # D/Y 19  -> this defines the domain-size and total number of Lattice-Nodes
     domain_length_in_D = 1+(2/gridpoints_per_diameter) #2*domain_width_in_D 2*domain_width_in_D # D/X
 
-    ### GPD-correction doesn't make sense here, but keep in mind the combination of GPD and DpY is not completely arbitrary
-    # if DpY is even, resulting GPD can't be odd for symmetrical cylinder and channel
-    # ...if DpY is even, GPD will be corrected to even GPD for symmetrical cylinder
-    # ...use odd DpY to use odd GPD
-    gpd_correction=False
-    if False:#domain_width_in_D % 2 == 0 and gridpoints_per_diameter % 2 != 0:
-        gpd_correction = True   # gpd_was_corrected-flag
-        gpd_setup = gridpoints_per_diameter   # store old gpd for output
-        gridpoints_per_diameter = int(gridpoints_per_diameter/2)*2   # make gpd even
-        print("(!) domain_width_in_D is even, gridpoints_per_diameter will be "+str(gridpoints_per_diameter)+". Use odd domain_width_in_D to enable use of odd GPD!")
+        # ### GPD-correction doesn't make sense here, but keep in mind the combination of GPD and DpY is not completely arbitrary
+        # # if DpY is even, resulting GPD can't be odd for symmetrical cylinder and channel
+        # # ...if DpY is even, GPD will be corrected to even GPD for symmetrical cylinder
+        # # ...use odd DpY to use odd GPD
+        # gpd_correction=False
+        # if False:#domain_width_in_D % 2 == 0 and gridpoints_per_diameter % 2 != 0:
+        #     gpd_correction = True   # gpd_was_corrected-flag
+        #     gpd_setup = gridpoints_per_diameter   # store old gpd for output
+        #     gridpoints_per_diameter = int(gridpoints_per_diameter/2)*2   # make gpd even
+        #     print("(!) domain_width_in_D is even, gridpoints_per_diameter will be "+str(gridpoints_per_diameter)+". Use odd domain_width_in_D to enable use of odd GPD!")
 
+    output_file.write("\nshape_LU:" + str(round(gridpoints_per_diameter*domain_length_in_D)) + " x " + str(round(gridpoints_per_diameter*domain_width_in_D)))
     print("shape_LU:", round(gridpoints_per_diameter*domain_length_in_D), "x", round(gridpoints_per_diameter*domain_width_in_D))
-    ##gridpoints = gridpoints_per_diameter**2*domain_length_in_D*domain_width_in_D
-    ##print("No. of gridpoints:", gridpoints)
 
     # lattice (for D, Q and e (stencil))
     lattice = lt.Lattice(lt.D2Q9, "cuda:0", dtype=torch.float64)
 
     # shape (x,y,z) of the domain
-    shape = (round(domain_length_in_D * gridpoints_per_diameter), round(domain_width_in_D * gridpoints_per_diameter))
+    shape = (int(domain_length_in_D * gridpoints_per_diameter), int(domain_width_in_D * gridpoints_per_diameter))
 
     # define radius and position for a symetrical circular Cylinder-Obstacle
     radius_LU = 0.5 * gridpoints_per_diameter
@@ -107,7 +125,7 @@ for i in gpds:
     x_pos = sum(rand_x)/len(rand_x)  # x_Koordinate des Kreis-Zentrums
     y_pos = sum(rand_y)/len(rand_y)  # y-Koordinate des Kreis-Zentrums
 
-    #DOESN'T WORK: radii_q = np.sqrt(np.power(np.array(rand_xq)-x_pos, 2) + np.power(np.array(rand_yq)-y_pos, 2))  # Liste der Radien in LU (multiplizität, falls ein Randpunkt mehrere Links zu Fluidknoten hat
+        ###DOESN'T WORK: radii_q = np.sqrt(np.power(np.array(rand_xq)-x_pos, 2) + np.power(np.array(rand_yq)-y_pos, 2))  # Liste der Radien in LU (multiplizität, falls ein Randpunkt mehrere Links zu Fluidknoten hat
 
     # calculate all radii and r_max and r_min
     r_max = 0
@@ -126,55 +144,66 @@ for i in gpds:
         radii_q[p] = np.sqrt((rand_xq[p]-x_pos)**2 + (rand_yq[p]-y_pos)**2)
 
     ### all relative radii in relation to gpd/2
-    radii_relative = radii / radius_LU
-    radii_q_relative = radii_q / radius_LU
+    radii_relative = radii / (radius_LU-0.5)  # (substract 0.5 because "true" boundary location is 0.5LU further out than node-coordinates)
+    radii_q_relative = radii_q / (radius_LU-0.5)
 
-    # append to lists for plotting
+    # append to GLOBAL lists for plotting
     r_rel_list.append(radii_relative)
-    r_rel_list_weights.append(np.ones_like(radii_relative) / len(radii_relative))
+    r_rel_list_weights.append(np.ones_like(radii_relative) / len(radii_relative))  # needed for histogram
     rq_rel_list.append(radii_q_relative)
     rq_rel_list_weights.append(np.ones_like(radii_q_relative) / len(radii_q_relative))
 
-    # calc. mean radius
+    # calc. mean rel_radius
     r_rel_mean = sum(radii_relative)/len(radii_relative)
-    rq_rel_mean_q = sum(radii_q_relative)/len(radii_q_relative)
+    rq_rel_mean = sum(radii_q_relative)/len(radii_q_relative)
 
     r_rel_mean_list.append(r_rel_mean)
-    rq_rel_mean_list.append(rq_rel_mean_q)
+    rq_rel_mean_list.append(rq_rel_mean)
 
-    ### all relative radii in relation to D/2 in PU (D=GPD+1 (!))
-    radii_relative_PU = (radii + 0.5) / (radius_LU + 0.5)
-    radii_q_relative_PU = (radii_q + 0.5) / (radius_LU + 0.5)
-
-    # mean radius in PU
-    r_rel_mean_PU = sum(radii_relative_PU) / len(radii_relative_PU)
-    rq_rel_mean_q_PU = sum(radii_q_relative_PU) / len(radii_q_relative_PU)
-
-    r_rel_mean_PU_list.append(r_rel_mean_PU)
-    rq_rel_mean_PU_list.append(rq_rel_mean_q_PU)
+        # ### all relative radii in relation to D/2 in PU (D=GPD+1 (!))
+        # radii_relative_PU = (radii + 0.5) / (radius_LU + 0.5)
+        # radii_q_relative_PU = (radii_q + 0.5) / (radius_LU + 0.5)
+        #
+        # # mean radius in PU
+        # r_rel_mean_PU = sum(radii_relative_PU) / len(radii_relative_PU)
+        # rq_rel_mean_PU = sum(radii_q_relative_PU) / len(radii_q_relative_PU)
+        #
+        # r_rel_mean_PU_list.append(r_rel_mean_PU)
+        # rq_rel_mean_PU_list.append(rq_rel_mean_PU)
 
     # append max/min radii
-    r_rel_max_list.append(r_max/radius_LU)
-    r_rel_min_list.append(r_min/radius_LU)
+    r_rel_max_list.append(r_max/(radius_LU-0.5))
+    r_rel_min_list.append(r_min/(radius_LU-0.5))
+
+    ### AREA calculation
+    area_theory = np.pi*(gridpoints_per_diameter/2)**2  # area = pi*r² in LU²
+    area = len(a)  # area in LU = number of nodes, because every node has a cell of 1LU x 1LU around it
+
+    area_rel_list.append(area/area_theory)
 
     from collections import Counter
     print("GPD: ", gridpoints_per_diameter)
     print("radii: ", Counter(radii))
-    print("radii_q: ", Counter(radii))
+    print("radii_q: ", Counter(radii_q))
+    output_file.write("\nGPD: " + str(gridpoints_per_diameter))
+    output_file.write("\nGPD: " + str(Counter(radii)))
+    output_file.write("\nGPD: " + str(Counter(radii_q))+"\n\n")
 
-    if False:  # toggle mask output to .png
+    if True:  # toggle mask output to .png
         ### PLOT rand_mask
         plt.figure()
         plt.imshow(rand_mask)
-        plt.xticks(np.arange(gridpoints_per_diameter + 2), minor=True)
-        plt.yticks(np.arange(gridpoints_per_diameter + 2), minor=True)
+        #plt.xticks(np.arange(gridpoints_per_diameter + 2), minor=True)
+        #plt.yticks(np.arange(gridpoints_per_diameter + 2), minor=True)
         plt.xticks([])
         plt.yticks([])
         plt.title("GPD = "+str(gridpoints_per_diameter))
-        plt.savefig("/home/max/Desktop/plots/roundness/other_masks/maskGPD" + str(gridpoints_per_diameter) + ".png")
-        plt.show()
+        plt.savefig(dir_name + "/masks/randMask_GPD" + str(gridpoints_per_diameter) + ".png")
+        if show:
+            plt.show()
+        plt.close()
 
-if True:  # toggle HISTOGRAMM of radii
+if len(gpds) <= 10:  # toggle HISTOGRAMM of radii
     ### HISTOGRAM for radii
     n, bins, patches = plt.hist(x=r_rel_list,  bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
@@ -192,12 +221,16 @@ if True:  # toggle HISTOGRAMM of radii
     # plt.text(23, 45, r'$\mu=15, b=3$')
     plt.legend([str(x) + " GPD" for x in gpds])
     plt.ylim([0, 1])
-    plt.xticks(bins, minor=True)
-    plt.xticks([0.85, 0.9, 0.95, 1.0])
-    plt.savefig("/home/max/Desktop/plots/roundness/Histogram.png")
-    plt.show()
+    #plt.xticks(bins, minor=True)
+    #plt.xticks([0.85, 0.9, 0.95, 1.0])
+    plt.savefig(dir_name+"/Histogram.png")
+    if show:
+        plt.show()
+else:
+    print("too many gpd for histogram")
+    output_file.write("\nWARNING: too many GPD for histogram!\n")
 
-if True:  # toggle HISTOGRAMM of radii with q-multiplicity (links taken into account)
+if len(gpds) <= 10:  # toggle HISTOGRAMM of radii with q-multiplicity (links taken into account)
     ### HISTOGRAM for radii_q
     n, bins, patches = plt.hist(x=rq_rel_list, bins=list(np.linspace(0.86,1.0,int(0.15/0.01))),#bins='auto',
                                 #color='#0504aa',
@@ -213,13 +246,18 @@ if True:  # toggle HISTOGRAMM of radii with q-multiplicity (links taken into acc
     #plt.text(23, 45, r'$\mu=15, b=3$')
     plt.legend([str(x)+" GPD" for x in gpds])
     plt.ylim([0, 1])
-    plt.xticks(bins, minor=True)
-    plt.xticks([0.85,0.9,0.95,1.0])
-    plt.savefig("/home/max/Desktop/plots/roundness/Histogram_q.png")
-    plt.show()
+    #plt.xticks(bins, minor=True)
+    plt.xticks([0.85, 0.9, 0.95, 1.0])
+    plt.savefig(dir_name + "/Histogram_q.png")
+    if show:
+        plt.show()
+else:
+    print("too many gpd for histogram")
+    output_file.write("\nWARNING: too many GPD for histogram_q!\n")
 
 
-if False:  # toggle plot for mean, max, min radius over all GPD
+
+if True:  # toggle plot for mean, max, min radius over all GPD
     ### PLOT mean radius over GPD
     plt.figure()
     lines = plt.plot(gpds, r_rel_mean_list,
@@ -235,12 +273,36 @@ if False:  # toggle plot for mean, max, min radius over all GPD
                 #"q PU",
                 "$r_{max}$",
                 "$r_{min}$"])
-    plt.title("Mittlerer, maximaler und minimaler relativer Radius in Abhängigkeit des Durchmessers in Gitterpunkten (GPD) für DpY = "+str(domain_width_in_D), wrap=True)
+    plt.title("Mittlerer, maximaler und minimaler relativer Radius in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
     plt.grid(visible=True)
-    plt.ylim([0.6,1.01])
-    plt.xlim([0,101])
+    plt.ylim([0.6, 1.01*max(r_rel_max_list)])
+    plt.xlim([0, max(gpds)+1])
+    plt.xticks(np.linspace(0, int(max(gpds)/10)*10, int((max(gpds))/10)+1))
     plt.xlabel("GPD")
-    plt.savefig("/home/max/Desktop/plots/roundness/mittlererRadius")
-    plt.show()
+    plt.savefig(dir_name + "/mittlererRadius.png")
+    if show:
+        plt.show()
 
+if True:  # toggle plot for relative area over all GPD
+    plt.figure()
+    lines = plt.plot(gpds, area_rel_list)
+    plt.setp(lines, ls="--", lw=1, marker=".")
+    # plt.legend([r"relative Flaeche im Verhaeltnis zur theoretischen Flaeche r²\pi",
+    #             #"PU",
+    #             r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
+    #             #"q PU",
+    #             "$r_{max}$",
+    #             "$r_{min}$"])
+    plt.title(r"relative praktische Kreisflaeche (Knotenzahl/($\pi$(gpd/2)²), in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
+    plt.grid(visible=True)
+    #plt.ylim([0.6, 1.01])
+    plt.xlim([0, max(gpds) + 1])
+    plt.xticks(np.linspace(0, int(max(gpds) / 10) * 10, int((max(gpds)) / 10) + 1))
+    plt.xlabel("GPD")
+    plt.ylabel("relative Flaeche")
+    plt.savefig(dir_name + "/relativeFleache.png")
+    if show:
+        plt.show()
+
+output_file.close()
 pass

@@ -14,7 +14,7 @@ import gc
 from collections import Counter
 
 __all__ = [
-    "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter"
+    "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter", "VRAMreporter"
 ]
 
 
@@ -196,7 +196,7 @@ class VRAMreporter:
             output_file.close()
 
             ### count occurence of tensors in list of tensors:
-            my_file = open(oself.filename_base + "_temp_GPU_list_of_tensors.txt", "r")
+            my_file = open(self.filename_base + "_temp_GPU_list_of_tensors.txt", "r")
             data = my_file.read()
             my_file.close()
             data_into_list = data.split("\n")
