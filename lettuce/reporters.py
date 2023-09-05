@@ -14,7 +14,8 @@ import gc
 from collections import Counter
 
 __all__ = [
-    "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter", "VRAMreporter"
+    "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter",
+    "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter"
 ]
 
 
@@ -209,3 +210,62 @@ class VRAMreporter:
 
             if os.path.exists(self.filename_base + "_temp_GPU_list_of_tensors.txt"):
                 os.remove(self.filename_base + "_temp_GPU_list_of_tensors.txt")
+
+
+class Clock:
+    """reports t_LU (step) and t_PU"""
+    def __init__(self, lattice, interval=1, start=1):
+        self.lattice = lattice
+        self.interval = interval
+        self.start = start
+        self.out = []
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0 and i >= self.start:
+            self.out.append([i, t])
+
+
+class NaNReporter:
+    """reports any NaN and aborts the simulation"""
+    def __call__(self, i, t, f):
+        if torch.isnan(f).any() == True:
+            print("NaN detected in time step ", i)
+            print("Abort simulation")
+            sys.exit()
+
+
+class AverageVelocityReporter:
+    """Reports the streamwise velocity averaged in span direction (z) at defined position in x.
+        Refer to Di Ilio et al. 2018 for further references
+        out = averaged u profile at position
+        t_out = t_LU and t_PU
+        """
+    def __init__(self, lattice, flow, position, interval=1, start=1):
+        self.lattice = lattice
+        self.flow = flow
+        self.interval = interval
+        self.start = start  # step to start with reporting
+        self.t_out = []
+        self.out = []
+        self.x_position = int(round(position, 0))  # rounded LU position
+
+        # linear interpolation of u for x_pos off grid
+        if position % 1 != 0:
+            self.interpol = True
+            self.x_pos1 = int(np.floor(position))
+            self.x_pos2 = int(np.ceil(position))
+            self.w1 = position - self.x_pos1
+            self.w2 = 1 - self.w1
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0 and i >= self.start:
+            if self.interpol:
+                u = self.lattice.u(f)[:, self.x_pos1] * self.w1 + self.lattice.u(f)[:, self.x_pos2] * self.w2
+            else:
+                u = self.lattice.u(f)[:, self.x_position]
+            u = self.flow.units.convert_velocity_to_pu(u).cpu().numpy()
+            self.t_out.append([i, t])
+            if self.lattice.D == 2:
+                self.out.append(u)
+            elif self.lattice.D == 3:
+                self.out.append(np.mean(u, axis=2))
