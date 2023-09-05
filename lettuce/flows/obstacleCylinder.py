@@ -155,15 +155,19 @@ class ObstacleCylinder:
             if u.max() < 0.5 * self.units.characteristic_velocity_lu:
                 # add perturbation for small velocities
                 #OLD 2D: u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
-                amplitude = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                amplitude_y = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
                 if self.units.lattice.D == 2:
-                    u[0][1] += amplitude
+                    u[0][1] += amplitude_y
                 elif self.units.lattice.D == 3:
-                    nz = x[2].shape[1]
-                    plane_yz = np.ones_like(u[0, 1, :, :])
-                    u[0][1] = np.einsum('y,yz->yz', amplitude, plane_yz)
-                    factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
-                    u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
+                    nz = x[2].shape[2]
+                    plane_yz = np.ones_like(u[0, 1])  # plane of ones
+                    u[0][1] = np.einsum('y,yz->yz', amplitude_y, plane_yz)  # plane of amplitude in y
+                    amplitude_z = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0  # amplitude in z
+                   # print("amplitude y:", amplitude_y.shape)
+                   # print("u[0][1]:", u[0][1].shape)
+                   # print("amplitude z:", amplitude_z.shape)
+                    # factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
+                    u[0][1] += np.einsum('z,yz->yz', amplitude_z, plane_yz)
             else:
                 # multiply scaled down perturbation if velocity field is already near u_char
                 #OLD 2D: u[0][1] *= 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
