@@ -227,11 +227,27 @@ class Clock:
 
 class NaNReporter:
     """reports any NaN and aborts the simulation"""
+    def __init__(self, flow, lattice, n_target, t_target, interval=100, ):
+        self.flow = flow
+        self.lattice = lattice
+        self.interval = interval
+        self.n_target = n_target
+        self.t_target = t_target
+
     def __call__(self, i, t, f):
-        if torch.isnan(f).any() == True:
-            print("NaN detected in time step ", i)
-            print("Abort simulation")
-            sys.exit()
+        if i % self.interval == 0:
+            if torch.isnan(f).any() == True:
+                if self.lattice.D == 2:
+                    q, x, y = self.lattice.convert_to_numpy(torch.where(torch.isnan(f)))
+                    nan_location = np.stack((q, x, y), axis=-1)
+                    print("(!) NaN detected at (q,x,y):", nan_location)
+                if self.lattice.D == 3:
+                    q, x, y, z = self.lattice.convert_to_numpy(torch.where(torch.isnan(f)))
+                    nan_location = np.stack((q, x, y, z), axis=-1)
+                    print("(!) NaN detected at (q,x,y,z):", nan_location)
+                print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
+                print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.t_target)
+                sys.exit()
 
 
 class AverageVelocityReporter:
