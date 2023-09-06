@@ -238,11 +238,18 @@ class NaNReporter:
         if i % self.interval == 0:
             if torch.isnan(f).any() == True:
                 if self.lattice.D == 2:
-                    q, x, y = self.lattice.convert_to_numpy(torch.where(torch.isnan(f)))
+                    q, x, y = torch.where(torch.isnan(f))
+                    q = self.lattice.convert_to_numpy(q)
+                    x = self.lattice.convert_to_numpy(x)
+                    y = self.lattice.convert_to_numpy(y)
                     nan_location = np.stack((q, x, y), axis=-1)
                     print("(!) NaN detected at (q,x,y):", nan_location)
                 if self.lattice.D == 3:
-                    q, x, y, z = self.lattice.convert_to_numpy(torch.where(torch.isnan(f)))
+                    q, x, y, z = torch.where(torch.isnan(f))
+                    q = self.lattice.convert_to_numpy(q)
+                    x = self.lattice.convert_to_numpy(x)
+                    y = self.lattice.convert_to_numpy(y)
+                    z = self.lattice.convert_to_numpy(z)
                     nan_location = np.stack((q, x, y, z), axis=-1)
                     print("(!) NaN detected at (q,x,y,z):", nan_location)
                 print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
