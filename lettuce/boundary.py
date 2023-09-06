@@ -109,13 +109,14 @@ class InterpolatedBounceBackBoundary:
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d2
                             else:
-                                print("IBB WARNING: d1 is", d1,"; d2 is", d2, "for boundaryPoint x,y,ci", a[p],a[p],self.lattice.stencil.e[i, 0],self.lattice.stencil.e[i, 1])
+                                print("IBB WARNING: d1 is", d1,"; d2 is", d2, "for boundaryPoint x,y,ci", a[p],b[p],self.lattice.stencil.e[i, 0],self.lattice.stencil.e[i, 1])
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
             nx, ny, nz = mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, nz), dtype=bool)
             #            self.force = np.zeros((nx, ny, nz, 3))
+            self.d = np.zeros_like(self.f_mask, dtype=float)  # d: [q,x,y] store the link-length per boundary-cutting link
             a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, self.lattice.Q):
@@ -167,11 +168,15 @@ class InterpolatedBounceBackBoundary:
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d1
+                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                       c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz] = d1
                             elif d2 <= 1 and np.isreal(d2):
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny] = d2
+                                       b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                       c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz] = d2
+                            else:
+                                print("IBB WARNING: d1 is", d1,"; d2 is", d2, "for boundaryPoint x,y,ci", a[p],b[p],c[p],self.lattice.stencil.e[i, 0],self.lattice.stencil.e[i, 1],self.lattice.stencil.e[i, 2])
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
