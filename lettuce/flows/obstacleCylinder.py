@@ -33,7 +33,13 @@ class ObstacleCylinder:
         # shape of the domain (2D or 3D):
         if len(shape) != lattice.D:
             raise ValueError(f"{lattice.D}-dimensional lattice requires {lattice.D}-dimensional `shape`")
-        self.shape = shape
+        if len(shape) == 2:
+            self.shape = (int(shape[0]), int(shape[1]))
+        elif len(shape) == 3:
+            self.shape = (int(shape[0]), int(shape[1]), int(shape[2]))
+        else:
+            print("WARNING: shape is not 2- or 3-dimensional...(!)")
+        #self.shape = shape
 
         self.char_length_pu = char_length_pu  # characteristic length
 
