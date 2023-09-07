@@ -130,13 +130,13 @@ class ObstacleCylinder:
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
-        u_max_lu = self.units.characteristic_velocity_lu * self._unit_vector()
-        u_max_lu = append_axes(u_max_lu, self.units.lattice.D)
+        u_max_pu = self.units.characteristic_velocity_pu * self._unit_vector()
+        u_max_pu = append_axes(u_max_pu, self.units.lattice.D)
         self.solid_mask[np.where(self.obstacle_mask)] = 1  # This line is needed, because the obstacle_mask.setter does not define the solid_mask properly (see above)
         ### initial velocity field: "u_init"-parameter
         # 0: uniform u=0
         # 1: uniform u=1 or parabolic (depends on lateral_walls -> bounceback => parabolic; slip, periodic => uniform)
-        u = (1 - self.solid_mask) * u_max_lu
+        u = (1 - self.solid_mask) * u_max_pu
         if self.u_init == 0:
             u = u * 0  # uniform u=0
         else:
@@ -152,23 +152,23 @@ class ObstacleCylinder:
                     u = np.einsum('k,ijkl->ijkl', ux_factor, u)
             else:  # lateral_walls == periodic or slip
                 # initiale velocity u_PU=1 on every fluid node
-                u = (1 - self.solid_mask) * u_max_lu
+                u = (1 - self.solid_mask) * u_max_pu
 
         ### perturb initial velocity field-symmetry (in y and z) to trigger 'von Karman' vortex street
         if self.perturb_init:  # perturb initial solution in y
             # overlays a sine-wave on the second column of nodes x_lu=1 (index 1)
             ny = x[1].shape[1]
-            if u.max() < 0.5 * self.units.characteristic_velocity_lu:
+            if u.max() < 0.5 * self.units.characteristic_velocity_pu:
                 # add perturbation for small velocities
-                #OLD 2D: u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
-                amplitude_y = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0
+                #OLD 2D: u[0][1] += np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_pu * 1.0
+                amplitude_y = np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * self.units.characteristic_velocity_pu * 0.1
                 if self.units.lattice.D == 2:
                     u[0][1] += amplitude_y
                 elif self.units.lattice.D == 3:
                     nz = x[2].shape[2]
                     plane_yz = np.ones_like(u[0, 1])  # plane of ones
                     u[0][1] = np.einsum('y,yz->yz', amplitude_y, plane_yz)  # plane of amplitude in y
-                    amplitude_z = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_lu * 1.0  # amplitude in z
+                    amplitude_z = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_pu * 0.1  # amplitude in z
                    # print("amplitude y:", amplitude_y.shape)
                    # print("u[0][1]:", u[0][1].shape)
                    # print("amplitude z:", amplitude_z.shape)
@@ -177,14 +177,14 @@ class ObstacleCylinder:
             else:
                 # multiply scaled down perturbation if velocity field is already near u_char
                 #OLD 2D: u[0][1] *= 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
-                factor = 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.3
+                factor = 1 + np.sin(np.linspace(0, ny, ny) / ny * 2 * np.pi) * 0.1
                 if self.units.lattice.D == 2:
                     u[0][1] *= factor
                 elif self.units.lattice.D == 3:
                     nz = x[2].shape[1]
                     plane_yz = np.ones_like(u[0, 1, :, :])
                     u[0][1] = np.einsum('y,yz->yz', factor, u[0][1])
-                    factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
+                    factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.1  # pertubation in z-direction
                     u[0][1] = np.einsum('z,yz->yz', factor, u[0][1])
         return p, u
 
