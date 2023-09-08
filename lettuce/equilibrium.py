@@ -33,7 +33,6 @@ class QuadraticEquilibrium_LessMemory(QuadraticEquilibrium):
     """
 
     def __call__(self, rho, u, *args):
-        print("calculating QEQ_LM")
         return self.lattice.einsum(
             "q,q->q",
             [self.lattice.w,

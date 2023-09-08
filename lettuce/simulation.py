@@ -132,7 +132,10 @@ class Simulation:
         end = timer()
 
         # calculate individual runtimes (M.Bille)
-        self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]), time_streaming=sum(self.times[1])/len(self.times[1]), time_boundary=sum(self.times[2])/len(self.times[2]), time_reporter=sum(self.times[3])/len(self.times[3]))
+        if num_steps > 0:
+            self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]), time_streaming=sum(self.times[1])/len(self.times[1]), time_boundary=sum(self.times[2])/len(self.times[2]), time_reporter=sum(self.times[3])/len(self.times[3]))
+        else:
+            self.time_avg = dict(time_collision=0, time_streaming=0, time_boundary=0, time_reporter=0)
 
         # calculate runtime and performance in MLUPS
         seconds = end - start
