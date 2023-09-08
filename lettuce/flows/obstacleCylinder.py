@@ -81,6 +81,7 @@ class ObstacleCylinder:
 
         condition = np.sqrt((x_lu - self.x_pos) ** 2 + (y_lu - self.y_pos) ** 2) < self.radius
         self.obstacle_mask[np.where(condition)] = 1
+        self.solid_mask[np.where(condition)] = 1
 
         # indexing doesn't need z-Index for 3D, everything is broadcasted along z!
         if self.lateral_walls == 'bounceback' or self.lateral_walls == 'slip':  # if top and bottom are link-based BC
@@ -132,7 +133,7 @@ class ObstacleCylinder:
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u_max_pu = self.units.characteristic_velocity_pu * self._unit_vector()
         u_max_pu = append_axes(u_max_pu, self.units.lattice.D)
-        self.solid_mask[np.where(self.obstacle_mask)] = 1  # This line is needed, because the obstacle_mask.setter does not define the solid_mask properly (see above)
+        self.solid_mask[np.where(self.obstacle_mask)] = 1  # This line is needed, because the obstacle_mask.setter does not define the solid_mask properly (see above) #OLD
         ### initial velocity field: "u_init"-parameter
         # 0: uniform u=0
         # 1: uniform u=1 or parabolic (depends on lateral_walls -> bounceback => parabolic; slip, periodic => uniform)
