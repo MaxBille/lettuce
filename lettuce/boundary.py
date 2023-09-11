@@ -45,7 +45,7 @@ class InterpolatedBounceBackBoundary:
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
         t_init_start = time.time()
         self.interpolation_order = interpolation_order
-        self.mask = lattice.convert_to_tensor(mask)  # location of solid-nodes
+        self.mask = mask  # location of solid-nodes
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
             self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
@@ -205,7 +205,7 @@ class InterpolatedBounceBackBoundary:
         assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
         # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
         # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
-        return self.mask
+        return self.lattice.convert_to_tensor(self.mask)
 
     def make_no_collision_mask(self, f_shape):
         # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
@@ -214,7 +214,7 @@ class InterpolatedBounceBackBoundary:
         # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
         # ...in the whole domain (including the boundary region)!
         assert self.mask.shape == f_shape[1:]
-        return self.mask
+        return self.lattice.convert_to_tensor(self.mask)
 
     def calc_force_on_boundary(self, f_bounced, f_collided):
         # momentum exchange according to Bouzidi et al. (2001), equation 11.8 in Kruger et al. (2017) p.445 // watch out for wrong signs. Kruger states "-", but "+" gives correct result
@@ -399,7 +399,7 @@ class HalfwayBounceBackBoundary:
 
     # ToDo: self.mask und mask braucht man nicht beide, weil eigentlich f_mask genutzt wird!
     def __init__(self, mask, lattice):
-        self.mask = lattice.convert_to_tensor(mask)
+        self.mask = mask
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
         ### create f_mask, needed for force-calculation
@@ -490,7 +490,7 @@ class HalfwayBounceBackBoundary:
         assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
             # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
             # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
-        return self.mask
+        return self.lattice.convert_to_tensor(self.mask)
 
     def make_no_collision_mask(self, f_shape):
         # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
@@ -499,7 +499,7 @@ class HalfwayBounceBackBoundary:
         # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
         # ...in the whole domain (including the boundary region)!
         assert self.mask.shape == f_shape[1:]
-        return self.mask
+        return self.lattice.convert_to_tensor(self.mask)
 
     def calc_force_on_boundary(self, f):
         # calculate force on boundary by momentum exchange method (MEA, MEM) according to Kruger et al., 2017, pp.215-217:
