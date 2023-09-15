@@ -53,7 +53,7 @@ plt.setp(mylines, ls="--", lw=1.2, marker=".", markersize=8,color="tab:red", lab
 
 plt.xlabel("Re")
 plt.ylabel("$C_{D}$")
-plt.xlim([0,400])
+plt.xlim([0,4500])
 plt.ylim([0.5,3])
 plt.grid()
 #plt.xticks(np.arange(1990, 2010+5, 5.0))
@@ -61,6 +61,6 @@ plt.grid()
 plt.legend()
 #plt.title("Widerstandsbeiwert $C_{D}$ für verschiedene Reynoldszahlen, \nVergleich mit Literatur", wrap=True)
 
-plt.savefig(folder+"/plots/Cd_compare_extended.png")
+plt.savefig(folder+"/plots/Cd_compare_extended2.png")
 plt.show()
 
