@@ -77,7 +77,7 @@ class ObstacleCylinder:
         elif self.units.lattice.D == 3:
             x_lu, y_lu, z_lu = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- and z-index
         else:
-            print("WARNING: something went wrong in LU-gird-index generation!")
+            print("WARNING: something went wrong in LU-gird-index generation, lattice.D must be 2 or 3!")
 
         condition = np.sqrt((x_lu - self.x_pos) ** 2 + (y_lu - self.y_pos) ** 2) < self.radius
         self.obstacle_mask[np.where(condition)] = 1

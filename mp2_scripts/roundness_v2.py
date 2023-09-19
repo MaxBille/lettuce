@@ -38,7 +38,9 @@ show = False
 # List of Diameters (in GPD) to measure:
 gpds = [9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100] #(np.arange(150)+5)
 gpds = [2,5,10,11,12,20,21,22,52,53, 60,70,80,90,100, 150]
-#gpds = np.arange(0,150)+5
+#gpds = [20,21,22]
+#gpds = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100,150,151,152,153,154,155,160]
+gpds = np.arange(0,60)+100
 
 # lists for plotting
 r_rel_list = []
@@ -243,6 +245,8 @@ if len(gpds) <= 10:  # toggle HISTOGRAMM of radii
     plt.savefig(dir_name+"/Histogram.png")
     if show:
         plt.show()
+    else:
+        plt.close()
 else:
     print("too many gpd for histogram")
     output_file.write("\nWARNING: too many GPD for histogram!\n")
@@ -268,6 +272,8 @@ if len(gpds) <= 10:  # toggle HISTOGRAMM of radii with q-multiplicity (links tak
     plt.savefig(dir_name + "/Histogram_q.png")
     if show:
         plt.show()
+    else:
+        plt.close()
 else:
     print("too many gpd for histogram")
     output_file.write("\nWARNING: too many GPD for histogram_q!\n")
@@ -299,6 +305,8 @@ if True:  # toggle plot for mean, max, min radius over all GPD
     plt.savefig(dir_name + "/mittlererRadius.png")
     if show:
         plt.show()
+    else:
+        plt.close()
 
 if True:  # toggle plot for relative area over all GPD
     plt.figure()
@@ -320,6 +328,8 @@ if True:  # toggle plot for relative area over all GPD
     plt.savefig(dir_name + "/relativeFleache.png")
     if show:
         plt.show()
+    else:
+        plt.close()
 
 output_file.close()
 pass
