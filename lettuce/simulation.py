@@ -83,7 +83,8 @@ class Simulation:
         for boundary in self._boundaries:
             if isinstance(boundary, HalfwayBounceBackBoundary) or isinstance(boundary, InterpolatedBounceBackBoundary):
                 self.store_f_collided = True  # mark if a boundary is present which needs f_collided to be stored
-                self.f_collided = deepcopy(self.f)
+        if self.store_f_collided:
+            self.f_collided = deepcopy(self.f)
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
