@@ -26,7 +26,9 @@ import time
 from lettuce import (LettuceException)
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
-           "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary", "InterpolatedBounceBackBoundary"]
+           "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary",
+           "InterpolatedBounceBackBoundary"]
+
 
 class InterpolatedBounceBackBoundary:
     """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.
@@ -52,7 +54,7 @@ class InterpolatedBounceBackBoundary:
         ### create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary) and considered for momentum exchange)
         if self.lattice.D == 2:
-            nx, ny = mask.shape  # domain size in x and y
+            nx, ny = self.mask.shape  # domain size in x and y
             self.f_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
             # f_mask: [q, nx, ny], marks all fs which point from fluid to solid (boundary)
             #            self.force = np.zeros((nx, ny, 2))  # force in x and y on all individual nodes
@@ -74,8 +76,8 @@ class InterpolatedBounceBackBoundary:
                     elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1:  # searching border on right
                         border[1] = 1
                     try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]:
+                        if not self.mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]:
                             # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
                             # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
                             self.f_mask[self.lattice.stencil.opposite[i],
@@ -113,7 +115,7 @@ class InterpolatedBounceBackBoundary:
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
-            nx, ny, nz = mask.shape
+            nx, ny, nz = self.mask.shape
             self.f_mask = np.zeros((self.lattice.Q, nx, ny, nz), dtype=bool)
             #            self.force = np.zeros((nx, ny, nz, 3))
             self.d = np.zeros_like(self.f_mask, dtype=float)  # d: [q,x,y] store the link-length per boundary-cutting link
@@ -134,9 +136,9 @@ class InterpolatedBounceBackBoundary:
                     elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1:  # searching border on right
                         border[2] = 1
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
-                                    c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
+                        if not self.mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                         c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
                             self.f_mask[self.lattice.stencil.opposite[i],
                                         a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
@@ -181,13 +183,13 @@ class InterpolatedBounceBackBoundary:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
         self.d = self.lattice.convert_to_tensor(self.d)
-        print("IBB initialization took "+str(time.time()-t_init_start)+"seconds")
+        print("IBB initialization took " + str(time.time() - t_init_start) + "seconds")
 
     def __call__(self, f, f_collided):
 
         if self.interpolation_order == 2:
             print("warning: not implemented")
-        else:  #interpolation_order==1:
+        else:  # interpolation_order==1:
             # f_tmp = f_collided[i,x_b]_interpolation before bounce
             f_tmp = torch.where(self.d <= 0.5,  # if d<=1/2
                                 2*self.d*f_collided+(1-2*self.d)*f,  # interpolate from second fluid node
@@ -266,6 +268,7 @@ class BounceBackBoundary:
         assert self.mask.shape == f_shape[1:]
         return self.mask
 
+
 class FullwayBounceBackBoundary:
     """Fullway Bounce-Back Boundary (with added force_on_boundary calculation)
     - fullway = inverts populations within two substeps
@@ -273,6 +276,7 @@ class FullwayBounceBackBoundary:
     - calculates the force on the boundary:
         - calculation is done after streaming, but theoretically the force is evaluated based on the populations touching/crossing the boundary IN this streaming step
     """
+
     # based on Master-Branch "class BounceBackBoundary"
     # added option to calculate force on the boundary by Momentum Exchange Method
 
@@ -322,7 +326,7 @@ class FullwayBounceBackBoundary:
                     border = np.zeros(self.lattice.D, dtype=int)
                     if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1:  # searching border on left
                         border[0] = -1
-                    elif a[p] == nx-1 and self.lattice.e[i, 0] == 1:  # searching border on right
+                    elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1:  # searching border on right
                         border[0] = 1
                     if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1:  # searching border on left
                         border[1] = -1
@@ -330,16 +334,16 @@ class FullwayBounceBackBoundary:
                         border[1] = 1
                     if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1:  # searching border on left
                         border[2] = -1
-                    elif c[p] == nz-1 and self.lattice.e[i, 2] == 1:  # searching border on right
+                    elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1:  # searching border on right
                         border[2] = 1
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        #if not mask[a[p] + self.lattice.stencil.e[i, 0]*single_layer[p, 0] - border_direction[p, 0]*nx,
+                        # if not mask[a[p] + self.lattice.stencil.e[i, 0]*single_layer[p, 0] - border_direction[p, 0]*nx,
                         #            b[p] + self.lattice.stencil.e[i, 1]*single_layer[p, 1] - border_direction[p, 1]*ny,
                         #            c[p] + self.lattice.stencil.e[i, 2]*single_layer[p, 2] - border_direction[p, 2]*nz]:
                         if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                     b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
                                     c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
-                            #OLD: self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
+                            # OLD: self.f_mask[self.lattice.stencil.opposite[i], a[p] + self.lattice.stencil.e[i, 0], b[p] + self.lattice.stencil.e[i, 1], c[p] + self.lattice.stencil.e[i, 2]] = 1
                             self.f_mask[self.lattice.stencil.opposite[i], a[p], b[p], c[p]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
@@ -388,6 +392,7 @@ class FullwayBounceBackBoundary:
         #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
         # if self.lattice.D == 3:
         #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
+
 
 class HalfwayBounceBackBoundary:
     """Halfway Bounce Back Boundary (with added force_on_boundary calculation)
@@ -553,6 +558,7 @@ class EquilibriumBoundaryPU:
         feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
         f = torch.where(self.mask, feq, f)
         return f
+
 
 class AntiBounceBackOutlet:
     """Allows distributions to leave domain unobstructed through this boundary.
