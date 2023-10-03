@@ -27,3 +27,5 @@ from lettuce.observables import *
 from lettuce.datautils import *
 
 from lettuce.flows import *
+
+from lettuce.max import *
