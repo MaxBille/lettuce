@@ -196,11 +196,13 @@ class DragCoefficient(Observable):
         super().__init__(lattice, flow)
         self.obstacle_boundary = obstacle_boundary
         self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle in LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
+        self.nan = self.lattice.convert_to_tensor(torch.nan)
+        self.solid_mask = self.lattice.convert_to_tensor(self.flow.solid_mask)
 
     def __call__(self, f):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
         # rho_mean (excluding boundary region):
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
+        rho_tmp = torch.where(self.solid_mask, self.nan, self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
         force_x_lu = self.obstacle_boundary.force_sum[0]  # get current force on obstacle in x direction
         drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
@@ -243,11 +245,13 @@ class LiftCoefficient(Observable):
         self.obstacle_boundary = obstacle_boundary
         self.area_lu = area * (self.flow.units.characteristic_length_lu / self.flow.units.characteristic_length_pu) ** (
                     self.lattice.D - 1)
+        self.nan = self.lattice.convert_to_tensor(torch.nan)
+        self.solid_mask = self.lattice.convert_to_tensor(self.flow.solid_mask)
 
     def __call__(self, f):
         #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
         # rho_mean (excluding boundary region):
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
+        rho_tmp = torch.where(self.solid_mask, self.nan, self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
         force_y_lu = self.obstacle_boundary.force_sum[1] # get current force on obstacle in y direction
         lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate lift_coefficient in LU
