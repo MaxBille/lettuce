@@ -1,7 +1,10 @@
 import numpy as np
 from lettuce.unit import UnitConversion
 from lettuce.util import append_axes
-from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, InterpolatedBounceBackBoundary, SlipBoundary
+from lettuce.boundary import EquilibriumBoundaryPU, \
+    BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, \
+    InterpolatedBounceBackBoundary, InterpolatedBounceBackBoundary_compact_v1, InterpolatedBounceBackBoundary_compact_v2, \
+    SlipBoundary
 
 
 class ObstacleCylinder:
@@ -229,6 +232,15 @@ class ObstacleCylinder:
             obstacle_boundary = InterpolatedBounceBackBoundary(self.obstacle_mask, self.units.lattice,
                                                                x_center=(self.shape[1] / 2 - 0.5),
                                                                y_center=(self.shape[1] / 2 - 0.5), radius=self.radius)
+        elif self.bc_type == 'ibb1c1':
+            obstacle_boundary = InterpolatedBounceBackBoundary_compact_v1(self.obstacle_mask, self.units.lattice,
+                                                               x_center=(self.shape[1] / 2 - 0.5),
+                                                               y_center=(self.shape[1] / 2 - 0.5), radius=self.radius)
+        elif self.bc_type == 'ibb1c2':
+            obstacle_boundary = InterpolatedBounceBackBoundary_compact_v2(self.obstacle_mask, self.units.lattice,
+                                                                          x_center=(self.shape[1] / 2 - 0.5),
+                                                                          y_center=(self.shape[1] / 2 - 0.5),
+                                                                          radius=self.radius)
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
 
