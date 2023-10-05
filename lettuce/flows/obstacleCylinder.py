@@ -4,7 +4,8 @@ from lettuce.util import append_axes
 from lettuce.boundary import EquilibriumBoundaryPU, \
     BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, \
     InterpolatedBounceBackBoundary, InterpolatedBounceBackBoundary_compact_v1, InterpolatedBounceBackBoundary_compact_v2, \
-    SlipBoundary
+    SlipBoundary, FullwayBounceBackBoundary_compact, HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, \
+    HalfwayBounceBackBoundary_compact_v3
 
 
 class ObstacleCylinder:
@@ -241,6 +242,14 @@ class ObstacleCylinder:
                                                                           x_center=(self.shape[1] / 2 - 0.5),
                                                                           y_center=(self.shape[1] / 2 - 0.5),
                                                                           radius=self.radius)
+        elif self.bc_type == 'fwbbc':
+            obstacle_boundary = FullwayBounceBackBoundary_compact(self.obstacle_mask, self.units.lattice)
+        elif self.bc_type == 'hwbbc1':
+            obstacle_boundary = HalfwayBounceBackBoundary_compact_v1(self.obstacle_mask, self.units.lattice)
+        elif self.bc_type == 'hwbbc2':
+            obstacle_boundary = HalfwayBounceBackBoundary_compact_v2(self.obstacle_mask, self.units.lattice)
+        elif self.bc_type == 'hwbbc3':
+            obstacle_boundary = HalfwayBounceBackBoundary_compact_v3(self.obstacle_mask, self.units.lattice)
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
 
