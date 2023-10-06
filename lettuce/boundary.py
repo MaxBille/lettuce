@@ -229,6 +229,7 @@ class InterpolatedBounceBackBoundary:
         tmp = torch.where(self.f_mask, f_collided + f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))  #RIGHT
         self.force_sum = torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v3.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
 
+
 class InterpolatedBounceBackBoundary_compact_v1:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
@@ -535,6 +536,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
                                                         self.f_index_gt[:, 3]],
                                             self.lattice.e[self.f_index_gt[:, 0]])
 
+
 class InterpolatedBounceBackBoundary_compact_v2:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
@@ -811,6 +813,7 @@ class InterpolatedBounceBackBoundary_compact_v2:
                                                 self.f_index_gt[:, 3]],
                                             self.lattice.e[self.f_index_gt[:, 0]])
 
+
 class SlipBoundary:
     """bounces back in a direction given as 0, 1, or 2 for x, y, or z, respectively
         based on fullway bounce back algorithm (population remains in the wall for 1 time step)
@@ -976,6 +979,7 @@ class FullwayBounceBackBoundary:
         #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
         # if self.lattice.D == 3:
         #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
+
 
 class FullwayBounceBackBoundary_compact:
 
@@ -1228,6 +1232,7 @@ class HalfwayBounceBackBoundary:
         # if self.lattice.D == 3:
         #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
 
+
 class HalfwayBounceBackBoundary_compact_v1:
 
     def __init__(self, mask, lattice):
@@ -1367,6 +1372,7 @@ class HalfwayBounceBackBoundary_compact_v1:
                                                                                      self.f_index[:, 2],
                                                                                      self.f_index[:, 3]],
                                               self.lattice.e[self.f_index[:, 0]])
+
 
 class HalfwayBounceBackBoundary_compact_v2:
 
@@ -1677,6 +1683,7 @@ class HalfwayBounceBackBoundary_compact_v3:
             #                                   self.lattice.e[self.f_index_solid[:, 0]])
 
         # HIER BRAUCHE ICH VIELLEICHT NOCH EIN MINUS VOR DER BERECHNUNG...
+
 
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
