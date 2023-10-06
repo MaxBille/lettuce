@@ -1577,16 +1577,16 @@ class HalfwayBounceBackBoundary_compact_v3:
             f[self.opposite_tensor[self.f_index[:, 0]],
               self.f_index[:, 1],
               self.f_index[:, 2]] = f[self.f_index[:, 0],
-                                      self.f_index[:, 1] + self.lattice.e[self.f_index[:, 0]],
-                                      self.f_index[:, 2] + self.lattice.e[self.f_index[:, 0]]]
+                                      self.f_index[:, 1] + self.lattice.e[self.f_index[:, 0], 0],
+                                      self.f_index[:, 2] + self.lattice.e[self.f_index[:, 0], 1]]
         if self.lattice.D == 3:
             f[self.opposite_tensor[self.f_index[:, 0]],
               self.f_index[:, 1],
               self.f_index[:, 2],
               self.f_index[:, 3]] = f[self.f_index[:, 0],
-                                      self.f_index[:, 1] + self.lattice.e[self.f_index[:, 0]],
-                                      self.f_index[:, 2] + self.lattice.e[self.f_index[:, 0]],
-                                      self.f_index[:, 3] + self.lattice.e[self.f_index[:, 0]]]
+                                      self.f_index[:, 1] + self.lattice.e[self.f_index[:, 0], 0],
+                                      self.f_index[:, 2] + self.lattice.e[self.f_index[:, 0], 1],
+                                      self.f_index[:, 3] + self.lattice.e[self.f_index[:, 0], 2]]
 
         # calc force on boundary:
         self.calc_force_on_boundary(f)
