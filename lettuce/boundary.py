@@ -1502,14 +1502,13 @@ class HalfwayBounceBackBoundary_compact_v3:
         ### create f_mask, needed for force-calculation
         # ...(marks all fs which point from fluid to solid (boundary))
 
-        self.f_index_fluid = []
-        self.f_index_solid = []
+        self.f_index_fluid = []  # marks population from boundary-neighboring fluid node, pointing inside the boundary
+        self.f_index_solid = []  # marks population from fluid-neighboring boundary node, pointing inside the boundary (stores f_collided for force calculation and bounce)
 
         if self.lattice.D == 2:
             nx, ny = mask.shape  # domain size in x and y
-
-            # f_mask: [q, nx, ny], marks all fs which point from fluid to solid (boundary)
-
+            self._no_stream_mask = np.zeros((self.lattice.Q, nx, ny), dtype=bool)
+            self._no_stream_mask = self._no_stream_mask | self.mask
             a, b = np.where(mask)
             # np.arrays: list of (a) x-coordinates and (b) y-coordinates in the boundary.mask
             # ...to enable iteration over all boundary/wall/object-nodes
@@ -1536,10 +1535,13 @@ class HalfwayBounceBackBoundary_compact_v3:
                                                  b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny])
                             self.f_index_solid.append([self.lattice.stencil.opposite[i], a[p], b[p]])
 
+                            self._no_stream_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = False  # allows storage of bounce-relevant populations
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
             nx, ny, nz = mask.shape
+            self._no_stream_mask = np.zeros((self.lattice.Q, nx, ny, nz), dtype=bool)
+            self._no_stream_mask = self._no_stream_mask | self.mask
             a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, self.lattice.Q):
@@ -1565,6 +1567,8 @@ class HalfwayBounceBackBoundary_compact_v3:
                                                  b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
                                                  c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz])
                             self.f_index_solid.append([self.lattice.stencil.opposite[i], a[p], b[p], c[p]])
+
+                            self._no_stream_mask[self.lattice.stencil.opposite[i], a[p], b[p], c[p]] = False  # allows storage of bounce-relevant populations
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         self.f_index_fluid = torch.tensor(np.array(self.f_index_fluid), device=self.lattice.device,
@@ -1574,6 +1578,7 @@ class HalfwayBounceBackBoundary_compact_v3:
         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
                                             dtype=torch.int64)  # batch-index has to be a tensor
         self.stencil_e_tensor_index = torch.tensor(self.lattice.e, device=self.lattice.device, dtype=torch.int64)
+
 
     def __call__(self, f):
         # bounce (invert populations on fluid nodes neighboring solid nodes)
@@ -1598,11 +1603,11 @@ class HalfwayBounceBackBoundary_compact_v3:
         self.calc_force_on_boundary(f)
         return f
 
-    # def make_no_stream_mask(self, f_shape):
-    #     assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
-    #     # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
-    #     # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
-    #     return self.lattice.convert_to_tensor(self.mask)
+    def make_no_stream_mask(self, f_shape):
+        assert self._no_stream_mask.shape == f_shape
+        # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+        # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
+        return self.lattice.convert_to_tensor(self._no_stream_mask)
 
     def make_no_collision_mask(self, f_shape):
         # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
@@ -1619,17 +1624,21 @@ class HalfwayBounceBackBoundary_compact_v3:
             #                                                      self.f_index_fluid[:, 1],
             #                                                      self.f_index_fluid[:, 2]],
             #                                   self.lattice.e[self.f_index_fluid[:, 0]])
-            self.force_sum = 2 * torch.einsum('i..., id -> d',
-                                              f[self.f_index_fluid[:, 0],
-                                                 self.f_index_fluid[:, 1] + self.stencil_e_tensor_index[self.f_index_fluid[:, 0], 0],
-                                                 self.f_index_fluid[:, 2] + self.stencil_e_tensor_index[self.f_index_fluid[:, 0], 1]],
-                                              self.lattice.e[self.f_index_fluid[:, 0]])
-        if self.lattice.D == 3:
-            # self.force_sum = 2 * torch.einsum('i..., id -> d', f[self.opposite_tensor[self.f_index_fluid[:, 0]],
-            #                                                      self.f_index_fluid[:, 1],
-            #                                                      self.f_index_fluid[:, 2],
-            #                                                      self.f_index_fluid[:, 3]],
+            # self.force_sum = 2 * torch.einsum('i..., id -> d',
+            #                                   f[self.f_index_fluid[:, 0],
+            #                                      self.f_index_fluid[:, 1] + self.stencil_e_tensor_index[self.f_index_fluid[:, 0], 0],
+            #                                      self.f_index_fluid[:, 2] + self.stencil_e_tensor_index[self.f_index_fluid[:, 0], 1]],
             #                                   self.lattice.e[self.f_index_fluid[:, 0]])
+            self.force_sum = 2 * torch.einsum('i..., id -> d', f[self.f_index_solid[:, 0],
+                                                                 self.f_index_solid[:, 1],
+                                                                 self.f_index_solid[:, 2]],
+                                              self.lattice.e[self.f_index_solid[:, 0]])
+        if self.lattice.D == 3:
+            self.force_sum = 2 * torch.einsum('i..., id -> d', f[self.f_index_solid[:, 0],
+                                                                 self.f_index_solid[:, 1],
+                                                                 self.f_index_solid[:, 2],
+                                                                 self.f_index_solid[:, 3]],
+                                              self.lattice.e[self.f_index_solid[:, 0]])
             # self.force_sum = 2 * torch.einsum('i..., id -> d', f_collided.to_dense()[self.f_index_fluid[:, 0],
             #                                                                          self.f_index_fluid[:, 1],
             #                                                                          self.f_index_fluid[:, 2],
@@ -1650,12 +1659,22 @@ class HalfwayBounceBackBoundary_compact_v3:
             # self.force_sum = 2 * torch.einsum('i..., id -> d',
             #                                   f_tmp,
             #                                   e_tmp)
-            self.force_sum = 2 * torch.einsum('i..., id -> d',
-                                              f[self.f_index_solid[:, 0],
-                                                self.f_index_solid[:, 1],
-                                                self.f_index_solid[:, 2],
-                                                self.f_index_solid[:, 3]],
-                                              self.lattice.e[self.f_index_solid[:, 0]])
+
+            # f_tmp = f[self.opposite_tensor[self.f_index_fluid[:, 0]],
+            #           self.f_index_fluid[:, 1],
+            #           self.f_index_fluid[:, 2],
+            #           self.f_index_fluid[:, 3]]
+            # e_tmp = self.lattice.e[self.f_index_fluid[:, 0]]
+            # print(f_tmp.size())
+            # print(e_tmp.size())
+            # self.force_sum = 2 * torch.einsum('i..., id -> d',f_tmp, e_tmp)
+
+            # self.force_sum = 2 * torch.einsum('i..., id -> d',
+            #                                   f[self.f_index_solid[:, 0],
+            #                                     self.f_index_solid[:, 1],
+            #                                     self.f_index_solid[:, 2],
+            #                                     self.f_index_solid[:, 3]],
+            #                                   self.lattice.e[self.f_index_solid[:, 0]])
 
         # HIER BRAUCHE ICH VIELLEICHT NOCH EIN MINUS VOR DER BERECHNUNG...
 
