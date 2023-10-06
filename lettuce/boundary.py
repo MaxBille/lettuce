@@ -518,17 +518,21 @@ class InterpolatedBounceBackBoundary_compact_v1:
         if self.lattice.D == 3:
             self.force_sum = torch.einsum('i..., id -> d', f_collided.to_dense()[self.f_index_lt[:, 0],
                                                                                  self.f_index_lt[:, 1],
-                                                                                 self.f_index_lt[:, 2]] \
+                                                                                 self.f_index_lt[:, 2],
+                                                                                 self.f_index_lt[:, 3]] \
                                           + f_bounced[self.opposite_tensor[self.f_index_lt[:, 0]],
                                                       self.f_index_lt[:, 1],
-                                                      self.f_index_lt[:, 2]],
+                                                      self.f_index_lt[:, 2],
+                                                      self.f_index_lt[:, 3]],
                                           self.lattice.e[self.f_index_lt[:, 0]]) \
                              + torch.einsum('i..., id -> d', f_collided.to_dense()[self.f_index_gt[:, 0],
                                                                                    self.f_index_gt[:, 1],
-                                                                                   self.f_index_gt[:, 2]] \
+                                                                                   self.f_index_gt[:, 2],
+                                                                                   self.f_index_gt[:, 3]] \
                                             + f_bounced[self.opposite_tensor[self.f_index_gt[:, 0]],
                                                         self.f_index_gt[:, 1],
-                                                        self.f_index_gt[:, 2]],
+                                                        self.f_index_gt[:, 2],
+                                                        self.f_index_gt[:, 3]],
                                             self.lattice.e[self.f_index_gt[:, 0]])
 
 class InterpolatedBounceBackBoundary_compact_v2:
