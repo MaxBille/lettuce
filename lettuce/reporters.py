@@ -51,11 +51,12 @@ def write_vtk(point_dict, id=0, filename_base="./data/output"):
 class VTKReporter:
     """General VTK Reporter for velocity and pressure"""
 
-    def __init__(self, lattice, flow, interval=50, filename_base="./data/output"):
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None):
         self.lattice = lattice
         self.flow = flow
         self.interval = interval
         self.filename_base = filename_base
+        self.solid_mask=solid_mask
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
             os.mkdir(directory)
@@ -73,8 +74,10 @@ class VTKReporter:
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ..., None])
             else:
                 self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+#               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
                 for d in range(self.lattice.D):
                     self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+#                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, u[d, ...]))
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
             write_vtk(self.point_dict, i, self.filename_base)
 
