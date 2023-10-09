@@ -36,7 +36,7 @@ class Simulation:
         self.i = 0  # index of the current timestep
 
         # M.Bille:
-        self.store_f_collided = "no"  # toggle if f is stored after collision and not overwritten through streaming,
+        self.store_f_collided = []  # toggle if f is stored after collision and not overwritten through streaming,
         # ...f_collided might be needed together with f_collided_and_streamed for boundary-conditions or calculation of
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
         self.times = [[], [], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
@@ -84,92 +84,13 @@ class Simulation:
             self.streaming.no_stream_mask = no_stream_mask
 
         # define f_collided (post-collision, pre-streaming f) storage format for hwbb, ibb1, ibb1c1 or ibb1c2, ...
-        for boundary in self._boundaries:
-            if isinstance(boundary, HalfwayBounceBackBoundary) or isinstance(boundary, InterpolatedBounceBackBoundary):
-                self.store_f_collided = "dense"  # mark if a boundary is present which needs f_collided to be stored in dense format
-            elif isinstance(boundary, InterpolatedBounceBackBoundary_compact_v1) or isinstance(boundary, HalfwayBounceBackBoundary_compact_v1):
-                self.store_f_collided = "sparse"
-            elif isinstance(boundary, HalfwayBounceBackBoundary_compact_v2):
-                self.store_f_collided = "compact"
-            elif isinstance(boundary, InterpolatedBounceBackBoundary_compact_v2):
-                self.store_f_collided = "compact_ibb"
-
-        if self.store_f_collided == "dense":
-            self.f_collided = torch.clone(self.f)
-        elif self.store_f_collided == "sparse":
-            fc_q, fc_x, fc_y, fc_z = torch.where(self._boundaries[-1].f_mask + self._boundaries[-1].f_mask[self.lattice.stencil.opposite])
-            self.fc_index = torch.stack((fc_q, fc_x, fc_y, fc_z))
-            self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
-                                                               values=self.f[self.fc_index[0], self.fc_index[1],
-                                                                             self.fc_index[2], self.fc_index[3]],
-                                                               size=self.f.size()))
-        elif self.store_f_collided == "compact":
-            f_collided = torch.zeros_like(self._boundaries[-1].f_index[:,0], dtype=self.lattice.dtype)
-            f_collided_opposite = torch.zeros_like(self._boundaries[-1].f_index[:,0], dtype=self.lattice.dtype)
-            if self.lattice.D == 2:
-                f_collided_lt = deepcopy(self.f[self._boundaries[-1].f_index[:, 0],  # q
-                                                self._boundaries[-1].f_index[:, 1],  # x
-                                                self._boundaries[-1].f_index[:, 2]])  # y
-                f_collided_lt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index[:,0]],  # q
-                                                         self._boundaries[-1].f_index[:, 1],  # x
-                                                         self._boundaries[-1].f_index[:, 2]])  # y
-            if self.lattice.D == 3:
-                f_collided_lt = deepcopy(self.f[self._boundaries[-1].f_index[:, 0],  # q
-                                                self._boundaries[-1].f_index[:, 1],  # x
-                                                self._boundaries[-1].f_index[:, 2],  # y
-                                                self._boundaries[-1].f_index[:, 3]])  # z
-                f_collided_lt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index[:,0]],  # q
-                                                         self._boundaries[-1].f_index[:, 1],  # x
-                                                         self._boundaries[-1].f_index[:, 2],  # y
-                                                         self._boundaries[-1].f_index[:, 3]])  # z
-            self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
-        elif self.store_f_collided == "compact_ibb":
-            f_collided_lt = torch.zeros_like(self._boundaries[-1].d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
-            f_collided_gt = torch.zeros_like(self._boundaries[-1].d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
-            f_collided_lt_opposite = torch.zeros_like(self._boundaries[-1].d_lt)
-            f_collided_gt_opposite = torch.zeros_like(self._boundaries[-1].d_gt)
-
-            if self.lattice.D == 2:
-                f_collided_lt = deepcopy(self.f[self._boundaries[-1].f_index_lt[:, 0],  # q
-                                                self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                self._boundaries[-1].f_index_lt[:, 2]])  # y
-                f_collided_lt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index_lt[:,0]],  # q
-                                                         self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                         self._boundaries[-1].f_index_lt[:, 2]])  # y
-
-                f_collided_gt = deepcopy(self.f[self._boundaries[-1].f_index_gt[:, 0],  # q
-                                                self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                self._boundaries[-1].f_index_gt[:, 2]])  # y
-                f_collided_gt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index_gt[:,0]],  # q
-                                                         self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                         self._boundaries[-1].f_index_gt[:, 2]])  # y
-            if self.lattice.D == 3:
-                f_collided_lt = deepcopy(self.f[self._boundaries[-1].f_index_lt[:, 0],  # q
-                                                self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                self._boundaries[-1].f_index_lt[:, 2],  # y
-                                                self._boundaries[-1].f_index_lt[:, 3]])  # z
-                f_collided_lt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index_lt[:,0]],  # q
-                                                         self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                         self._boundaries[-1].f_index_lt[:, 2],  # y
-                                                         self._boundaries[-1].f_index_lt[:, 3]])  # z
-
-                f_collided_gt = deepcopy(self.f[self._boundaries[-1].f_index_gt[:, 0],  # q
-                                                self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                self._boundaries[-1].f_index_gt[:, 2],  # y
-                                                self._boundaries[-1].f_index_gt[:, 3]])  # z
-                f_collided_gt_opposite = deepcopy(self.f[self._boundaries[-1].opposite_tensor[
-                                                             self._boundaries[-1].f_index_gt[:,0]],  # q
-                                                         self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                         self._boundaries[-1].f_index_gt[:, 2],  # y
-                                                         self._boundaries[-1].f_index_gt[:, 3]])  # z
-            # f_collided in compact storage-format (because torch.to_sparse() doesn't allow value-assignment and/or batch-indexing)
-            self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
-            self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
+        self.boundary_range = range(len(self._boundaries))
+        for boundary_index in self.boundary_range:
+            if hasattr(self._boundaries[boundary_index], "store_f_collided"):
+                self.store_f_collided.append(True)
+                self._boundaries[boundary_index].store_f_collided(self.f)
+            else:
+                self.store_f_collided.append(False)
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -182,94 +103,30 @@ class Simulation:
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
             time1 = timer()
+
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             # ...and store post-collision population for halfway-bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
 
             time2 = timer()
-            if self.store_f_collided == "dense":  # f_collided in regular full dense storage format
-                self.f_collided = torch.clone(self.f)
-            elif self.store_f_collided == "sparse":  # f_collided in torch.sparse() storage format
-                self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
-                                                                   values=self.f[self.fc_index[0], self.fc_index[1],
-                                                                                 self.fc_index[2], self.fc_index[3]],
-                                                                   size=self.f.size()))
-            elif self.store_f_collided == "compact":  # f_collided in super compact storage format
-                if self.lattice.D == 2:
-                    self.f_collided[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index[:, 0],  # q
-                                                                  self._boundaries[-1].f_index[:, 1],  # x
-                                                                  self._boundaries[-1].f_index[:, 2]])  # y
-                    self.f_collided[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index[:,0]],  # q
-                                                                  self._boundaries[-1].f_index[:, 1],  # x
-                                                                  self._boundaries[-1].f_index[:, 2]])  # y
-                if self.lattice.D == 3:
-                    self.f_collided[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index[:, 0],  # q
-                                                                  self._boundaries[-1].f_index[:, 1],  # x
-                                                                  self._boundaries[-1].f_index[:, 2],  # y
-                                                                  self._boundaries[-1].f_index[:, 3]])  # z
-                    self.f_collided[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index[:,0]],  # q
-                                                                  self._boundaries[-1].f_index[:, 1],  # x
-                                                                  self._boundaries[-1].f_index[:, 2],  # y
-                                                                  self._boundaries[-1].f_index[:, 3]])  # z
-            elif self.store_f_collided == "compact_ibb":  # f_collided in super compact storage format for ibb
-                if self.lattice.D == 2:
-                    self.f_collided_lt[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index_lt[:, 0],  # q
-                                                                  self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_lt[:, 2]])  # y
-                    self.f_collided_lt[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index_lt[:,0]],  # q
-                                                                  self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_lt[:, 2]])  # y
 
-                    self.f_collided_gt[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index_gt[:, 0],  # q
-                                                                  self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_gt[:, 2]])  # y
-                    self.f_collided_gt[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index_gt[:,0]],  # q
-                                                                  self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_gt[:, 2]])  # y
-                if self.lattice.D == 3:
-                    self.f_collided_lt[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index_lt[:, 0],  # q
-                                                                  self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_lt[:, 2],  # y
-                                                                  self._boundaries[-1].f_index_lt[:, 3]])  # z
-                    self.f_collided_lt[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index_lt[:,0]],  # q
-                                                                  self._boundaries[-1].f_index_lt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_lt[:, 2],  # y
-                                                                  self._boundaries[-1].f_index_lt[:, 3]])  # z
+            ### STORE f_collided FOR BOUNDARIES needing pre-streaming populations for bounce or force-calculation
+            for boundary_index in self.boundary_range:
+                if self.store_f_collided[boundary_index]:
+                    self._boundaries[boundary_index].store_f_collided(self.f)
 
-                    self.f_collided_gt[:, 0] = torch.clone(self.f[self._boundaries[-1].f_index_gt[:, 0],  # q
-                                                                  self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_gt[:, 2],  # y
-                                                                  self._boundaries[-1].f_index_gt[:, 3]])  # z
-                    self.f_collided_gt[:, 1] = torch.clone(self.f[self._boundaries[-1].opposite_tensor[
-                                                                      self._boundaries[-1].f_index_gt[:,0]],  # q
-                                                                  self._boundaries[-1].f_index_gt[:, 1],  # x
-                                                                  self._boundaries[-1].f_index_gt[:, 2],  # y
-                                                                  self._boundaries[-1].f_index_gt[:, 3]])  # z
             time3 = timer()
+
             ### STREAMING
             self.f = self.streaming(self.f)
 
             time4 = timer()
+
             ### BOUNDARY
             # apply boundary conditions
             for boundary in self._boundaries:
-                if boundary is not None:
-                    if isinstance(boundary, HalfwayBounceBackBoundary) \
-                            or isinstance(boundary, InterpolatedBounceBackBoundary) \
-                            or isinstance(boundary, InterpolatedBounceBackBoundary_compact_v1) \
-                            or isinstance(boundary, HalfwayBounceBackBoundary_compact_v1) \
-                            or isinstance(boundary, HalfwayBounceBackBoundary_compact_v2):
-                        self.f = boundary(self.f, self.f_collided)  # boundary needs post-collision_pre-streaming f on boundary nodes to perform reflection of populations within the same timestep
-                    elif isinstance(boundary, InterpolatedBounceBackBoundary_compact_v2):
-                        self.f = boundary(self.f, self.f_collided_lt, self.f_collided_gt)  # f_collided in compact storage format
-                    else:
-                        self.f = boundary(self.f)  # all BC which do not use any other populations
+                self.f = boundary(self.f)
 
             # count step
             self.i += 1

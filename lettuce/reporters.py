@@ -50,13 +50,18 @@ def write_vtk(point_dict, id=0, filename_base="./data/output"):
 
 class VTKReporter:
     """General VTK Reporter for velocity and pressure"""
+    "EDIT (M.Bille: can insert solid-mask to pin osb. to zero, inside solid obstacle, " \
+    "...useful for boundaries that store populations inside the boundary-region (FWBB, HWBBc3,...), making obs(f) deviate from 0"
 
     def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None):
         self.lattice = lattice
         self.flow = flow
         self.interval = interval
         self.filename_base = filename_base
-        self.solid_mask=solid_mask
+        if solid_mask is not None and lattice.D == 2:
+            self.solid_mask = solid_mask[..., None]
+        else:
+            self.solid_mask = solid_mask
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
             os.mkdir(directory)
@@ -68,16 +73,32 @@ class VTKReporter:
             p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
             #rho = self.flow.units.convert_density_to_pu(self.lattice.rho(f))
             if self.lattice.D == 2:
-                self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                if self.solid_mask is None:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                else:
+                    self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ..., None]))
+#ALTERNATIVE:                self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ..., None]))  # for boundaries that store populations "inside" the boundary
                 for d in range(self.lattice.D):
-                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    if self.solid_mask is None:
+                        self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(u[d, ..., None]))
+#ALTERNATIVE:                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, u[d, ..., None]))
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ..., None])
             else:
-                self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
-#               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
+                if self.solid_mask is None:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                else:
+                    self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ...]))
+                #ORIGINAL: self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+#ALTERNATIVE:               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
                 for d in range(self.lattice.D):
-                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
-#                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, u[d, ...]))
+                    #ORIGINAL: self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    if self.solid_mask is None:
+                        self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    else:
+                        self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(u[d, ...]))
+
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
             write_vtk(self.point_dict, i, self.filename_base)
 

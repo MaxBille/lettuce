@@ -4,11 +4,11 @@ from collections import Counter
 
 __all__ = ["draw_circular_mask"]
 
-def draw_circular_mask(lattice, gridpoints_per_diameter, output_data=False, filebase=".", print_data=False, ):
+def draw_circular_mask(lattice, gridpoints_per_diameter, output_data=False, filebase=".", print_data=False):
     ### calculate and export 2D obstacle_mask as .png
     grid_x = gridpoints_per_diameter + 2
     if output_data:
-        output_file = open(filebase + "_obstacle_mask_info.txt", "a")
+        output_file = open(filebase + "/obstacle_mask_info.txt", "a")
         output_file.write("GPD = " + str(gridpoints_per_diameter) + "\n")
     if print_data:
         print("GPD = " + str(gridpoints_per_diameter))
@@ -128,7 +128,7 @@ def draw_circular_mask(lattice, gridpoints_per_diameter, output_data=False, file
         ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=0.25)
 
     if output_data:
-        plt.savefig(filebase + "_obtacle_mask_GPD" + str(gridpoints_per_diameter) + ".png")
+        plt.savefig(filebase + "/obstacle_mask_GPD" + str(gridpoints_per_diameter) + ".png")
     if print_data:
         plt.show()
     else:
