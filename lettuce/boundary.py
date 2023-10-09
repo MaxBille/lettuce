@@ -550,10 +550,16 @@ class InterpolatedBounceBackBoundary_compact_v1:
                                             self.lattice.e[self.f_index_gt[:, 0]])
 
     def store_f_collided(self, f_collided):
-        self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
-                                                              values=f_collided[self.fc_index[0], self.fc_index[1],
-                                                                                self.fc_index[2], self.fc_index[3]],
-                                                              size=f_collided.size()))
+        if self.lattice.D == 2:
+            self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
+                                                                  values=f_collided[self.fc_index[0], self.fc_index[1],
+                                                                                    self.fc_index[2]],
+                                                                  size=f_collided.size()))
+        if self.lattice.D == 3:
+            self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
+                                                                  values=f_collided[self.fc_index[0], self.fc_index[1],
+                                                                                    self.fc_index[2], self.fc_index[3]],
+                                                                  size=f_collided.size()))
 
 class InterpolatedBounceBackBoundary_compact_v2:
 
@@ -1444,6 +1450,17 @@ class HalfwayBounceBackBoundary_compact_v1:
                                                                                      self.f_index[:, 3]],
                                               self.lattice.e[self.f_index[:, 0]])
 
+    def store_f_collided(self, f_collided):
+        if self.lattice.D == 2:
+            self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
+                                                                  values=f_collided[self.fc_index[0], self.fc_index[1],
+                                                                                    self.fc_index[2]],
+                                                                  size=f_collided.size()))
+        if self.lattice.D == 3:
+            self.f_collided = torch.clone(torch.sparse_coo_tensor(indices=self.fc_index,
+                                                                  values=f_collided[self.fc_index[0], self.fc_index[1],
+                                                                                    self.fc_index[2], self.fc_index[3]],
+                                                                  size=f_collided.size()))
 
 class HalfwayBounceBackBoundary_compact_v2:
 
