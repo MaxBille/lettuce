@@ -162,28 +162,6 @@ class Vorticity(Observable):
         return vorticity * dx ** self.lattice.D
 
 
-class OLD_DragCoefficient(Observable):
-    """The drag coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
-    modified version of M.Kliemank's Drag Coefficient Code
-
-    calculates the density, gets the force in x direction on the obstacle boundary,
-    calculates the coefficient of drag
-    """
-
-    def __init__(self, lattice, flow, simulation, area):
-        super().__init__(lattice, flow)
-        self.forceVal = simulation.forceVal  # depends on the variable forceVal being defined in the simulation-class
-        self.area_lu = area * (self.flow.units.characteristic_length_lu/self.flow.units.characteristic_length_pu) ** (self.lattice.D-1) # crosssectional area of obstacle i LU (! lengthdimension in 2D -> area-dimension = self.lattice.D-1)
-
-    def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
-        # rho_mean (excluding boundary region):
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
-        rho = torch.nanmean(rho_tmp)
-        force_x_lu = self.forceVal[-1][0]  # get current force on obstacle in x direction
-        drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
-        return drag_coefficient
-
 class DragCoefficient(Observable):
     """The drag coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
     modified version of M.Kliemank's Drag Coefficient Code
@@ -208,29 +186,6 @@ class DragCoefficient(Observable):
         drag_coefficient = force_x_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate drag_coefficient in LU
         return drag_coefficient
 
-
-class OLD_LiftCoefficient(Observable):
-    """The lift coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
-        modified version of M.Kliemank's lift Coefficient Code
-
-        calculates the density, gets the force in y direction on the obstacle boundary,
-        calculates the coefficient of lift
-        """
-
-    def __init__(self, lattice, flow, simulation, area):
-        super().__init__(lattice, flow)
-        self.forceVal = simulation.forceVal
-        self.area_lu = area * (self.flow.units.characteristic_length_lu / self.flow.units.characteristic_length_pu) ** (
-                    self.lattice.D - 1)
-
-    def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
-        # rho_mean (excluding boundary region):
-        rho_tmp = torch.where(self.lattice.convert_to_tensor(self.flow.solid_mask), self.lattice.convert_to_tensor(torch.nan), self.lattice.rho(f))
-        rho = torch.nanmean(rho_tmp)
-        force_y_lu = self.forceVal[-1][1] # get current force on obstacle in y direction
-        lift_coefficient = force_y_lu / (0.5 * rho * self.flow.units.characteristic_velocity_lu ** 2 * self.area_lu)  # calculate lift_coefficient in LU
-        return lift_coefficient
 
 class LiftCoefficient(Observable):
     """The lift coefficient of an obstacle, calculated using momentum exchange method (MEM, MEA) according to a
