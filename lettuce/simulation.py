@@ -41,6 +41,7 @@ class Simulation:
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
         self.times = [[], [], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
         self.time_avg = dict()
+        self.t_max = 72*3600-10*60  # max. runtime 71:50:00 h
 
         # CALCULATE INITIAL SOLUTION of flow and CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -141,6 +142,11 @@ class Simulation:
             self.times[2].append(time4-time3)  # time to stream
             self.times[3].append(time5-time4)  # time to boundary
             self.times[4].append(time6-time5)  # time to report
+
+            if time6-start > self.t_max:  # if T_total > 71:50:00 h
+                num_steps = _
+                break
+                # TODO: print out real number of steps! sim.i - i_start
         end = timer()
 
         # calculate individual runtimes (M.Bille)

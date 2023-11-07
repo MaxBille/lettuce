@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import pyevtk.hl as vtk
 import datetime
+from timeit import default_timer as timer
 import gc
 from collections import Counter
 
@@ -316,3 +317,60 @@ class AverageVelocityReporter:
                 self.out.append(u)
             elif self.lattice.D == 3:
                 self.out.append(np.mean(u, axis=2))
+
+
+class Watchdog:
+
+    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog"):
+        self.interval = interval
+        self.lattice = lattice
+        self.flow = flow
+        self.sim = sim
+        self.i_start = i_start
+        self.i_target = i_target
+        self.t_max = t_max
+        self.filebase = filebase
+        try:
+            os.makedirs(filebase)
+        except FileExistsError:
+            # directory already exists
+            pass
+        self.running = False
+        self.t_start = 0
+
+
+
+    def __call__(self, i, t, f):
+        if self.running is False and i == 0:
+            self.start_timer()
+        if i % self.interval == 0:
+            timestamp = datetime.datetime.now()
+            timestamp_str = timestamp.strftime("%y%m%d") + "_" + timestamp.strftime("%H%M%S")
+            t_now = timer()
+            t_elapsed = t_now - self.t_start
+            t_per_step = t_elapsed/(i-self.i_start)
+            i_remaining = self.i_target - self.i_start
+            t_remaining_estimate = t_per_step * i_remaining
+            datetime_finish_estimate = timestamp + datetime.timedelta(seconds=t_remaining_estimate)
+            t_total_estimate = t_elapsed + t_remaining_estimate
+
+            # write DATA and wran if t_total_estimate > t_max
+            if t_total_estimate > self.t_max:
+                self.write_file(self.filebase+"/log.txt", timestamp_str + " " + str(i) + " " + str(t_now) + " " + str(t_elapsed) + " " + str(t_per_step) + " " + str(t_remaining_estimate) + " " + str(t_total_estimate) + " " + str(datetime_finish_estimate) + " WARNING t_total>t_max=" + str(self.t_max))
+            else:
+                self.write_file(self.filebase+"/log.txt", timestamp_str + " " + str(i) + " " + str(t_now) + " " + str(t_elapsed) + " " + str(t_per_step) + " " + str(t_remaining_estimate) + " " + str(t_total_estimate) + " " + str(datetime_finish_estimate))
+            # write checkpoint if t_elapsed > t_max
+            if t_elapsed > self.t_max:
+                self.sim.save_checkpoint(self.filebase+"/"+timestamp_str + "_f_"+str(self.sim.i)+".cpt")
+
+
+    def start_timer(self):
+        self.running = True
+        self.t_start = timer()
+        self.write_file(self.filebase+"/log.txt", "t_start: "+str(self.t_start))
+        self.write_file(self.filebase+"/log.txt", "timestamp | step | t_now | t_elapsed | t_per_step | t_remaining(est) | t_total(est) | DATE_FINISH(est) | T WARNING")
+
+    def write_file(self, filename, line):
+        file = open(filename, "a")
+        file.write(line + "\n")
+        file.close()
