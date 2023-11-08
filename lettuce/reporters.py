@@ -16,7 +16,7 @@ from collections import Counter
 
 __all__ = [
     "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter",
-    "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter"
+    "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter", "Watchdog"
 ]
 
 
@@ -319,6 +319,11 @@ class AverageVelocityReporter:
                 self.out.append(np.mean(u, axis=2))
 
 
+def append_txt_file(filename, line):
+    file = open(filename, "a")
+    file.write(line + "\n")
+    file.close()
+
 class Watchdog:
 
     def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog"):
@@ -338,39 +343,37 @@ class Watchdog:
         self.running = False
         self.t_start = 0
 
-
-
     def __call__(self, i, t, f):
-        if self.running is False and i == 0:
+        #print("calling watchdog")
+        if not self.running:
             self.start_timer()
-        if i % self.interval == 0:
+        elif i % self.interval == 0:
+            #print("watchdog in interval")
+            #print("watchdog with", str(i))
             timestamp = datetime.datetime.now()
             timestamp_str = timestamp.strftime("%y%m%d") + "_" + timestamp.strftime("%H%M%S")
+
             t_now = timer()
             t_elapsed = t_now - self.t_start
             t_per_step = t_elapsed/(i-self.i_start)
-            i_remaining = self.i_target - self.i_start
+            i_remaining = self.i_target - i
             t_remaining_estimate = t_per_step * i_remaining
             datetime_finish_estimate = timestamp + datetime.timedelta(seconds=t_remaining_estimate)
             t_total_estimate = t_elapsed + t_remaining_estimate
 
-            # write DATA and wran if t_total_estimate > t_max
+            # write DATA and warn if t_total_estimate > t_max
             if t_total_estimate > self.t_max:
-                self.write_file(self.filebase+"/log.txt", timestamp_str + " " + str(i) + " " + str(t_now) + " " + str(t_elapsed) + " " + str(t_per_step) + " " + str(t_remaining_estimate) + " " + str(t_total_estimate) + " " + str(datetime_finish_estimate) + " WARNING t_total>t_max=" + str(self.t_max))
+                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26) + " WARNING t_total>t_max=" + str(self.t_max))
             else:
-                self.write_file(self.filebase+"/log.txt", timestamp_str + " " + str(i) + " " + str(t_now) + " " + str(t_elapsed) + " " + str(t_per_step) + " " + str(t_remaining_estimate) + " " + str(t_total_estimate) + " " + str(datetime_finish_estimate))
+                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26))
             # write checkpoint if t_elapsed > t_max
             if t_elapsed > self.t_max:
                 self.sim.save_checkpoint(self.filebase+"/"+timestamp_str + "_f_"+str(self.sim.i)+".cpt")
 
-
     def start_timer(self):
         self.running = True
         self.t_start = timer()
-        self.write_file(self.filebase+"/log.txt", "t_start: "+str(self.t_start))
-        self.write_file(self.filebase+"/log.txt", "timestamp | step | t_now | t_elapsed | t_per_step | t_remaining(est) | t_total(est) | DATE_FINISH(est) | T WARNING")
-
-    def write_file(self, filename, line):
-        file = open(filename, "a")
-        file.write(line + "\n")
-        file.close()
+        #print("starting timer")
+        append_txt_file(self.filebase+"/log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
+        append_txt_file(self.filebase+"/log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(26)+"|"+" T WARNING")
+        # sizes:                                   13, 10, 7+2.(rjust10), 7+2.(rjust10), 1+6.(rjust10), 7+2.(rjust10), 7+2.(rjust15), 27
