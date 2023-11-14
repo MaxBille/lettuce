@@ -2,24 +2,22 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-matplotlib.rcParams.update({'font.size': 11})
+matplotlib.rcParams.update({'font.size': 9}) # font size was 11
 matplotlib.rcParams.update({'lines.linewidth': 0.8})
-matplotlib.rcParams.update({'figure.figsize': [6,4]})  # 3x [3.2,2] / Gesamt 6.202inches textwidth
+matplotlib.rcParams.update({'figure.figsize': [6,3]})  # 4,3 war vorher / 3x [3.2,2] / Gesamt 6.202inches textwidth
 matplotlib.rcParams.update({'figure.autolayout': True})
 
 # data source
-folder = "/home/mbille/lettuce/plotting_mp1_code"  # HBRS
+folder = "/home/mbille/lettuce/plotting_mp2"  # HBRS
 #folder =   #BONN
 
-data = np.genfromtxt(folder+"/literature/Cd_compare.CSV", usemask=True, delimiter=";")
-re = data[0,:]
-mydata = data[1,:]
-re20 = data[2:,0]
-re40 = data[2:,1]
-re80 = data[2:,2]
-re100 = data[2:,3]
-re200 = data[2:,4]
-re300 = data[2:,5]
+name = "2D_Literature_GPD50_DpY50_Cd"
+
+data = np.genfromtxt(folder+"/data/"+name+".csv", delimiter=",")
+# PARAMETERS: GPD50, DpY50, T300 (T1000 for Re50), D2Q9
+
+hwbb_bgk = plt.plot(data[0], data[1], ls="--", lw=1, marker=".", color="tab:red", label="HWBB BGK")
+ibb_bgk = plt.plot(data[0], data[2], ls="--", lw=1, marker=".", color="tab:orange", label="IBB BGK")
 
 data_tritton = np.genfromtxt(folder+"/literature/1959_Tritton_01_logCd_logRe.csv", usemask=True, delimiter=";")
 data_relf = np.genfromtxt(folder+"/literature/1959_Tritton_02_logCd_logRe_comparisonToOthers_Relf.csv", usemask=True, delimiter=";")
@@ -33,10 +31,19 @@ lines_relf = plt.plot(data_relf[:,0], data_relf[:,1])
 plt.setp(lines_relf, ls="", lw=1, marker="+", color="tab:purple", label="Relf 1913 [exp.]")
 
 lines_weiselsberger = plt.plot(data_weiselsberger[:,0], data_weiselsberger[:,1])
-plt.setp(lines_weiselsberger, ls="", lw=1, marker="+", color="tab:orange", label="Weiselsberger 1922 [exp.]")
+plt.setp(lines_weiselsberger, ls="", lw=1, marker="+", color="tab:purple", label="Weiselsberger 1922 [exp.]")
 
 lines_hoerner = plt.plot(data_hoerner[:,0], data_hoerner[:,1])
 plt.setp(lines_hoerner, ls="", lw=1, marker="+", color="k", label="Hoerner 1965 [mixed]")
+
+data_num_literature = np.genfromtxt(folder+"/literature/Cd_compare.CSV", usemask=True, delimiter=";")
+re = data_num_literature[0,:]
+re20 = data_num_literature[2:,0]
+re40 = data_num_literature[2:,1]
+re80 = data_num_literature[2:,2]
+re100 = data_num_literature[2:,3]
+re200 = data_num_literature[2:,4]
+re300 = data_num_literature[2:,5]
 
 # create single data-stream:
 x_data = [*([20]*len(re20)),*([40]*len(re40)),*([80]*len(re80)),*([100]*len(re100)),*([200]*len(re200)),*([300]*len(re300))]
@@ -45,22 +52,14 @@ y_data = [*re20,*re40,*re80,*re100,*re200,*re300]
 lines = plt.plot(x_data,y_data)
 plt.setp(lines, ls="", lw=1, marker="+", color="tab:blue", label="sonstig. num. Literatur")
 
-mylines = plt.plot(re,mydata)
-plt.setp(mylines, ls="--", lw=1.2, marker=".", markersize=8,color="tab:red", label="Lettuce")
-
-#print(re)
-#print(mydata)
-
 plt.xlabel("Re")
 plt.ylabel("$C_{D}$")
-plt.xlim([0,300])#4500])
-plt.ylim([0.5,3])
+plt.xlim([0,301])
+plt.ylim([0.75,3])
 plt.grid()
-#plt.xticks(np.arange(1990, 2010+5, 5.0))
-#plt.legend(["Tritton 1959 [exp.]", "Relf 1913 [exp.]", "Weiselsberger 1922 [exp.]", "Hoerner 1965 [mixed]", "sonstig. num. Literatur"])
-plt.legend()
-#plt.title("Widerstandsbeiwert $C_{D}$ für verschiedene Reynoldszahlen, \nVergleich mit Literatur", wrap=True)
+#plt.title("Widerstandsbeiwert $C_{D}$ in Abhängigkeit der Domänenbreite in Durchmessern (DpY), für Re = 200", wrap=True)
 
-#plt.savefig(folder+"/plots/Cd_compare_extended2.png")
+plt.legend()
+plt.savefig(folder+"/plots/"+name+".png")
 plt.show()
 
