@@ -232,12 +232,27 @@ class Simulation:
         feq = self.lattice.equilibrium(rho, u)
         self.f = feq - fneq
 
-    def save_checkpoint(self, filename):
+    def save_checkpoint(self, filename, device=None):
         """Write f as np.array using pickle module."""
-        with open(filename, "wb") as fp:
-            pickle.dump(self.f, fp)
+        if device is not None:
+            # to store checkpoint through cpu with "device='cpu'",
+            # ...because on multi-gpu systems the checkpoint is loaded into the device-index it was stored on,
+            # ...making multi-gpu multi-simulation runs tricky, because the device has to be ajusted after loading the
+            # ...checkpoint. Recommend: copy f to cpu before checkpointing,
+            # ...and loading back into gpu on loading checkpoint (see load_checkpoint() below)
+            f_store = self.f.to(device, copy=True)
+            with open(filename, "wb") as fp:
+                pickle.dump(f_store, fp)
+        else:  # if no device is given, checkpoint retains/contains device-affinity
+            with open(filename, "wb") as fp:
+                pickle.dump(self.f, fp)
 
-    def load_checkpoint(self, filename):
+    def load_checkpoint(self, filename, device=None):
         """Load f as np.array using pickle module."""
-        with open(filename, "rb") as fp:
-            self.f = pickle.load(fp)
+        if device is not None:
+            with open(filename, "rb") as fp:
+                f_load = pickle.load(fp)
+                self.f = f_load.to(device, copy=False)
+        else:  # if no device is given, device from checkponit is used. May run into issues if the device of the ckeckpoint is different from the device of the rest of the simulation.
+            with open(filename, "rb") as fp:
+                self.f = pickle.load(fp)
