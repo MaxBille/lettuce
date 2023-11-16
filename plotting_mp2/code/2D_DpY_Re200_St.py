@@ -16,35 +16,54 @@ name = "2D_DpY_Re200_St"
 data = np.genfromtxt(folder+"/data/"+name+".csv", delimiter=",")
 # PARAMETERS: Re200, GPD30, D2Q9
 
-fwbb_bgk = plt.plot(data[0], data[1], ls="--", lw=1, marker=".", color="tab:blue", label="FWBB BGK")
-fwbb_kbc = plt.plot(data[0], data[2], ls="--", lw=1, marker="x", color="tab:blue", label="FWBB KBC")
-hwbb_bgk = plt.plot(data[0], data[3], ls="--", lw=1, marker=".", color="tab:orange", label="HWBB BGK")
-hwbb_kbc = plt.plot(data[0], data[4], ls="--", lw=1, marker="x", color="tab:orange", label="HWBB KBC")
-ibb_bgk = plt.plot(data[0], data[5], ls="--", lw=1, marker=".", color="tab:green", label="IBB BGK")
-ibb_kbc = plt.plot(data[0], data[6], ls="--", lw=1, marker="x", color="tab:green", label="IBB KBC")
+fwbb_bgk = plt.plot(data[0][np.isfinite(data[1])], data[1][np.isfinite(data[1])], ls="--", lw=1, marker=".", color="tab:blue", label="FWBB BGK")
+fwbb_kbc = plt.plot(data[0][np.isfinite(data[2])], data[2][np.isfinite(data[2])], ls="--", lw=1, marker="x", color="tab:blue", label="FWBB KBC")
+#hwbb_bgk = plt.plot(data[0][np.isfinite(data[3])], data[3][np.isfinite(data[3])], ls="--", lw=1, marker=".", color="tab:orange", label="HWBB BGK")
+#hwbb_kbc = plt.plot(data[0][np.isfinite(data[4])], data[4][np.isfinite(data[4])], ls="--", lw=1, marker="x", color="tab:orange", label="HWBB KBC")
+#ibb_bgk = plt.plot(data[0][np.isfinite(data[5])], data[5][np.isfinite(data[5])], ls="--", lw=1, marker=".", color="tab:green", label="IBB BGK")
+ibb_kbc = plt.plot(data[0][np.isfinite(data[6])], data[6][np.isfinite(data[5])], ls="--", lw=1, marker="x", color="tab:green", label="IBB KBC")
 
-## TEST FIT exponential for ibb_bgk
-import scipy
-x = data[:, ~np.isnan(data).any(axis=0)]
-#x = x[0]
-x= data[0,:6]
-y = data[:, ~np.isnan(data).any(axis=0)]
-#y = y[2]
-y=data[5,:6]
-def exp_func(xx,a,b,c):
-    return a*np.exp(b*xx)+c
-def hyper_func(xx,a,b,c):
-    return 1/(a*xx**2+b*xx+c)
-coefficients, values = scipy.optimize.curve_fit(exp_func, x, y, p0=(5,-1,0))
-#coefficients, values = scipy.optimize.curve_fit(hyper_func, x, y)
-print(coefficients)
-plt.plot(x, exp_func(x, *coefficients), 'r-')
+fit=False
+if fit:
+    ## TEST FIT exponential for ibb_bgk
+    import scipy
+    def exp_func(xx,a,b,c):
+        return a*np.exp(b*xx)+c
+
+    colors = ["tab:blue", "tab:blue", "tab:orange", "tab:orange", "tab:green", "tab:green"]
+    data_num = [
+        1,
+        2,
+     #   3,
+     #   4,
+        5,
+        6,
+    ]
+    for i in data_num:
+        data_x, data_y = data[0][np.isfinite(data[i])], data[i][np.isfinite(data[i])]
+        coefficients, values = scipy.optimize.curve_fit(exp_func, data_x, data_y, p0=(5, -1, 0))
+        plt.plot(np.linspace(10,200,191), exp_func(np.linspace(10,200,191), *coefficients), ls="-", marker="", color=colors[i-1])
+
+# x = data[:, ~np.isnan(data).any(axis=0)]
+# #x = x[0]
+# #x= data[0,:]
+# y = data[:, ~np.isnan(data).any(axis=0)]
+# #y = y[2]
+# #y=data[5,:]
+# # def exp_func(xx,a,b,c):
+# #     return a*np.exp(b*xx)+c
+# def hyper_func(xx,a,b,c):
+#     return 1/(a*xx**2+b*xx+c)
+# #coefficients, values = scipy.optimize.curve_fit(exp_func, x, y, p0=(5,-1,0))
+# #coefficients, values = scipy.optimize.curve_fit(hyper_func, x, y)
+# print(coefficients)
+#plt.plot(x, exp_func(x, *coefficients), 'r-')
 #plt.plot(x, hyper_func(x, *coefficients), 'r-')
 
 plt.xlabel("D/Y")
 plt.ylabel("$St$")
 plt.xlim([0,205])
-plt.ylim([0.18,0.21])
+#plt.ylim([0.18,0.21])
 plt.grid()
 #plt.title("Widerstandsbeiwert $C_{D}$ in Abhängigkeit der Domänenbreite in Durchmessern (DpY), für Re = 200", wrap=True)
 

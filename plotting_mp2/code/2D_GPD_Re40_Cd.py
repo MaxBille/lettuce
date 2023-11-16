@@ -33,10 +33,11 @@ plt.xlim([0,102])
 plt.grid()
 #plt.title("Widerstandsbeiwert $C_{D}$ in Abhängigkeit der Domänenbreite in Durchmessern (DpY), für Re = 200", wrap=True)
 
-# literature = [1.4,1.31,1.19,1.31,1.33,1.172,1.29,1.45,1.26,1.36,1.4087]
-# plt.axhline(y=1.4, color="r", ls="-.", lw=0.5, label="literature")
-# for lit in literature[1:]:
-#     plt.axhline(y=lit, color="r", ls="-.", lw=0.5)
+literature = [1.7,1.48,1.522,1.498,1.52,1.62,1.6,1.63,1.52,1.55,1.52,1.62]
+plt.axhline(y=1.7, color="r", ls="-.", lw=0.5, label="literature")
+for lit in literature[1:]:
+    plt.axhline(y=lit, color="r", ls="-.", lw=0.5)
+plt.legend()
 plt.legend()
 plt.savefig(folder+"/plots/"+name+".png")
 plt.show()
