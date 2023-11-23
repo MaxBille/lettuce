@@ -35,7 +35,7 @@ lines_relf = plt.plot(data_relf[:,0], data_relf[:,1])
 plt.setp(lines_relf, ls="", marker="+", color="tab:purple", label="Relf 1913 [exp.]")
 
 lines_weiselsberger = plt.plot(data_weiselsberger[:,0], data_weiselsberger[:,1])
-plt.setp(lines_weiselsberger, ls="", marker="+", color="tab:purple", label="Weiselsberger 1922 [exp.]")
+plt.setp(lines_weiselsberger, ls="", marker="+", color="tab:brown", label="Weiselsberger 1922 [exp.]")
 
 lines_hoerner = plt.plot(data_hoerner[:,0], data_hoerner[:,1])
 plt.setp(lines_hoerner, ls="", marker="+", color="k", label="Hoerner 1965 [mixed]")

@@ -30,7 +30,7 @@ lines = plt.plot(data_Norberg[:,0], data_Norberg[:,1])
 plt.setp(lines, ls="", marker="+", color="tab:purple",label="Norberg 2003 [num.]")
 
 lines = plt.plot(data_Williamson88[:,0], data_Williamson88[:,1])
-plt.setp(lines, ls="", marker="+", color="tab:pink", label="Williamson 1988 [num.]")
+plt.setp(lines, ls="", marker="+", color="tab:brown", label="Williamson 1988 [num.]")
 
 lines = plt.plot(data_Williamson89[:,0], data_Williamson89[:,1])
 plt.setp(lines, ls="", marker="+", color="tab:olive", label="Williamson 1989 [num.]")
