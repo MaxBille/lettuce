@@ -58,7 +58,7 @@ ax2.set_yticks(literature, labels=[" "]*len(literature))
 ax2.set_ylim(ax1.set_ylim())
 ax2.tick_params(color='r', direction='in', width=1.2)
 
-ax1.yaxis.set_major_formatter(FormatStrFormatter('%.1f  '))
+ax1.yaxis.set_major_formatter(FormatStrFormatter('%.1f   '))
 
 #plt.legend()
 plt.savefig(folder+"/plots/"+name+".png")
