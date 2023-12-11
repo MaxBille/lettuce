@@ -24,7 +24,7 @@ import shutil
 ###INPUT1:
 timestamp = datetime.datetime.now()
 timestamp = timestamp.strftime("%y%m%d")+"_"+timestamp.strftime("%H%M%S")
-name = "roundness_criteria"
+name = "roundness_criteria_engl"
 dir_name = "../roundness_criteria/data_" + str(timestamp) + "_" + name
 if not os.path.isdir(dir_name):
     os.mkdir(dir_name)
@@ -42,6 +42,7 @@ gpds = [2,5,10,11,12,20,21,22,52,53, 60,70,80,90,100, 150]
 #gpds = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100,150,151,152,153,154,155,160]
 gpds = np.arange(0,60)+100
 gpds = [20,21,22]
+#gpds = np.arange(5,151)
 
 # lists for plotting
 r_rel_list = []
@@ -234,11 +235,11 @@ if len(gpds) <= 10:  # toggle HISTOGRAMM of radii
                                 weights=r_rel_list_weights  # y-Achse
                                 )
     plt.grid(axis='y', alpha=0.75)
-    plt.xlabel('relativer Radius')
-    plt.ylabel('relative Häufigkeit')
-    plt.title(
-        'Histogram der relativen Häufigkeit realtiver Radien für verschiedene Auflösungen (GPD)',
-        wrap=True)
+    plt.xlabel('relative radius')  #plt.xlabel('relativer Radius')
+    plt.ylabel('relative frequency')  #plt.ylabel('relative Häufigkeit')
+    # plt.title(
+    #     'Histogram der relativen Häufigkeit realtiver Radien für verschiedene Auflösungen (GPD)',
+    #     wrap=True)
     # plt.text(23, 45, r'$\mu=15, b=3$')
     plt.legend([str(x) + " GPD" for x in gpds])
     plt.ylim([0, 1])
@@ -264,9 +265,9 @@ if len(gpds) <= 10:  # toggle HISTOGRAMM of radii with q-multiplicity (links tak
                                 weights=rq_rel_list_weights  # y-Achse
                                 )
     plt.grid(axis='y', alpha=0.75)
-    plt.xlabel('relativer Radius')
-    plt.ylabel('relative Häufigkeit')
-    plt.title('Histogram der relativen Häufigkeit realtiver Radien (mit q-Multiplizität) für Verschiedene Auflösungen (GPD)', wrap=True)
+    plt.xlabel('relative radius')  # plt.xlabel('relativer Radius')
+    plt.ylabel('relative frequency')  # plt.ylabel('relative Häufigkeit')
+    # plt.title('Histogram der relativen Häufigkeit realtiver Radien (mit q-Multiplizität) für Verschiedene Auflösungen (GPD)', wrap=True)
     #plt.text(23, 45, r'$\mu=15, b=3$')
     plt.legend([str(x)+" GPD" for x in gpds])
     plt.ylim([0, 1])
@@ -293,13 +294,19 @@ if True:  # toggle plot for mean, max, min radius over all GPD
                      gpds, r_rel_max_list,
                      gpds, r_rel_min_list)
     plt.setp(lines, ls="--", lw=1, marker=".")
-    plt.legend([r"$\bar{r}$ Gitterpunte einfach gezählt",
-                #"PU",
-                r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
-                #"q PU",
+    # plt.legend([r"$\bar{r}$ Gitterpunte einfach gezählt",
+    #             #"PU",
+    #             r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
+    #             #"q PU",
+    #             "$r_{max}$",
+    #             "$r_{min}$"])
+    plt.legend([r"$\bar{r}$ lattice sites neighboring fluid",
+                # "PU",
+                r"$\bar{r}$ lattice links pointing to fluid",
+                # "q PU",
                 "$r_{max}$",
                 "$r_{min}$"])
-    plt.title("Mittlerer, maximaler und minimaler relativer Radius in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
+    #plt.title("Mittlerer, maximaler und minimaler relativer Radius in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
     plt.grid(visible=True)
     plt.ylim([0.6, 1.01*max(r_rel_max_list)])
     plt.xlim([0, max(gpds)+1])
@@ -321,13 +328,13 @@ if True:  # toggle plot for relative area over all GPD
     #             #"q PU",
     #             "$r_{max}$",
     #             "$r_{min}$"])
-    plt.title(r"relative praktische Kreisflaeche (Knotenzahl/($\pi$(gpd/2)²), in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
+    #plt.title(r"relative praktische Kreisflaeche (Knotenzahl/($\pi$(gpd/2)²), in Abhängigkeit des Durchmessers in Gitterpunkten (GPD)", wrap=True)
     plt.grid(visible=True)
     #plt.ylim([0.6, 1.01])
     plt.xlim([0, max(gpds) + 1])
     plt.xticks(np.linspace(0, int(max(gpds) / 10) * 10, int((max(gpds)) / 10) + 1))
     plt.xlabel("GPD")
-    plt.ylabel("relative Flaeche")
+    plt.ylabel("relative area")  #plt.ylabel("relative Flaeche")
     plt.savefig(dir_name + "/relativeFleache.png")
     if show:
         plt.show()
