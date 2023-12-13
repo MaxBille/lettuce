@@ -15,11 +15,15 @@
 
 import lettuce as lt
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import torch
 import datetime
 import os
 import shutil
+
+matplotlib.style.use('../figure_style_2column_singleplot.mplstyle')
+matplotlib.rcParams.update({'lines.linestyle': '--'})
 
 ###INPUT1:
 timestamp = datetime.datetime.now()
@@ -42,7 +46,7 @@ gpds = [2,5,10,11,12,20,21,22,52,53, 60,70,80,90,100, 150]
 #gpds = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,30,35,40,45,50,60,70,71,72,73,74,75,80,90,100,150,151,152,153,154,155,160]
 gpds = np.arange(0,60)+100
 gpds = [20,21,22]
-#gpds = np.arange(5,151)
+gpds = np.arange(5,151)
 
 # lists for plotting
 r_rel_list = []
@@ -212,7 +216,7 @@ for i in gpds:
         ax.set_xticks(np.arange(-.5, xmax, 1), minor=True)
         ax.set_yticks(np.arange(-.5, ymax, 1), minor=True)
         if gridpoints_per_diameter < 30:
-            ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=2)
+            ax.grid(which="minor", color="k", axis='both', linestyle='-')
         elif gridpoints_per_diameter < 70:
             ax.grid(which="minor", color="k", axis='both', linestyle='-', linewidth=1)
         elif gridpoints_per_diameter < 100:
@@ -293,7 +297,7 @@ if True:  # toggle plot for mean, max, min radius over all GPD
                      #gpds, rq_rel_mean_PU_list,
                      gpds, r_rel_max_list,
                      gpds, r_rel_min_list)
-    plt.setp(lines, ls="--", lw=1, marker=".")
+    plt.setp(lines, ls="--", marker=".", markersize=3)
     # plt.legend([r"$\bar{r}$ Gitterpunte einfach gezählt",
     #             #"PU",
     #             r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
@@ -321,7 +325,7 @@ if True:  # toggle plot for mean, max, min radius over all GPD
 if True:  # toggle plot for relative area over all GPD
     plt.figure()
     lines = plt.plot(gpds, area_rel_list)
-    plt.setp(lines, ls="--", lw=1, marker=".")
+    plt.setp(lines, ls="--", marker=".", markersize=3)
     # plt.legend([r"relative Flaeche im Verhaeltnis zur theoretischen Flaeche r²\pi",
     #             #"PU",
     #             r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",
@@ -335,7 +339,7 @@ if True:  # toggle plot for relative area over all GPD
     plt.xticks(np.linspace(0, int(max(gpds) / 10) * 10, int((max(gpds)) / 10) + 1))
     plt.xlabel("GPD")
     plt.ylabel("relative area")  #plt.ylabel("relative Flaeche")
-    plt.savefig(dir_name + "/relativeFleache.png")
+    plt.savefig(dir_name + "/relativeFlaeche.png")
     if show:
         plt.show()
     else:
