@@ -31,7 +31,7 @@ re200 = data_num_literature[2:,2]
 x_data = [*([80]*len(re80)),*([100]*len(re100)),*([200]*len(re200))]
 y_data = [*re80,*re100,*re200]
 lines = plt.plot(x_data,y_data)
-plt.setp(lines, ls="", lw=1, marker="+", color="tab:blue", label="further tabular lit.")
+plt.setp(lines, ls="", lw=1, marker="+", color="tab:blue", label="tabular lit.")
 
 plt.xlabel("Re")
 plt.ylabel("$C_{L}$")

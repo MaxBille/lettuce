@@ -82,7 +82,9 @@ ax1.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
 handles, labels = ax1.get_legend_handles_labels()
 ax1.legend([handles[idx] for idx in [0,1,2,3]], [labels[idx] for idx in [0,1,2,3]],
-           frameon=True, edgecolor="white", facecolor="white")
+           frameon=True,
+           #edgecolor="white",
+           facecolor="white")
 #plt.legend()
 if show_literature:
     plt.savefig(folder+"/plots/"+name+"_plusLiterature.png")
