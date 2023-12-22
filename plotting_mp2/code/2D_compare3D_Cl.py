@@ -13,6 +13,7 @@ from matplotlib.ticker import FormatStrFormatter
 # matplotlib.rcParams.update({'figure.dpi': 300})
 matplotlib.style.use('../figure_style_2column_singleplot.mplstyle')
 matplotlib.rcParams.update({'lines.linestyle': '--'})
+#matplotlib.rcParams.update({'font.size': 8}) # font size was 11
 
 # data source
 folder = "/home/mbille/lettuce/plotting_mp2"  # HBRS
@@ -28,11 +29,11 @@ data3d = np.genfromtxt(folder+"/data/"+name3d+".csv", delimiter=",")
 
 fig, ax1 = plt.subplots()
 
-hwbb_bgk_2d = plt.plot(data2d[0], data2d[1], marker=".", color="tab:red", label="2D HWBB BGK")
-ibb_bgk_2d = plt.plot(data2d[0], data2d[2], marker=".", color="tab:orange", label="2D IBB BGK")
+hwbb_bgk_2d = plt.plot(data2d[0], data2d[1], marker=".", color="tab:red", label="2D HWBB")
+ibb_bgk_2d = plt.plot(data2d[0], data2d[2], marker=".", color="tab:orange", label="2D IBB")
 
-hwbb_bgk_3d = plt.plot(data3d[0], data3d[1], marker="x", color="tab:red", label="3D HWBB BGK")
-ibb_bgk_3d = plt.plot(data3d[0], data3d[2], marker="x", color="tab:orange", label="3D IBB BGK")
+hwbb_bgk_3d = plt.plot(data3d[0], data3d[1], marker="x", color="tab:red", label="3D HWBB")
+ibb_bgk_3d = plt.plot(data3d[0], data3d[2], marker="x", color="tab:orange", label="3D IBB")
 
 show_literature=False
 if show_literature:
