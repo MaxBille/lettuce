@@ -103,7 +103,7 @@ class InterpolatedBounceBackBoundary:
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
 
                             #print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p],i,d1,d2,px,py,cx,cy)
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
@@ -168,7 +168,7 @@ class InterpolatedBounceBackBoundary:
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
 
                             #print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p], i, d1, d2, px, py, cx, cy)
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
                                 self.d[self.lattice.stencil.opposite[i],
                                        a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
@@ -298,7 +298,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
                             d1 = - h1 + np.sqrt(h1 * h1 - h2)
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
 
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             # choose correct d and assign d and f_index
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
 
@@ -388,7 +388,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
 
                             # print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p], i, d1, d2, px, py, cx, cy)
 
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             # choose correct d and assign d and f_index
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
 
@@ -621,7 +621,7 @@ class InterpolatedBounceBackBoundary_compact_v2:
                             d1 = - h1 + np.sqrt(h1 * h1 - h2)
                             d2 = - h1 - np.sqrt(h1 * h1 - h2)
 
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             # choose correct d and assign d and f_index
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
 
@@ -706,7 +706,7 @@ class InterpolatedBounceBackBoundary_compact_v2:
 
                             # print("xb,yb,i,d1,d2 xf, yf, cx, cy:", a[p], b[p], i, d1, d2, px, py, cx, cy)
 
-                            # distance (LU) from fluid node to the "true" boundary location
+                            # distance from fluid node to the "true" boundary location
                             # choose correct d and assign d and f_index
                             if d1 <= 1 and np.isreal(d1):  # d should be between 0 and 1
 
