@@ -224,9 +224,9 @@ class InterpolatedBounceBackBoundary:
     def calc_force_on_boundary(self, f_bounced):
         # momentum exchange according to Bouzidi et al. (2001), equation 11.8 in Kruger et al. (2017) p.445 // watch out for wrong signs. Kruger states "-", but "+" gives correct result
         # ...original paper (Bouzidi 2001) and Ginzburg followup (2003) state a "+" as well...
-        #tmp = torch.where(self.f_mask, f_collided, torch.zeros_like(f_bounced)) \
-        #      - torch.where(self.f_mask, f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))
-        #tmp = torch.where(self.f_mask, f_collided - f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced)) #WRONG
+        #OLDtmp = torch.where(self.f_mask, f_collided, torch.zeros_like(f_bounced)) \
+        #OLD      - torch.where(self.f_mask, f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))
+        #WRONG: tmp = torch.where(self.f_mask, f_collided - f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced)) #WRONG
         tmp = torch.where(self.f_mask, self.f_collided + f_bounced[self.lattice.stencil.opposite], torch.zeros_like(f_bounced))  #RIGHT
         self.force_sum = torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v3.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
 
@@ -989,9 +989,6 @@ class FullwayBounceBackBoundary:
                     elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1:  # searching border on right
                         border[2] = 1
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-                        # if not mask[a[p] + self.lattice.stencil.e[i, 0]*single_layer[p, 0] - border_direction[p, 0]*nx,
-                        #            b[p] + self.lattice.stencil.e[i, 1]*single_layer[p, 1] - border_direction[p, 1]*ny,
-                        #            c[p] + self.lattice.stencil.e[i, 2]*single_layer[p, 2] - border_direction[p, 2]*nz]:
                         if not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
                                     b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
                                     c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]:
@@ -999,10 +996,6 @@ class FullwayBounceBackBoundary:
                             self.f_mask[self.lattice.stencil.opposite[i], a[p], b[p], c[p]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
-#                if (b[p] == int(ny / 2)):
-#                    print("node ({},{}): m={}, bdz={}, slz={}".format(str(a[p]), str(c[p]), mask[a[p], b[p], c[p]], border_direction[p, 2], single_layer[p, 2]))
-#            print("border_direction\n", border_direction)
-#            print("single_layer\n", single_layer)
         self.f_mask = self.lattice.convert_to_tensor(self.f_mask)
 
     def __call__(self, f):

@@ -1,3 +1,12 @@
+"""
+Additional Code Stuff from M.Bille:
+
+    function: draw_circular_mask(): draws a picture of the boundary-mask and an ideal circle for the cylinder-obstacle-flow.
+        - takes GPD = resolution = 2*radius
+        - toggle if picture is printed and/or written to disk
+
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -12,49 +21,49 @@ def draw_circular_mask(lattice, gridpoints_per_diameter, output_data=False, file
         output_file.write("GPD = " + str(gridpoints_per_diameter) + "\n")
     if print_data:
         print("GPD = " + str(gridpoints_per_diameter))
-    # define radius and position for a symetrical circular Cylinder-Obstacle
+    # define radius and position for a symmetrical circular Cylinder-Obstacle
     radius_LU = 0.5 * gridpoints_per_diameter
     y_pos_LU = 0.5 * grid_x + 0.5
     x_pos_LU = y_pos_LU
 
     # get x,y,z meshgrid of the domain (LU)
-    xyz = tuple(np.linspace(1, n, n) for n in (grid_x, grid_x))  # Tupel aus Listen indizes (1-n (nicht 0-based!))
-    xLU, yLU = np.meshgrid(*xyz, indexing='ij')  # meshgrid aus den x-, y- (und z-)Indizes -> * damit man die einzelnen Einträge des Tupels übergibt, und nicht das eine Tupel
+    xyz = tuple(np.linspace(1, n, n) for n in (grid_x, grid_x))  # tupel of list indizes (1-n (non zero-based!))
+    xLU, yLU = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x- and y- indizes -> * unpacks the tuple to be two values and now a tuple
 
     # define cylinder (LU) (circle)
-    obstacle_mast_for_visualization = np.sqrt((xLU - x_pos_LU) ** 2 + (yLU - y_pos_LU) ** 2) < radius_LU
+    obstacle_mask_for_visualization = np.sqrt((xLU - x_pos_LU) ** 2 + (yLU - y_pos_LU) ** 2) < radius_LU
 
-    nx, ny = obstacle_mast_for_visualization.shape  # Anzahl x-Punkte, Anzahl y-Punkte (Skalar), (der gesamten Domain)
+    nx, ny = obstacle_mask_for_visualization.shape  # number of x- and y-nodes (Skalar)
+    
+    rand_mask = np.zeros((nx, ny), dtype=bool)  # for all the solid nodes, neighboring fluid nodes
+    rand_mask_f = np.zeros((lattice.Q, nx, ny), dtype=bool)  # same, but including q-dimension
+    rand_xq = []  # list of all x-values (incl. q-multiplicity)
+    rand_yq = []  # list of all y-values (incl. q-multiplicity)
 
-    rand_mask = np.zeros((nx, ny), dtype=bool)  # für Randpunkte, die es gibt
-    rand_mask_f = np.zeros((lattice.Q, nx, ny), dtype=bool)  # für Randpunkte (inkl. Q-Dimension)
-    rand_xq = []  # Liste aller x Werte (inkl. q-multiplizität)
-    rand_yq = []  # Liste aller y Werte (inkl. q-multiplizität)
-
-    a, b = np.where(obstacle_mast_for_visualization)  # np.array: Liste der (a) x-Koordinaten  und (b) y-Koordinaten der obstacle_mast_for_visualization
-    # ...um über alle Boundary/Objekt/Wand-Knoten iterieren zu können
-    for p in range(0, len(a)):  # für alle TRUE-Punkte der obstacle_mast_for_visualization
-        for i in range(0, lattice.Q):  # für alle stencil-Richtungen c_i (hier lattice.stencil.e)
+    a, b = np.where(obstacle_mask_for_visualization)  # np.array: list of (a) x-coordinates und (b) y-coordinates of the obstacle_mask_for_visualization
+    # ...to iterate over all boudnary/object/wall nodes
+    for p in range(0, len(a)):  # for all True-ndoes in obstacle_mask_for_visualization
+        for i in range(0, lattice.Q):  # for all stencil directions c_i (lattice.stencil.e)
             try:  # try in case the neighboring cell does not exist (an f pointing out of the simulation domain)
-                if not obstacle_mast_for_visualization[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                    # falls in einer Richtung Punkt+(e_x, e_y; e ist c_i) False ist, ist das also ein Oberflächenpunkt des Objekts (selbst True mit Nachbar False)
+                if not obstacle_mask_for_visualization[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                    # if neighbor in +(e_x, e_y; e is c_i) is False, we are on the object-surface (self True with neighbor False)
                     rand_mask[a[p], b[p]] = 1
                     rand_mask_f[lattice.stencil.opposite[i], a[p], b[p]] = 1
                     rand_xq.append(a[p])
                     rand_yq.append(b[p])
             except IndexError:
                 pass  # just ignore this iteration since there is no neighbor there
-    rand_x, rand_y = np.where(rand_mask)  # Liste aller Rand-x- und y-Koordinaten
-    x_pos = sum(rand_x) / len(rand_x)  # x_Koordinate des Kreis-Zentrums
-    y_pos = sum(rand_y) / len(rand_y)  # y-Koordinate des Kreis-Zentrums
+    rand_x, rand_y = np.where(rand_mask)  # list of all surface coordinates
+    x_pos = sum(rand_x) / len(rand_x)  # x-coordinate of circle center
+    y_pos = sum(rand_y) / len(rand_y)  # y-coordinate of circle center
 
     # calculate all radii and r_max and r_min
     r_max = 0
     r_min = gridpoints_per_diameter
-    radii = np.zeros_like(rand_x, dtype=float)  # Liste aller Radien (ohne q) in LU
-    for p in range(0, len(rand_x)):  # für alle Punkte
+    radii = np.zeros_like(rand_x, dtype=float)  # list of all redii (without q-dimension) in LU
+    for p in range(0, len(rand_x)):  # for all nodes
         radii[p] = np.sqrt(
-            (rand_x[p] - x_pos) ** 2 + (rand_y[p] - y_pos) ** 2)  # berechne Abstand des Punktes zum Zentrum
+            (rand_x[p] - x_pos) ** 2 + (rand_y[p] - y_pos) ** 2)  # calculate distance to circle center
         if radii[p] > r_max:
             r_max = radii[p]
         if radii[p] < r_min:
@@ -93,7 +102,7 @@ def draw_circular_mask(lattice, gridpoints_per_diameter, output_data=False, file
 
     ### PLOT Mask
     plt.figure()
-    plt.imshow(obstacle_mast_for_visualization)
+    plt.imshow(obstacle_mask_for_visualization)
     # plt.xticks(np.arange(gridpoints_per_diameter + 2), minor=True)
     # plt.yticks(np.arange(gridpoints_per_diameter + 2), minor=True)
     ax = plt.gca()

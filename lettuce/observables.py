@@ -178,7 +178,7 @@ class DragCoefficient(Observable):
         self.solid_mask = self.lattice.convert_to_tensor(self.flow.solid_mask)
 
     def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        #OLD rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
         # rho_mean (excluding boundary region):
         rho_tmp = torch.where(self.solid_mask, self.nan, self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)
@@ -204,7 +204,7 @@ class LiftCoefficient(Observable):
         self.solid_mask = self.lattice.convert_to_tensor(self.flow.solid_mask)
 
     def __call__(self, f):
-        #rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
+        #OLD rho = torch.mean(self.lattice.rho(f[:, 0, ...]))  # simple rho_mean, including the boundary region
         # rho_mean (excluding boundary region):
         rho_tmp = torch.where(self.solid_mask, self.nan, self.lattice.rho(f))
         rho = torch.nanmean(rho_tmp)

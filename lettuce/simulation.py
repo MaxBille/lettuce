@@ -35,13 +35,19 @@ class Simulation:
         self.streaming = streaming
         self.i = 0  # index of the current timestep
 
+        # >>>
         # M.Bille:
         self.store_f_collided = []  # toggle if f is stored after collision and not overwritten through streaming,
         # ...f_collided might be needed together with f_collided_and_streamed for boundary-conditions or calculation of
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
+        # TRUE/FALSE per boundary in the _boundaries list
+
         self.times = [[], [], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
+        # ...doesn't work correctly with cuda-optimized code (e.g. c2 compact BBBC implementation)
         self.time_avg = dict()
-        self.t_max = 72*3600-10*60  # max. runtime 71:50:00 h
+        self.t_max = 72*3600-10*60  # max. runtime 71:50:00 h / to stop and store sim-data for later continuation,
+        # ...because the cluster only allows 72h long jobs.
+        # <<<
 
         # CALCULATE INITIAL SOLUTION of flow and CHECK initial solution for correct dimensions
         grid = flow.grid
@@ -81,17 +87,20 @@ class Simulation:
                 # get no-streaming markings from boundaries
                 no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(self.f.shape)
         if no_stream_mask.any():
-            # write no_streaming_mask to streaming-object
+            # pass no_streaming_mask to streaming-object
             self.streaming.no_stream_mask = no_stream_mask
 
         # define f_collided (post-collision, pre-streaming f) storage format for hwbb, ibb1, ibb1c1 or ibb1c2, ...
-        self.boundary_range = range(len(self._boundaries))
+        self.boundary_range = range(len(self._boundaries))  # how many boundary condition python-objects
         for boundary_index in self.boundary_range:
             if hasattr(self._boundaries[boundary_index], "store_f_collided"):
-                self.store_f_collided.append(True)
+                self.store_f_collided.append(True)  # this boundary needs f_collided
                 self._boundaries[boundary_index].store_f_collided(self.f)
             else:
-                self.store_f_collided.append(False)
+                self.store_f_collided.append(False)  # this boundary doesn't need f_collided
+        # (!) at the moment f_collided is passed to and stored by the boundary. This is only efficient,
+        # ...if there is either only one boundary needing f_collided, or the storage of f_collided is sparse,
+        # ...meaning: every boundary stores only the population needed for itself.
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -99,7 +108,7 @@ class Simulation:
         M.Bille: added halfway bounce back boundary
         """
         start = timer()
-        if self.i == 0:  # if this is the first timestep, calc. initial force on Object/walls/boundary/obstacle and call reporters
+        if self.i == 0:
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
@@ -107,12 +116,12 @@ class Simulation:
 
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
-            # ...and store post-collision population for halfway-bounce-back boundary condition
+            # ...and store post-collision population for certain bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
 
             time2 = timer()
 
-            ### STORE f_collided FOR BOUNDARIES needing pre-streaming populations for bounce or force-calculation
+            ### STORE f_collided FOR BOUNDARIES needing post-collision-, pre-streaming populations for bounce or force-calculation
             for boundary_index in self.boundary_range:
                 if self.store_f_collided[boundary_index]:
                     self._boundaries[boundary_index].store_f_collided(self.f)
@@ -143,13 +152,17 @@ class Simulation:
             self.times[3].append(time5-time4)  # time to boundary
             self.times[4].append(time6-time5)  # time to report
 
+            # BETA: if simulation is running close to t_max (host job-duraction limit),
+            # ...end simulation prematurely to allow for postprocessing and storage of so far gathered results.
+            # If you suspect your simulation to end prematurely due to the execution time limit, remember to write a
+            # ...checkpoint to continue the simulation in a new job.
             if time6-start > self.t_max:  # if T_total > 71:50:00 h
-                num_steps = _
-                break
+                num_steps = _  # log current step counter
+                break  # end sim-loop prematurely
                 # TODO: print out real number of steps! sim.i - i_start
         end = timer()
 
-        # calculate individual runtimes (M.Bille)
+        # calculate individual runtimes (M.Bille): doesn't work with asynchronous, cuda-optimized boundary conditions
         if num_steps > 0:
             self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]),
                                  time_store_f_collided=sum(self.times[1])/len(self.times[1]),

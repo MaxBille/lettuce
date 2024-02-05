@@ -33,12 +33,14 @@ def write_image(filename, array2d):
 
 
 def write_vtk(point_dict, id=0, filename_base="./data/output"):
+    # OLD Master-version
     # vtk.gridToVTK(f"{filename_base}_{id:08d}",
     #               np.arange(0, point_dict["p"].shape[0]),
     #               np.arange(0, point_dict["p"].shape[1]),
     #               np.arange(0, point_dict["p"].shape[2]),
     #               pointData=point_dict)
 
+    # version by M.C.B.
     vtk.imageToVTK(
         path=f"{filename_base}_{id:08d}",
         origin=(0.0, 0.0, 0.0),
@@ -325,6 +327,15 @@ def append_txt_file(filename, line):
     file.close()
 
 class Watchdog:
+    '''
+        Watchdog reporter that logs time, elapsed time, elapsed steps and estimates time remaining.
+        Additionally writes a checkpoint file, if t_max is reached.
+
+        Can be used to estimate time remaining and to get a checkpoint file if sim would run longer than alloed by the host.
+        Sim can be restarted from checkpoint.
+        (!) Watchdog reporter does not export other reporters obesrvable values etc., so make sure you save them in other ways, if sim is stopped by host system!
+
+    '''
 
     def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog"):
         self.interval = interval

@@ -10,18 +10,23 @@ from lettuce.boundary import EquilibriumBoundaryPU, \
 
 class ObstacleCylinder:
     """
-        add description here: unified version of 2D and 3D cylinder flow
+        unified version of 2D and 3D cylinder flow
         refined version of flow/obstacle.py, for cylinder-flow in 2D or 3D. The dimensions will be assumed from
-        lattice.D
+        len(shape)
 
         Flow:
         - inflow (EquilibriumBoundaryPU) at x=0, outflow (EquilibriumOutletP) at x=xmax
         - further boundaries depend on parameters:
             - lateral (y direction): periodic, no-slip wall, slip wall
             - lateral (z direction): periodic (only if lattice.D==3)
-        - obstacle: cylinder obstacle centered at (y_lu/2, y_LU/2), with radius, uniform symmetry in z-direction
-            - obstacle mask has to be set externally?
+        - obstacle: cylinder obstacle centered at (y_lu/2+x_offset, y_LU/2+y_offset),
+            with radius=char_length, uniform symmetry in z-direction
         - boundary condition for obstacle can be chosen: hwbb, fwbb, ibb1
+            AND storage-formats: fwbb, fwbbc (compact), hwbb, hwbbc1, hwbbc2, hwbbc3, ibb1, ibb1c1, ibb1c2
+            - c: compact implementation (= DIY-sparse, faster and less memory)
+            - c2 better than c1
+            - c3 is hwbb-only for use with older simulation-classes that don't contain a store_f_collided call!
+            recommendation: use fwbbc, hwbbc2, ibb1c2 for best runtime- and memory-efficiency
         - initial pertubation (trigger Von Kármán vortex street for Re>46) can be initialized in y and z direction
         - initial velocity can be 0, u_char or a parabolic profile (parabolic if lateral_walls = "bounceback")
         - inlet/inflow velocity can be uniform u_char or parabolic
@@ -43,7 +48,6 @@ class ObstacleCylinder:
             self.shape = (int(shape[0]), int(shape[1]), int(shape[2]))
         else:
             print("WARNING: shape is not 2- or 3-dimensional...(!)")
-        #self.shape = shape
 
         self.char_length_pu = char_length_pu  # characteristic length
 
@@ -60,7 +64,7 @@ class ObstacleCylinder:
         self.perturb_init = perturb_init  # toggle: introduce asymmetry in initial solution to trigger v'Karman Vortex Street
         self.u_init = u_init  # toggle: initial solution velocity profile type
         self.lateral_walls = lateral_walls  # toggle: lateral walls to be bounce back (bounceback), slip wall (slip) or periodic (periodic)
-        self.bc_type = bc_type  # toggle: bounce back algorithm: halfway (hwbb) or fullway (fwbb)
+        self.bc_type = bc_type  # toggle: bounce back algorithm: halfway (hwbb),  fullway (fwbb), linearly interpolated (ibb1)
 
         # initialize masks (init with zeros)
         self.solid_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all solid nodes (obstacle, walls, ...)
@@ -174,10 +178,6 @@ class ObstacleCylinder:
                     plane_yz = np.ones_like(u[0, 1])  # plane of ones
                     u[0][1] = np.einsum('y,yz->yz', amplitude_y, plane_yz)  # plane of amplitude in y
                     amplitude_z = np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * self.units.characteristic_velocity_pu * 0.1  # amplitude in z
-                   # print("amplitude y:", amplitude_y.shape)
-                   # print("u[0][1]:", u[0][1].shape)
-                   # print("amplitude z:", amplitude_z.shape)
-                    # factor = 1 + np.sin(np.linspace(0, nz, nz) / nz * 2 * np.pi) * 0.3  # pertubation in z-direction
                     u[0][1] += np.einsum('z,yz->yz', amplitude_z, plane_yz)
             else:
                 # multiply scaled down perturbation if velocity field is already near u_char
@@ -221,7 +221,7 @@ class ObstacleCylinder:
         # outlet ("right side", x[-1],y[:], (z[:]))
         if self.units.lattice.D == 2:
             outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0])  # outlet in positive x-direction
-        else: # self.units.lattice.D == 3:
+        else:  # self.units.lattice.D == 3:
             outlet_boundary = EquilibriumOutletP(self.units.lattice, [1, 0, 0])  # outlet in positive x-direction
 
         # obstacle (for example: obstacle "cylinder" with radius centered at position x_pos, y_pos) -> to be set via obstacle_mask.setter
@@ -253,7 +253,7 @@ class ObstacleCylinder:
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
 
-        if lateral_boundary is None:  # if lateral boundary is periodic...don't return a boundary-object
+        if lateral_boundary is None:  # if lateral boundary is periodic...don't include the lateral_boundary object in the boundaries-list
             return [
                 inlet_boundary,
                 outlet_boundary,
