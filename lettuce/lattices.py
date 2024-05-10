@@ -111,15 +111,15 @@ class Lattice:
 
     def einsum(self, equation, fields, **kwargs):
         """Einstein summation on local fields."""
-        input, output = equation.split("->")
-        inputs = input.split(",")
-        for i, inp in enumerate(inputs):
-            if len(inp) == len(fields[i].shape):
+        input, output = equation.split("->")  # input dimension specifiers and output dimension specifiers
+        inputs = input.split(",")  # get a list of the input dimension specifiers
+        for i, inp in enumerate(inputs):  # enum. the list: index of fiel (0 and 1) and all specifiers of one field
+            if len(inp) == len(fields[i].shape):  # if the number of specifiers of the field is equal to the number of dimensions in the field, pass (correct)
                 pass
-            elif len(inp) == len(fields[i].shape) - self.D:
-                inputs[i] += "..."
-                if not output.endswith("..."):
-                    output += "..."
+            elif len(inp) == len(fields[i].shape) - self.D:  # if there are D more inputs than dimensions in the field
+                inputs[i] += "..."  # ...add ellipsis to the input
+                if not output.endswith("..."):  # if the output does not have an ellipsis too...
+                    output += "..."  # add one
             else:
                 raise LettuceException("Bad dimension.")
         equation = ",".join(inputs) + "->" + output
