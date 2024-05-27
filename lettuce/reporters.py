@@ -331,9 +331,9 @@ class Watchdog:
         Watchdog reporter that logs time, elapsed time, elapsed steps and estimates time remaining.
         Additionally writes a checkpoint file, if t_max is reached.
 
-        Can be used to estimate time remaining and to get a checkpoint file if sim would run longer than alloed by the host.
+        Can be used to estimate time remaining and to get a checkpoint file if sim would run longer than allowed by the host.
         Sim can be restarted from checkpoint.
-        (!) Watchdog reporter does not export other reporters obesrvable values etc., so make sure you save them in other ways, if sim is stopped by host system!
+        (!) Watchdog reporter does not export other reporters observable values etc., so make sure you save them in other ways, if sim is stopped by host system!
 
     '''
 
