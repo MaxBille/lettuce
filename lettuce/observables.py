@@ -9,7 +9,7 @@ import numpy as np
 from lettuce.util import torch_gradient
 from packaging import version
 
-__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient", "Mass"]
+__all__ = ["Observable", "MaximumVelocity", "MaximumVelocityLU", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient", "Mass"]
 
 
 class Observable:
@@ -27,6 +27,14 @@ class MaximumVelocity(Observable):
     def __call__(self, f):
         u = self.lattice.u(f)
         return self.flow.units.convert_velocity_to_pu(torch.norm(u, dim=0).max())
+
+
+class MaximumVelocityLU(Observable):
+    """Maximum velocitiy"""
+
+    def __call__(self, f):
+        u = self.lattice.u(f)
+        return torch.norm(u, dim=0).max()
 
 
 class IncompressibleKineticEnergy(Observable):
