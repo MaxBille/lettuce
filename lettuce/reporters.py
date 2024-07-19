@@ -56,11 +56,12 @@ class VTKReporter:
     "EDIT (M.Bille: can insert solid-mask to pin osb. to zero, inside solid obstacle, " \
     "...useful for boundaries that store populations inside the boundary-region (FWBB, HWBBc3,...), making obs(f) deviate from 0"
 
-    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None):
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0):
         self.lattice = lattice
         self.flow = flow
         self.interval = interval
         self.filename_base = filename_base
+        self.imin=imin
         if solid_mask is not None and lattice.D == 2:
             self.solid_mask = solid_mask[..., None]
         else:
@@ -71,7 +72,7 @@ class VTKReporter:
         self.point_dict = dict()
 
     def __call__(self, i, t, f):
-        if i % self.interval == 0:
+        if i % self.interval == 0 and i >= self.imin:
             u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
             p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
             #rho = self.flow.units.convert_density_to_pu(self.lattice.rho(f))
