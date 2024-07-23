@@ -30,7 +30,7 @@ from lettuce.lattices import Lattice
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
            "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary",
-           "InterpolatedBounceBackBoundary", "InterpolatedBounceBackBoundary_compact_v1", "InterpolatedBounceBackBoundary_compact_v2",
+           "InterpolatedBounceBackBoundary", "InterpolatedBounceBackBoundary_compact_v1", "InterpolatedBounceBackBoundary_compact_v2", "InterpolatedBounceBackBoundary_occ",
            "FullwayBounceBackBoundary_compact", "HalfwayBounceBackBoundary_compact_v1", "HalfwayBounceBackBoundary_compact_v2",
            "HalfwayBounceBackBoundary_compact_v3", "PartiallySaturatedBoundary"]
 
@@ -946,13 +946,13 @@ class InterpolatedBounceBackBoundary_occ:
 
         # convert relevant tensors:
         self.f_index_lt = torch.tensor(collision_data.f_index_lt, device=self.lattice.device,
-                                       dtype=torch.int)  # the batch-index has to be integer
+                                       dtype=torch.int64)  # the batch-index has to be integer
         self.f_index_gt = torch.tensor(collision_data.f_index_gt, device=self.lattice.device,
-                                       dtype=torch.int)  # the batch-index has to be integer
+                                       dtype=torch.int64)  # the batch-index has to be integer
         self.d_lt = collision_data.d_lt
         self.d_gt = collision_data.d_gt
         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
-                                            dtype=torch.int)  # batch-index has to be a tensor
+                                            dtype=torch.int64)  # batch-index has to be a tensor
 
         f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
         f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
@@ -1007,9 +1007,9 @@ class InterpolatedBounceBackBoundary_occ:
             self.calc_force_on_boundary(f)
         return f
 
-    def make_no_streaming_mask(self, f_shape):
+    def make_no_stream_mask(self, f_shape):
         assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
-        # no_streaming_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+        # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
         # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
         # return torch.tensor(self.mask, dtype=torch.bool)
         return self.lattice.convert_to_tensor(self.mask)
@@ -1297,6 +1297,7 @@ class FullwayBounceBackBoundary_compact:
                         pass  # just ignore this iteration since there is no neighbor there
 
         self.f_index = torch.tensor(np.array(self.f_index), device=self.lattice.device, dtype=torch.int64) # the batch-index has to be integer
+        #PHILIPP_occ_angepasst? self.f_index = torch.tensor(self.f_index, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
                                             dtype=torch.int64)  # batch-index has to be a tensor
 
@@ -1429,12 +1430,12 @@ class HalfwayBounceBackBoundary:
         self.calc_force_on_boundary()
         # bounce (invert populations on fluid nodes neighboring solid nodes)
         f = torch.where(self.f_mask[self.lattice.stencil.opposite], self.f_collided[self.lattice.stencil.opposite], f)
-            # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
-            # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
-            # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
-            # (?) es wird keine no_streaming_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
-            # ...ist das so, oder entsteht dadurch "Strömung" innerhalb des Obstacles? Diese hat zwar keinen direkten Einfluss auf die Größen im Fluidbereich,
-            # ... lässt aber in der Visualisierung Werte ungleich Null innerhalb von Objekten entstehen und Mittelwerte etc. könnten davon beeinflusst werden. (?)
+        # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
+        # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
+        # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
+        # (?) es wird keine no_stream_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
+        # ...ist das so, oder entsteht dadurch "Strömung" innerhalb des Obstacles? Diese hat zwar keinen direkten Einfluss auf die Größen im Fluidbereich,
+        # ... lässt aber in der Visualisierung Werte ungleich Null innerhalb von Objekten entstehen und Mittelwerte etc. könnten davon beeinflusst werden. (?)
         return f
 
     def make_no_stream_mask(self, f_shape):
@@ -1444,7 +1445,7 @@ class HalfwayBounceBackBoundary:
         return self.lattice.convert_to_tensor(self.mask)
 
     def make_no_collision_mask(self, f_shape):
-        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
+        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_stream_mask
         # ...prevents interaction between nodes inside and outside the boundary region.
         # INFO: pay attention to the initialization of observable/moment-fields (u, rho,...) on the boundary nodes,
         # ...in the initial solution of your flow, especially if visualization or post-processing uses the field-values
@@ -1756,7 +1757,7 @@ class HalfwayBounceBackBoundary_compact_v2:
         return self.lattice.convert_to_tensor(self.mask)
 
     def make_no_collision_mask(self, f_shape):
-        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
+        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_stream_mask
         # ...prevents interaction between nodes inside and outside of the boundary region.
         # INFO: pay attention to the initialization of observable/moment-fields (u, rho,...) on the boundary nodes,
         # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
@@ -1907,7 +1908,7 @@ class HalfwayBounceBackBoundary_compact_v3:
         return self.lattice.convert_to_tensor(self._no_stream_mask)
 
     def make_no_collision_mask(self, f_shape):
-        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_streaming_mask
+        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_stream_mask
         # ...prevents interaction between nodes inside and outside of the boundary region.
         # INFO: pay attention to the initialization of observable/moment-fields (u, rho,...) on the boundary nodes,
         # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
