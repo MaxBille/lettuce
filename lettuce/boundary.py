@@ -23,13 +23,56 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 import torch
 import numpy as np
 import time
-from lettuce import (LettuceException)
+
+# from build.lib.lettuce.boundary import InterpolatedBounceBackBoundary
+from lettuce import LettuceException
+from lettuce.lattices import Lattice
 
 __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBackBoundary",
            "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary",
            "InterpolatedBounceBackBoundary", "InterpolatedBounceBackBoundary_compact_v1", "InterpolatedBounceBackBoundary_compact_v2",
            "FullwayBounceBackBoundary_compact", "HalfwayBounceBackBoundary_compact_v1", "HalfwayBounceBackBoundary_compact_v2",
-           "HalfwayBounceBackBoundary_compact_v3"]
+           "HalfwayBounceBackBoundary_compact_v3", "PartiallySaturatedBoundary"]
+
+
+class PartiallySaturatedBoundary:
+    """
+    Partially saturated boundary condition using a partial combination of standard full-way bounce back and
+    BGK-Collision, first presented by Noble and Torczynski (1998), see Krüger et al., pp. 448.
+    """
+
+    # this may be just as efficient as a compact version, b/c the boundary is actually used on all nodes even within the object
+    def __init__(self, mask: torch.Tensor, lattice: Lattice, tau: float, saturation: float):
+        self.mask = mask
+        self.lattice = lattice
+        self.tau = tau
+        self.B = saturation * (tau - 0.5) / ((1 - saturation) + (tau - 0.5))  # B(epsilon, theta), Krüger p. 448ff
+        return
+
+    def __call__(self, f):
+        rho = self.lattice.rho(f)
+        u = self.lattice.u(f, rho=rho)
+        feq = self.lattice.equilibrium(rho, u)
+        # TODO: benchmark and possibly use indices (like _compact)
+        #  and/or calculate feq twice within torch.where (like _less_memory)
+        f = torch.where(self.mask, f - (1.0 - self.B) / self.tau * (f - feq)
+                        + self.B * ((f[self.lattice.stencil.opposite] - feq[self.lattice.stencil.opposite])
+                                    - (f - self.lattice.equilibrium(rho, torch.zeros_like(u)))), f)
+        return f
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]
+        return self.mask
+
+
+class CollisionData(dict):
+    f_index_lt: torch.IntTensor
+    f_index_gt: torch.IntTensor
+    d_lt: torch.Tensor
+    d_gt: torch.Tensor
+    points_inside: torch.Tensor
+    solid_mask: torch.Tensor
+    not_intersected: torch.Tensor = torch.tensor([])
 
 
 class InterpolatedBounceBackBoundary:
@@ -561,6 +604,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
                                                                                     self.fc_index[2], self.fc_index[3]],
                                                                   size=f_collided.size()))
 
+
 class InterpolatedBounceBackBoundary_compact_v2:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
@@ -870,13 +914,158 @@ class InterpolatedBounceBackBoundary_compact_v2:
                                                           self.f_index_lt[:, 3]])  # z
 
             self.f_collided_gt[:, 0] = torch.clone(f_collided[self.f_index_gt[:, 0],  # q
-                                                          self.f_index_gt[:, 1],  # x
-                                                          self.f_index_gt[:, 2],  # y
-                                                          self.f_index_gt[:, 3]])  # z
-            self.f_collided_gt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_gt[:,0]],  # q
-                                                          self.f_index_gt[:, 1],  # x
-                                                          self.f_index_gt[:, 2],  # y
-                                                          self.f_index_gt[:, 3]])  # z
+                                                              self.f_index_gt[:, 1],  # x
+                                                              self.f_index_gt[:, 2],  # y
+                                                              self.f_index_gt[:, 3]])  # z
+            self.f_collided_gt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_gt[:, 0]],  # q
+                                                              self.f_index_gt[:, 1],  # x
+                                                              self.f_index_gt[:, 2],  # y
+                                                              self.f_index_gt[:, 3]])  # z
+
+
+class InterpolatedBounceBackBoundary_occ:
+    """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.
+        (2017)
+        - linear or quadratic interpolation of populations to retain the true boundary location between fluid- and
+        solid-node
+        * version 2.0: using given indices and distances between fluid- and solid-node
+        of boundary link and boundary surface for interpolation!
+    """
+
+    def __init__(self, mask, lattice: Lattice, collision_data: CollisionData, calc_force=None, ad_enabled=False):
+        t_init_start = time.time()
+        self.mask = mask  # location of solid-nodes
+        self.lattice = lattice
+        self.ad_enabled = ad_enabled
+        if calc_force is not None:
+            self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
+                self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
+            self.calc_force = True
+        else:
+            self.calc_force = False
+
+        # convert relevant tensors:
+        self.f_index_lt = torch.tensor(collision_data.f_index_lt, device=self.lattice.device,
+                                       dtype=torch.int)  # the batch-index has to be integer
+        self.f_index_gt = torch.tensor(collision_data.f_index_gt, device=self.lattice.device,
+                                       dtype=torch.int)  # the batch-index has to be integer
+        self.d_lt = collision_data.d_lt
+        self.d_gt = collision_data.d_gt
+        self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
+                                            dtype=torch.int)  # batch-index has to be a tensor
+
+        f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
+        f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
+        f_collided_lt_opposite = torch.zeros_like(self.d_lt)
+        f_collided_gt_opposite = torch.zeros_like(self.d_gt)
+        self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
+        self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
+        print(f"IBB initialization took {time.time() - t_init_start:.2f} seconds")
+
+    def __call__(self, f):
+        ## f_collided_lt = [f_collided_lt, f_collided_lt.opposite] (!) in compact storage-layout
+
+        if self.lattice.D == 2:
+            # BOUNCE
+            # if d <= 0.5
+            if len(self.f_index_lt) != 0:
+                f[self.opposite_tensor[self.f_index_lt[:, 0]],
+                self.f_index_lt[:, 1],
+                self.f_index_lt[:, 2]] = 2 * self.d_lt * self.f_collided_lt[:, 0] + (1 - 2 * self.d_lt) * f[
+                    self.f_index_lt[:, 0],
+                    self.f_index_lt[:, 1],
+                    self.f_index_lt[:, 2]]
+            # if d > 0.5
+            if len(self.f_index_gt) != 0:
+                f[self.opposite_tensor[self.f_index_gt[:, 0]],
+                self.f_index_gt[:, 1],
+                self.f_index_gt[:, 2]] = (1 / (2 * self.d_gt)) * self.f_collided_gt[:, 0] + (
+                        1 - 1 / (2 * self.d_gt)) * self.f_collided_gt[:, 1]
+
+        if self.lattice.D == 3:
+            # BOUNCE
+            # if d <= 0.5
+            if len(self.f_index_lt) != 0:
+                f[self.opposite_tensor[self.f_index_lt[:, 0]],
+                self.f_index_lt[:, 1],
+                self.f_index_lt[:, 2],
+                self.f_index_lt[:, 3]] = 2 * self.d_lt * self.f_collided_lt[:, 0] + (1 - 2 * self.d_lt) * f[
+                    self.f_index_lt[:, 0],
+                    self.f_index_lt[:, 1],
+                    self.f_index_lt[:, 2],
+                    self.f_index_lt[:, 3]]
+            # if d > 0.5
+            if len(self.f_index_gt) != 0:
+                f[self.opposite_tensor[self.f_index_gt[:, 0]],
+                self.f_index_gt[:, 1],
+                self.f_index_gt[:, 2],
+                self.f_index_gt[:, 3]] = (1 / (2 * self.d_gt)) * self.f_collided_gt[:, 0] + (
+                        1 - 1 / (2 * self.d_gt)) * self.f_collided_gt[:, 1]
+
+        # CALC. FORCE on boundary (MEM, MEA)
+        if self.calc_force:
+            self.calc_force_on_boundary(f)
+        return f
+
+    def make_no_streaming_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
+        # no_streaming_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+        # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
+        # return torch.tensor(self.mask, dtype=torch.bool)
+        return self.lattice.convert_to_tensor(self.mask)
+
+    def make_no_collision_mask(self, f_shape):
+        # INFO: pay attention to the initialization of observable/moment-fields (u, rho,...) on the boundary nodes,
+        # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
+        # ...in the whole domain (including the boundary region)!
+        assert self.mask.shape == f_shape[1:]
+        # return torch.tensor(self.mask, dtype=torch.bool)  # self.lattice.convert_to_tensor(self.mask)
+        return self.lattice.convert_to_tensor(self.mask)
+
+    def calc_force_on_boundary(self, f_bounced):
+        ### force = e * (f_collided + f_bounced[opp.])
+        if self.lattice.D == 2:
+            self.force_sum = torch.einsum('i..., id -> d',
+                                          self.f_collided_lt[:, 0] + f_bounced[
+                                              self.opposite_tensor[self.f_index_lt[:, 0]],
+                                              self.f_index_lt[:, 1],
+                                              self.f_index_lt[:, 2]],
+                                          self.lattice.e[self.f_index_lt[:, 0]].float()) \
+                             + torch.einsum('i..., id -> d',
+                                            self.f_collided_gt[:, 0] + f_bounced[
+                                                self.opposite_tensor[self.f_index_gt[:, 0]],
+                                                self.f_index_gt[:, 1],
+                                                self.f_index_gt[:, 2]],
+                                            self.lattice.e[self.f_index_gt[:, 0]].float())
+        if self.lattice.D == 3:
+            self.force_sum = torch.einsum('i..., id -> d',
+                                          self.f_collided_lt[:, 0] + f_bounced[
+                                              self.opposite_tensor[self.f_index_lt[:, 0]],
+                                              self.f_index_lt[:, 1],
+                                              self.f_index_lt[:, 2],
+                                              self.f_index_lt[:, 3]],
+                                          self.lattice.e[self.f_index_lt[:, 0]].float()) \
+                             + torch.einsum('i..., id -> d',
+                                            self.f_collided_gt[:, 0] + f_bounced[
+                                                self.opposite_tensor[self.f_index_gt[:, 0]],
+                                                self.f_index_gt[:, 1],
+                                                self.f_index_gt[:, 2],
+                                                self.f_index_gt[:, 3]],
+                                            self.lattice.e[self.f_index_gt[:, 0]].float())
+
+    def store_f_collided(self, f_collided):
+        for f_index_lgt, f_collided_lgt in zip([self.f_index_lt, self.f_index_gt],
+                                               [self.f_collided_lt, self.f_collided_gt]):
+            if len(f_index_lgt) != 0:
+                for d in range(self.lattice.D):
+                    indices = [f_index_lgt[:, 0],  # q
+                               f_index_lgt[:, 1],  # x
+                               f_index_lgt[:, 2]]  # y
+                    if self.lattice.D == 3:
+                        indices.append(f_index_lgt[:, 3])
+                    f_collided_lgt[:, 0] = torch.clone(f_collided[indices])
+                    indices[0] = self.opposite_tensor[f_index_lgt[:, 0]]
+                    f_collided_lgt[:, 1] = torch.clone(f_collided[indices])
 
 
 class SlipBoundary:

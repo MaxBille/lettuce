@@ -1,5 +1,11 @@
 """Lattice Boltzmann Solver"""
 
+import torch
+import numpy as np
+
+import pickle
+import warnings
+
 from timeit import default_timer as timer
 from lettuce import (
     LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient,
@@ -9,11 +15,8 @@ from lettuce import (
     HalfwayBounceBackBoundary_compact_v3
 )
 from lettuce.util import pressure_poisson
-import pickle
+
 from copy import deepcopy
-import warnings
-import torch
-import numpy as np
 
 __all__ = ["Simulation"]
 
@@ -42,10 +45,7 @@ class Simulation:
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
         # TRUE/FALSE per boundary in the _boundaries list
 
-        self.times = [[], [], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
-        # ...doesn't work correctly with cuda-optimized code (e.g. c2 compact BBBC implementation)
-        self.time_avg = dict()
-        self.t_max = 72*3600-10*60  # max. runtime 71:50:00 h / to stop and store sim-data for later continuation,
+        self.t_max = 72 * 3600 - 10 * 60  # max. runtime 71:50:00 h / to stop and store sim-data for later continuation,
         # ...because the cluster only allows 72h long jobs.
         # <<<
 
@@ -78,7 +78,7 @@ class Simulation:
             # ... no_collision_mask is used in the simulation.step()
 
         # retrieve no-streaming and no-collision markings from all boundaries
-        self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state -> WHY?
+        self._boundaries = self.flow.boundaries  # store locally to keep the flow free from the boundary state -> WHY?
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
                 # get no-collision markings from boundaries
@@ -126,12 +126,8 @@ class Simulation:
                 if self.store_f_collided[boundary_index]:
                     self._boundaries[boundary_index].store_f_collided(self.f)
 
-            time3 = timer()
-
             ### STREAMING
             self.f = self.streaming(self.f)
-
-            time4 = timer()
 
             ### BOUNDARY
             # apply boundary conditions
@@ -141,40 +137,20 @@ class Simulation:
             # count step
             self.i += 1
 
-            time5 = timer()
             # call reporters
             self._report()
-
-            time6 = timer()
-            self.times[0].append(time2-time1)  # time to collide
-            self.times[1].append(time3-time2)  # time to store f_collided
-            self.times[2].append(time4-time3)  # time to stream
-            self.times[3].append(time5-time4)  # time to boundary
-            self.times[4].append(time6-time5)  # time to report
 
             # BETA: if simulation is running close to t_max (host job-duraction limit),
             # ...end simulation prematurely to allow for postprocessing and storage of so far gathered results.
             # If you suspect your simulation to end prematurely due to the execution time limit, remember to write a
             # ...checkpoint to continue the simulation in a new job.
-            if time6-start > self.t_max:  # if T_total > 71:50:00 h
+            if timer() - start > self.t_max:  # if T_total > 71:50:00 h
+                print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
+                print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
                 num_steps = _  # log current step counter
                 break  # end sim-loop prematurely
                 # TODO: print out real number of steps! sim.i - i_start
         end = timer()
-
-        # calculate individual runtimes (M.Bille): doesn't work with asynchronous, cuda-optimized boundary conditions
-        if num_steps > 0:
-            self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]),
-                                 time_store_f_collided=sum(self.times[1])/len(self.times[1]),
-                                 time_streaming=sum(self.times[2])/len(self.times[2]),
-                                 time_boundary=sum(self.times[3])/len(self.times[3]),
-                                 time_reporter=sum(self.times[4])/len(self.times[4]))
-        else:  # no division by zero
-            self.time_avg = dict(time_collision=-1,
-                                 time_store_f_collided=-1,
-                                 time_streaming=-1,
-                                 time_boundary=-1,
-                                 time_reporter=-1)
 
         # calculate runtime and performance in MLUPS
         seconds = end - start
@@ -269,3 +245,7 @@ class Simulation:
         else:  # if no device is given, device from checkponit is used. May run into issues if the device of the ckeckpoint is different from the device of the rest of the simulation.
             with open(filename, "rb") as fp:
                 self.f = pickle.load(fp)
+
+    @property
+    def boundaries(self):
+        return self._boundaries

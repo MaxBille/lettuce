@@ -98,6 +98,7 @@ class UnitConversion:
         return pressure_lu / self.characteristic_pressure_lu * self.characteristic_pressure_pu
 
     def convert_pressure_to_lu(self, pressure_pu):
+        #PHILIPP: return torch.tensor(pressure_pu / self.characteristic_pressure_pu * self.characteristic_pressure_lu, device=self.lattice.device)
         return pressure_pu / self.characteristic_pressure_pu * self.characteristic_pressure_lu
 
     def convert_length_to_pu(self, length_lu):

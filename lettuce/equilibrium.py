@@ -5,7 +5,8 @@ __all__ = ["Equilibrium", "QuadraticEquilibrium", "IncompressibleQuadraticEquili
 
 
 class Equilibrium:
-    pass
+    def __call__(self, rho, u):
+        raise NotImplementedError()
 
 
 class QuadraticEquilibrium(Equilibrium):
@@ -24,7 +25,7 @@ class QuadraticEquilibrium(Equilibrium):
 
 
 class QuadraticEquilibrium_LessMemory(QuadraticEquilibrium):
-    """does the same as the normal equilibrium, how ever it uses somewhere around 20% less RAM,
+    """does the same as the normal equilibrium, however it uses somewhere around 20% less RAM,
     but runs about 2% slower on GPU and 11% on CPU
 
     Use this by setting
