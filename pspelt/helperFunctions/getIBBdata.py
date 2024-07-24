@@ -8,20 +8,20 @@ from OCC.Core.TopoDS import TopoDS_Shape
 from pspelt.helperFunctions.plotting import plot_intersection_info, Show2D
 from pspelt.obstacleFunctions import overlap_solids, calculate_mask, collect_collision_data
 from lettuce import Lattice
-from lettuce.boundary import CollisionData
+from lettuce.boundary import SolidBoundaryData
 
 
 def getIBBdata(cad_data: trimesh.Trimesh or TopoDS_Shape, grid: tuple[torch.Tensor, ...], lattice: Lattice,
                no_store_coll: bool, res: float, dim: int, name: str, coll_data_path: str,
                only_mask: bool = False, redo_calculations: bool = False, parallel: bool = False,
-               device: str = "cuda", cut_z: float = 0., cluster: bool = False) -> CollisionData:
+               device: str = "cuda", cut_z: float = 0., cluster: bool = False) -> SolidBoundaryData:
     if not os.path.exists(coll_data_path):
         os.makedirs(coll_data_path)
 
     coll_data_path = os.path.join(coll_data_path, f"{res:.2f}ppm_{dim}D")
     print(f"Looking for data for {name} in {coll_data_path}.")
 
-    coll_data = CollisionData()
+    coll_data = SolidBoundaryData()
 
     mask_data_exists = (os.path.exists(os.path.join(coll_data_path, f"solid_mask_{name}.pt")) and
                         os.path.exists(os.path.join(coll_data_path, f"points_inside_{name}.pt")))

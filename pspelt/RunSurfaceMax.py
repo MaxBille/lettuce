@@ -25,8 +25,7 @@ time0 = time()
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument("--default_device", default="cuda", type=str, help="")
 parser.add_argument("--input", default='landscape_3D', type=str, help="")
-parser.add_argument("--housename", default='house_max', type=str,
-                    help="")
+parser.add_argument("--housename", default='house_max', type=str, help="")
 parser.add_argument("--inputtype", default='stl', type=str, help="")
 parser.add_argument("--coll", default='kbc', choices=['kbc', 'bgk', 'bgk_reg'], type=str, help="")
 parser.add_argument("--dim", default=2, type=int, choices=[2, 3], help="")
@@ -90,16 +89,18 @@ sys.stdout = Logger(outdir)
 print(f"Input: {args}")
 print(f"Re: {Re:.1f}, Ma: {Ma}")
 
-# coordinates (all pu)
+# coordinates (all pu) - HAUS UND DOMAIN GEOMETRY
 xmin, ymin, zmin = 0, 0, 0
 xmax, ymax, zmax = 60, 30, 40
 minz_house, maxz_house = (15, 20) if dim == 3 else (-1, 1)
 floor_height = 1/res * .5
 house_coordinates = [[15, 0+floor_height], [15, 10+floor_height], [14, 10+floor_height], [20, 15.5+floor_height],
                      [26, 10+floor_height], [25, 10+floor_height], [25, 0+floor_height]]
-domain_constraints = ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])
-lx, ly, lz = xmax-xmin, ymax-ymin, zmax-zmin
-shape = (int(lx*res), int(ly*res)) if dim == 2 else (int(lx*res), int(ly*res), int(lz*res))
+print(house_coordinates)
+# ab hier ist nur Verpacken und verwenden...
+domain_constraints = ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem abh. von der stl und deren ursprung
+lx, ly, lz = xmax-xmin, ymax-ymin, zmax-zmin  # das sidn die PU-Domänengrößen
+shape = (int(lx*res), int(ly*res)) if dim == 2 else (int(lx*res), int(ly*res), int(lz*res)) # LU-Domänengröße
 
 lattice = lt.Lattice(lt.D2Q9 if dim == 2 else lt.D3Q27, device=default_device, #use_native=False,
                      dtype=torch.float64 if args["double_precision"] else torch.float)

@@ -18,13 +18,13 @@ from OCC.Core.gp import gp_Pnt, gp_Dir
 from joblib import Parallel, delayed
 
 #import occ_ad
-from geometry import is_point_inside_solid, intersect_boundary_with_ray, extract_faces
-from helperFunctions.plotting import plot_not_intersected
+from pspelt.geometry import is_point_inside_solid, intersect_boundary_with_ray, extract_faces
+from pspelt.helperFunctions.plotting import plot_not_intersected
 #from occ_ad import standard_adouble_list_to_torch_tensor, OCC_has_ad, make_gp_Pnt
 from lettuce.boundary import (EquilibriumBoundaryPU, InterpolatedBounceBackBoundary, EquilibriumOutletP,
                               BounceBackBoundary, PartiallySaturatedBoundary,
                               #LettuceBoundary,
-                              CollisionData)
+                              SolidBoundaryData)
 from lettuce.lattices import Lattice
 from lettuce.unit import UnitConversion
 from lettuce.util import append_axes
@@ -32,7 +32,7 @@ from lettuce.util import append_axes
 #    from OCC.Core.ForwardAD import Standard_Adouble
 
 def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh, grid: tuple[torch.Tensor, ...],
-                   name: str = 'no_name', collision_data: CollisionData = None, cut_z: float = 0) -> CollisionData:
+                   name: str = 'no_name', collision_data: SolidBoundaryData = None, cut_z: float = 0) -> SolidBoundaryData:
     is_occ = type(boundary_object) is TopoDS_Shape or type(boundary_object) is TopoDS_Solid
     is_tri = type(boundary_object) is trimesh.Trimesh
     print(f"calculate_points_inside for '{name}'.")
@@ -132,7 +132,7 @@ def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trim
             solid_mask.shape[2] if len(solid_mask.shape) > 2 else 1):
         print(f"WARNING: No intersection points found for '{name}'. This should not happen.")
     assert solid_mask.shape == grid[0].shape
-    collision_data = CollisionData() if collision_data is None else collision_data
+    collision_data = SolidBoundaryData() if collision_data is None else collision_data
     collision_data.solid_mask, collision_data.points_inside = solid_mask, points_inside
     return collision_data
 
@@ -158,20 +158,21 @@ def mask_from_points_list(points: list[list[int]], grid: tuple[torch.Tensor, ...
 def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_stencil: torch.Tensor, time0: float,
                      n_points_inside: int, solid_mask: torch.Tensor, opposite: list, ndim: int,
                      grid: tuple[torch.Tensor, ...], name: str = 'no_name', is_occ: bool = False,
-                     is_tri: bool = False, shell: TopoDS_Compound = None, cut_z: float = 0, cluster: bool = False):
+                     is_tri: bool = False, shell: TopoDS_Compound = None, cut_z: float = 0, cluster: bool = False, verbose: bool = False):
         # -> list[list[list[list[Any] | Any]] | list[float | Any] | list[list[float | Any]] | list[list[Any]] |
                 # list[Any] | list[list[Any] | Any]]:
     point_index = torch.tensor(np.array(points_inside[i_point_inside]), device=this_stencil.device) # points_inside[i_point_inside]
     time1 = time.time() - time0
-    if i_point_inside % (min(int(n_points_inside / 5) + 1, 5000) + 1) == 0:
+    if i_point_inside % (min(int(n_points_inside / 5) + 1, 5000) + 1) == 0:  # progess Anzeige, kompliziet, wegen Praallelisierung
         print(f"neighbour_search {i_point_inside}/{n_points_inside} "
               f"({i_point_inside / n_points_inside:.2%}, "
               f"{floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss])")
     f_index_tmp, d_tmp = [], []
     fluid_point_tmp, fluid_point_id_tmp, ray_tmp, iq_fluid_tmp = [], [], [], []
     for neighbour_dir in this_stencil:
-        print(point_index)
-        print(neighbour_dir)
+        if verbose:
+            print(point_index)
+            print(neighbour_dir)
         neighbour_point_index = point_index + neighbour_dir  # jump to neighbor node
         # (no longer) jumping across domain borders
         # for dim in range(ndim):
@@ -196,7 +197,7 @@ def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_sten
             iq_fluid = opposite[iq_solid]
             # fp = fluid fluid_point; sp = solid fluid_point
             # get the solid and fluid indices and coordinates
-            ix_fp, iy_fp, iz_fp = neighbour_point_index.tolist()
+            ix_fp, iy_fp, iz_fp = neighbour_point_index.tolist()  # unterhalb von hier für HWBB egal
             ix_sp, iy_sp, iz_sp = point_index.tolist()
             if ndim == 3:
                 x_fp, y_fp, z_fp = [grid[dim][ix_fp, iy_fp, iz_fp].item() for dim in range(3)]
@@ -221,7 +222,7 @@ def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_sten
                     d = 1.
                 f_index_tmp.append([iq_fluid, ix_fp, iy_fp, iz_fp])
                 d_tmp.append(d)
-            elif is_tri:
+            elif is_tri:  # trimesh hat eine eigene Art, das zu parallelisieren
                 fluid_point_tmp.append([x_fp, y_fp, z_fp])
                 fluid_point_id_tmp.append([ix_fp, iy_fp, iz_fp])
                 ray_tmp.append(this_stencil[iq_fluid].tolist())
@@ -230,9 +231,9 @@ def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_sten
 
 
 def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh,
-                           collision_data: CollisionData, lattice: Lattice, grid: tuple[torch.Tensor, ...],
+                           collision_data: SolidBoundaryData, lattice: Lattice, grid: tuple[torch.Tensor, ...],
                            name: str = 'no_name', parallel=False, outdir: str = os.getcwd(), cut_z: float = 0,
-                           cluster: bool = False) -> CollisionData:
+                           cluster: bool = False) -> SolidBoundaryData:
     is_occ = type(boundary_object) is TopoDS_Shape or type(boundary_object) is TopoDS_Solid
     is_tri = type(boundary_object) is trimesh.Trimesh
     # get a shell object to properly calculate minimum distances
@@ -402,18 +403,23 @@ def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trim
     return collision_data
 
 
+
+
+
 def makeGrid(domain_constraints, shape):
     dim = len(shape)
+    # PHILIPP torch-version
     # xyz = tuple(torch.linspace(domain_constraints[0][_], domain_constraints[1][_], shape[_], device="cuda:0") for _ in
     #             range(dim))  # tuple of lists of x,y,(z)-values/indices
     # grid = torch.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
+    # LETTUCE numpy-version:
     xyz = tuple(np.linspace(domain_constraints[0][_], domain_constraints[1][_], shape[_]) for _ in
                 range(dim))  # tuple of lists of x,y,(z)-values/indices
     grid = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
     return grid
 
 
-def overlap_solids(ad_collision_data: CollisionData, perm_collision_data: CollisionData):
+def overlap_solids(ad_collision_data: SolidBoundaryData, perm_collision_data: SolidBoundaryData):
     print("Doing overlap_ibb_solids")
     full_mask = perm_collision_data.solid_mask | ad_collision_data.solid_mask
     remove_ad_gt, remove_ad_lt, remove_perm_gt, remove_perm_lt = [], [], [], []

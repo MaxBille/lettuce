@@ -15,26 +15,26 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCC.Core.gp import gp_Pnt, gp_Dir
 from joblib import Parallel, delayed
 
-from obstacleFunctions import overlap_solids, collect_collision_data, calculate_mask, makeGrid
-from geometry import is_point_inside_solid, intersect_boundary_with_ray, extract_faces
+from pspelt.obstacleFunctions import overlap_solids, collect_collision_data, calculate_mask, makeGrid
+from pspelt.geometry import is_point_inside_solid, intersect_boundary_with_ray, extract_faces
 from lettuce.boundary import (EquilibriumBoundaryPU, InterpolatedBounceBackBoundary_occ, EquilibriumOutletP,
                               BounceBackBoundary, PartiallySaturatedBoundary,
                               # LettuceBoundary,
-                              CollisionData)
+                              SolidBoundaryData)
 from lettuce.lattices import Lattice
 from lettuce.unit import UnitConversion
 from lettuce.util import append_axes
 
 
 class BoundaryObject:
-    collision_data: CollisionData
+    collision_data: SolidBoundaryData
     ad_enabled: bool
     shell: TopoDS_Compound or TopoDS_Shell
    # boundary: LettuceBoundary
 
     def __init__(self, occ_object: TopoDS_Solid or torch.Tensor or trimesh.Trimesh,
                  boundary_type: InterpolatedBounceBackBoundary_occ or BounceBackBoundary or PartiallySaturatedBoundary,
-                 grid: tuple[torch.Tensor, ...], lattice: Lattice, collision_data: CollisionData = CollisionData(),
+                 grid: tuple[torch.Tensor, ...], lattice: Lattice, collision_data: SolidBoundaryData = SolidBoundaryData(),
                  ad_enabled: bool = False, saturation: float = None, tau: float = None, name: str = None,
                  parallel=False, cut_z: float = 0, cluster: bool = False):
         self.shell = None
@@ -58,7 +58,7 @@ class BoundaryObject:
             assert self.boundary_type is BounceBackBoundary or self.boundary_type is PartiallySaturatedBoundary
             self.collision_data.solid_mask = occ_object
             self.points_inside_known = True
-        if isinstance(occ_object, CollisionData):
+        if isinstance(occ_object, SolidBoundaryData):
             self.collision_data = occ_object
             if hasattr(self.collision_data, 'solid_mask'):
                 self.points_inside_known = True
@@ -83,8 +83,8 @@ class BoundaryObject:
                 if not hasattr(self.collision_data, 'f_index_lt'):
                     self.collect_collision_data()
                 self.boundary = InterpolatedBounceBackBoundary_occ(self.solid_mask, self.lattice,
-                                                               collision_data=self.collision_data,
-                                                               ad_enabled=self.ad_enabled)
+                                                                   solid_boundary_data=self.collision_data,
+                                                                   ad_enabled=self.ad_enabled)
             elif self.boundary_type is BounceBackBoundary:
                 self.boundary = BounceBackBoundary(self.solid_mask, self.lattice)
             elif self.boundary_type is PartiallySaturatedBoundary:
@@ -164,7 +164,7 @@ class ObstacleSurface:
 
     def add_boundary(self, boundary_object: TopoDS_Solid or torch.Tensor or trimesh.Trimesh,
                      boundary_type: InterpolatedBounceBackBoundary_occ or BounceBackBoundary or PartiallySaturatedBoundary,
-                     collision_data: CollisionData = CollisionData(), ad_enabled: bool = False, saturation: float = None, tau: float = None, name: str = None,
+                     collision_data: SolidBoundaryData = SolidBoundaryData(), ad_enabled: bool = False, saturation: float = None, tau: float = None, name: str = None,
                      cut_z: float = 0, cluster: bool = False):
         self.boundary_objects.append(
             BoundaryObject(boundary_object, boundary_type, self.grid, self.lattice, collision_data, ad_enabled, saturation,
@@ -205,8 +205,8 @@ class ObstacleSurface:
             H_ref = 2
             u_dash = K * u_ref / np.log((H_ref + y0) / y0)
             h_cartesian = y
-            y_solid = torch.max(torch.where(self.solid_mask, y, y.min() - 1), dim=1)[0]
-            h = h_cartesian - y_solid[:, None]
+            y_solid = torch.max(torch.where(self.solid_mask, y, y.min() - 1), dim=1)[0]  # entlang X, jeweils die Höhe y des höchsten Solid-Punktes, sodass dort die Nullstelle des geschwindigkeitsprofils über diese Spalte gesetzt wird
+            h = h_cartesian - y_solid[:, None]  # warum ist das hier minus?
             self.ux = u_dash / K * torch.log((torch.where(h > 0, h, 0) + y0) / y0)
         else:
             raise NotImplementedError("Specify u_init = 0, 1, or 2")
@@ -228,6 +228,8 @@ class ObstacleSurface:
     def boundaries(self):
         print("Doing boundaries")
         time0 = time.time()
+
+        # get GRID in x,y-plane (length, heigth
         x, y = self.grid[:2]
         x = torch.tensor(x, device=self.lattice.device)
         y = torch.tensor(y, device=self.lattice.device)
@@ -235,32 +237,42 @@ class ObstacleSurface:
             u_in = self.units.characteristic_velocity_pu * torch.eye(self.ndim)[0]
             u_top = u_in
         else:
-            self.initial_solution(self.grid[0])
+            self.initial_solution(self.grid[0])  # setzt u.a. self.ux
             ux_in = self.ux[0, :, :][None, :, :] if self.ndim == 3 else self.ux[0, :][None, :]
             u_in = torch.stack((ux_in, torch.zeros_like(ux_in), torch.zeros_like(ux_in)), 0) \
                 if self.ndim == 3 else torch.stack((ux_in, torch.zeros_like(ux_in)), 0)
             ux_top = self.ux[:, -1, :][:, None, :] if self.ndim == 3 else self.ux[:, -1][:, None]
             u_top = torch.stack((ux_top, torch.zeros_like(ux_top), torch.zeros_like(ux_top)), 0) \
                 if self.ndim == 3 else torch.stack((ux_top, torch.zeros_like(ux_top)), 0)
+
+        # OUTLET
         outlet_direction = [1, 0] if self.ndim == 2 else [1, 0, 0]
         outlet_boundary = EquilibriumOutletP(self.units.lattice, outlet_direction)  # outlet in positive x-direction
 
+        # TOP / HEAVEN
+            # on all highest nodes
         top_boundary = EquilibriumBoundaryPU(  # outlet
             y >= y.max(), self.units.lattice, self.units, u_top
         )
         boundaries = [outlet_boundary, top_boundary]
+
+        # SOLID BOUNDARIES
         if self.all_fwbb:
             for obstacle in self.boundary_objects:
-                boundaries.append(BounceBackBoundary(obstacle.collision_data.solid_mask, self.units.lattice))
+                boundaries.append(BounceBackBoundary(obstacle.collision_data.solid_mask, self.units.lattice))  # DAS HIER zum hinzufügen eienr solid_boundary! ohne wilden Kram
         else:
             # adding all boundaries
             for obj in [_ for _ in self.boundary_objects if _.unique_boundary]:
                 boundaries.append(obj.get_boundary())
         # if not hasattr(self, 'solid_mask'):
         #     self.overlap_all_solid_masks()
+
+        # INLET
         boundaries.append(EquilibriumBoundaryPU(  # inlet
-            (x <= x.min()) * (~self.solid_mask), self.units.lattice, self.units, u_in
+            (x <= x.min()) * (~self.solid_mask), self.units.lattice, self.units, u_in  # ganz links, da wo nicht solid ist
         ))
+
+        # time execution of flow.boundary()
         time1 = time.time() - time0
         print(f"boundaries took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return boundaries
@@ -339,7 +351,7 @@ class ObstacleSurface:
         time0 = time.time()
         compound = boundary_objects[0].occ_object
         for obj in boundary_objects:
-            compound = BRepAlgoAPI_Fuse(compound, obj.occ_object).Shape()
+            compound = BRepAlgoAPI_Fuse(compound, obj.occ_object).Shape()  # vereinigt zwei OC-Objekte (Addiert zur ersten, alle anderen shapes)
             obj.unique_boundary = False
         solid = compound
         combined_boundary = BoundaryObject(solid, InterpolatedBounceBackBoundary_occ, self.grid, self.lattice,

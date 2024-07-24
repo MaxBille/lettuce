@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt, rcParams
 from matplotlib.colors import colorConverter, LinearSegmentedColormap
 import numpy as np
 from lettuce import Lattice, Simulation
-from lettuce.boundary import CollisionData
+from lettuce.boundary import SolidBoundaryData
 
 rcParams["image.aspect"] = 'equal'
 rcParams["image.interpolation"] = 'none'
@@ -85,7 +85,7 @@ def print_results(lattice: Lattice, simulation: Simulation, res: float, dim: int
     show2d(torch.norm(u, dim=0), f"u(it={steps},t={t:.1f}) [m/s]", f"u_{steps}", vlim=(-.2, u0max))
 
 
-def collect_intersections(collision_data: CollisionData, grid: tuple[torch.Tensor, ...], lattice: Lattice):
+def collect_intersections(collision_data: SolidBoundaryData, grid: tuple[torch.Tensor, ...], lattice: Lattice):
     dim = len(grid[0].shape)
     # get the interpolated surface points
     surface_x, surface_y, surface_z = [], [], []
@@ -127,7 +127,7 @@ def collect_intersections(collision_data: CollisionData, grid: tuple[torch.Tenso
     return fluid_coords, dir_coords, surface_coords
 
 
-def plot_not_intersected(collision_data: CollisionData, grid: tuple[torch.Tensor, ...], outdir: str, name: str):
+def plot_not_intersected(collision_data: SolidBoundaryData, grid: tuple[torch.Tensor, ...], outdir: str, name: str):
     if not hasattr(collision_data, 'not_intersected'):
         print('Collision data has no not_intersected field!')
         return
@@ -191,16 +191,17 @@ def plot_intersections(grid, mask, fluid_coords, dir_coords, surface_coords: lis
         for surface_x, surface_y, surface_z in surface_coords:
             ax.scatter(surface_x, surface_z, surface_y, marker=".", s=.5,
                        label='intersection points')  # show intersection points
-    ax.axis('equal')
+    #ax.axis('equal')
+    ax.axis('auto')
     ax.legend()
     fig.savefig(os.path.join(outdir,
                              f"{name}_{'quiver' if quiver else 'dots'}{'3d' if dim == 3 else ''}"
-                             f"{'grid' if grid else ''}.png"), dpi=600)
+                             f"{'grid' if show_grid else ''}.png"), dpi=600)
     if show:
         plt.show()
 
 
-def plot_intersection_info(collisions: CollisionData or list[CollisionData], grid, lattice, full_mask, outdir,
+def plot_intersection_info(collisions: SolidBoundaryData or list[SolidBoundaryData], grid, lattice, full_mask, outdir,
                            name: str = '', show=True):
     if len(name) > 0:
         name += '_'

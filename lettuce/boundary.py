@@ -65,7 +65,7 @@ class PartiallySaturatedBoundary:
         return self.mask
 
 
-class CollisionData(dict):
+class SolidBoundaryData(dict):
     f_index_lt: torch.IntTensor
     f_index_gt: torch.IntTensor
     d_lt: torch.Tensor
@@ -932,9 +932,9 @@ class InterpolatedBounceBackBoundary_occ:
         of boundary link and boundary surface for interpolation!
     """
 
-    def __init__(self, mask, lattice: Lattice, collision_data: CollisionData, calc_force=None, ad_enabled=False):
+    def __init__(self, mask, lattice: Lattice, solid_boundary_data: SolidBoundaryData, calc_force=None, ad_enabled=False):
         t_init_start = time.time()
-        self.mask = mask  # location of solid-nodes
+        self.mask = mask  # location of solid-nodes  # könnte man auch aus Coll_data ziehen, die hatte aber ursprünglihc mal nicht die Solid_mask...
         self.lattice = lattice
         self.ad_enabled = ad_enabled
         if calc_force is not None:
@@ -945,12 +945,14 @@ class InterpolatedBounceBackBoundary_occ:
             self.calc_force = False
 
         # convert relevant tensors:
-        self.f_index_lt = torch.tensor(collision_data.f_index_lt, device=self.lattice.device,
-                                       dtype=torch.int64)  # the batch-index has to be integer
-        self.f_index_gt = torch.tensor(collision_data.f_index_gt, device=self.lattice.device,
-                                       dtype=torch.int64)  # the batch-index has to be integer
-        self.d_lt = collision_data.d_lt
-        self.d_gt = collision_data.d_gt
+        ### TODO: fix this, efficient copying of tensors and index-datatype
+        self.f_index_lt = torch.tensor(solid_boundary_data.f_index_lt, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
+        self.f_index_gt = torch.tensor(solid_boundary_data.f_index_gt, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
+        # self.f_index_lt = solid_boundary_data.f_index_lt
+        # self.f_index_gt = solid_boundary_data.f_index_gt
+
+        self.d_lt = solid_boundary_data.d_lt
+        self.d_gt = solid_boundary_data.d_gt
         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
                                             dtype=torch.int64)  # batch-index has to be a tensor
 
