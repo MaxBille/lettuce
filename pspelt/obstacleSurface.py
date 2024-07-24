@@ -205,8 +205,8 @@ class ObstacleSurface:
             H_ref = 2
             u_dash = K * u_ref / np.log((H_ref + y0) / y0)
             h_cartesian = y
-            y_solid = torch.max(torch.where(self.solid_mask, y, y.min() - 1), dim=1)[0]
-            h = h_cartesian - y_solid[:, None]
+            y_solid = torch.max(torch.where(self.solid_mask, y, y.min() - 1), dim=1)[0]  # entlang X, jeweils die Höhe y des höchsten Solid-Punktes, sodass dort die Nullstelle des geschwindigkeitsprofils über diese Spalte gesetzt wird
+            h = h_cartesian - y_solid[:, None]  # warum ist das hier minus?
             self.ux = u_dash / K * torch.log((torch.where(h > 0, h, 0) + y0) / y0)
         else:
             raise NotImplementedError("Specify u_init = 0, 1, or 2")
@@ -228,6 +228,8 @@ class ObstacleSurface:
     def boundaries(self):
         print("Doing boundaries")
         time0 = time.time()
+
+        # get GRID in x,y-plane (length, heigth
         x, y = self.grid[:2]
         x = torch.tensor(x, device=self.lattice.device)
         y = torch.tensor(y, device=self.lattice.device)
@@ -235,20 +237,26 @@ class ObstacleSurface:
             u_in = self.units.characteristic_velocity_pu * torch.eye(self.ndim)[0]
             u_top = u_in
         else:
-            self.initial_solution(self.grid[0])
+            self.initial_solution(self.grid[0])  # setzt u.a. self.ux
             ux_in = self.ux[0, :, :][None, :, :] if self.ndim == 3 else self.ux[0, :][None, :]
             u_in = torch.stack((ux_in, torch.zeros_like(ux_in), torch.zeros_like(ux_in)), 0) \
                 if self.ndim == 3 else torch.stack((ux_in, torch.zeros_like(ux_in)), 0)
             ux_top = self.ux[:, -1, :][:, None, :] if self.ndim == 3 else self.ux[:, -1][:, None]
             u_top = torch.stack((ux_top, torch.zeros_like(ux_top), torch.zeros_like(ux_top)), 0) \
                 if self.ndim == 3 else torch.stack((ux_top, torch.zeros_like(ux_top)), 0)
+
+        # OUTLET
         outlet_direction = [1, 0] if self.ndim == 2 else [1, 0, 0]
         outlet_boundary = EquilibriumOutletP(self.units.lattice, outlet_direction)  # outlet in positive x-direction
 
+        # TOP / HEAVEN
+            # on all highest nodes
         top_boundary = EquilibriumBoundaryPU(  # outlet
             y >= y.max(), self.units.lattice, self.units, u_top
         )
         boundaries = [outlet_boundary, top_boundary]
+
+        # SOLID BOUNDARIES
         if self.all_fwbb:
             for obstacle in self.boundary_objects:
                 boundaries.append(BounceBackBoundary(obstacle.collision_data.solid_mask, self.units.lattice))
@@ -258,9 +266,13 @@ class ObstacleSurface:
                 boundaries.append(obj.get_boundary())
         # if not hasattr(self, 'solid_mask'):
         #     self.overlap_all_solid_masks()
+
+        # INLET
         boundaries.append(EquilibriumBoundaryPU(  # inlet
             (x <= x.min()) * (~self.solid_mask), self.units.lattice, self.units, u_in
         ))
+
+        # time execution of flow.boundary()
         time1 = time.time() - time0
         print(f"boundaries took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return boundaries
