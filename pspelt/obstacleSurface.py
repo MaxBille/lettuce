@@ -15,7 +15,7 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCC.Core.gp import gp_Pnt, gp_Dir
 from joblib import Parallel, delayed
 
-from pspelt.obstacleFunctions import overlap_solids, collect_collision_data, calculate_mask, makeGrid
+from pspelt.obstacleFunctions import overlap_solids, collect_solid_boundary_data, calculate_mask, makeGrid
 from pspelt.geometry import is_point_inside_solid, intersect_boundary_with_ray, extract_faces
 from lettuce.boundary import (EquilibriumBoundaryPU, InterpolatedBounceBackBoundary_occ, EquilibriumOutletP,
                               BounceBackBoundary, PartiallySaturatedBoundary,
@@ -118,9 +118,10 @@ class BoundaryObject:
         if not self.points_inside_known:
             print("WARNING: points_inside not known yet. Doing calculate_points_inside now.")
             self.calculate_points_inside()
-        self.collision_data = collect_collision_data(self.occ_object, self.collision_data, self.lattice, self.grid,
-                                                     self.name, parallel=self.parallel, cut_z=self.cut_z,
-                                                     cluster=self.cluster)
+        self.collision_data = collect_solid_boundary_data(self.occ_object, self.collision_data, self.lattice, self.grid, periodicity: tuple[np.ndarray,...],
+                                                          self.name, parallel=self.parallel, cut_z=self.cut_z,
+                                                          cluster=self.cluster)
+        # TODO: if I need this, I have to de-torch-ify and add periodicity-attribute tubple
         self.collision_data_known = True
         return
 

@@ -15,49 +15,58 @@ rcParams["image.origin"] = 'lower'
 
 
 class Show2D:
-    def __init__(self, lattice: Lattice, mask: torch.Tensor, domain_constraints, outdir: str, p_mask=None,
+    def __init__(self, lattice: Lattice, mask: np.ndarray, domain_constraints, outdir: str, p_mask=None,
                  dpi: int = 600, save: bool = True, show: bool = True, show_mask: bool = True, mask_alpha=1,
                  figsize: tuple = (20, 4)):
+        # TODO: add colormap as parameter (inferno etc. looks cool)
         self.lattice = lattice
         self.outdir = outdir
         if len(mask.shape) > 2:
             mask = mask[:, :, int(mask.shape[2] / 2)]
-        self.mask = self.lattice.convert_to_numpy(mask).transpose()
+        self.mask = mask.transpose()
         minx, maxx = [_ for _ in domain_constraints]
         self.extent = (minx[0], maxx[0], minx[1], maxx[1])
         self.dpi = dpi
         self.save = save
         self.show = show
         self.show_mask = show_mask
-        if p_mask is not None:
-            if len(p_mask.shape) > 2:
-                p_mask = p_mask[:, :, int(p_mask.shape[2] / 2)]
-            self.p_mask = self.lattice.convert_to_numpy(p_mask).transpose()
-        self.mask_alpha = mask_alpha
-        self.figsize = figsize
-        self.__call__(mask, "solid_mask", "solid_mask")
 
-    def __call__(self, data, title: str, name: str, vlim: tuple[float, float] = None):
+        # maske für spezielle Ansicht der partially saturated boundary (philipp)
+        if p_mask is not None:
+            if len(p_mask.shape) > 2:  # falls p_mask ("plotting"-mask?) 3D ist... -> NE; partially-saturated (!)
+                p_mask = p_mask[:, :, int(p_mask.shape[2] / 2)]   # reduziere auf 2D als slice in der Mitte der Z-dimension
+            self.p_mask = p_mask.transpose()
+        self.mask_alpha = mask_alpha
+        self.figsize = figsize  # tupel für die fig-Größe in (in,in)
+        self.__call__(mask, "solid_mask", "solid_mask")  # wenn man initialisiert, wird einmal die (aktuelle) SOLID_MASK ausgegeben...
+
+    def __call__(self, data, title: str, name: str, vlim: tuple[float, float] = None, cmap=None):
         fig, ax = plt.subplots(2, figsize=self.figsize)
         if len(data.shape) > 2:
-            data = data[:, :, int(data.shape[2] / 2)]
+            data = data[:, :, int(data.shape[2] / 2)]  # wenn die Daten 3D sind, dann wird ein 2D-slice in der Mitte der Z-dimension entnommen
         vmin, vmax = vlim if vlim is not None else None, None
-        p = ax[0].imshow(self.lattice.convert_to_numpy(data).transpose(), extent=self.extent, vmin=vmin, vmax=vmax)
-        ax[1].imshow(self.lattice.convert_to_numpy(data).transpose(), extent=self.extent, vmin=vmin, vmax=vmax)
+
+        p = ax[0].imshow(data.transpose(), extent=self.extent, vmin=vmin, vmax=vmax, cmap=cmap)  #  zeigt Daten oben an (p als pointer für die Überlagerung der Maske untgen)
+        ax[1].imshow(data.transpose(), extent=self.extent, vmin=vmin, vmax=vmax, cmap=cmap)  # zeigt Daten ohne Maske an
+
         if self.show_mask:
             b = colorConverter.to_rgba('white')
             w = colorConverter.to_rgba('black')
             cmap_solid = LinearSegmentedColormap.from_list('my_cmap', [b, w], 256)
             cmap_solid._init()  # create the _lut array, with rgba values
             cmap_solid._lut[:, -1] = np.linspace(0, 1, cmap_solid.N + 3)
-            ax[0].imshow(self.mask, extent=self.extent, cmap=cmap_solid, vmin=0, vmax=1)
-            cmap_partial = LinearSegmentedColormap.from_list('my_cmap1', [b, w], 256)
-            cmap_partial._init()  # create the _lut array, with rgba values
-            cmap_partial._lut[:, -1] = np.linspace(0, self.mask_alpha, cmap_solid.N + 3)
+            ax[0].imshow(self.mask, extent=self.extent, cmap=cmap_solid, vmin=0, vmax=1)  # ZEIGT MASKE in S/W an
             if hasattr(self, 'p_mask'):
-                ax[0].imshow(self.p_mask, extent=self.extent, cmap=cmap_partial, vmin=0, vmax=1)
+                cmap_partial = LinearSegmentedColormap.from_list('my_cmap1', [b, w], 256)
+                cmap_partial._init()  # create the _lut array, with rgba values
+                cmap_partial._lut[:, -1] = np.linspace(0, self.mask_alpha, cmap_solid.N + 3)
+                ax[0].imshow(self.p_mask, extent=self.extent, cmap=cmap_partial, vmin=0, vmax=1)  # NUR FÜR PARTIALLY SATURATED
+
         fig.suptitle(title)
-        fig.colorbar(p, ax=ax)
+        ax[0].set_title("data with overlayed solid_mask")
+        ax[1].set_title("data")
+        colorbar_extend = 'both' if vlim is not None else 'neither'  # add pointed "out of range" ends to colorbar, if vlim is spcified and vis_range is clipped
+        fig.colorbar(p, ax=ax, extend=colorbar_extend)
         if self.show:
             plt.show()
         if self.save:
@@ -85,7 +94,7 @@ def print_results(lattice: Lattice, simulation: Simulation, res: float, dim: int
     show2d(torch.norm(u, dim=0), f"u(it={steps},t={t:.1f}) [m/s]", f"u_{steps}", vlim=(-.2, u0max))
 
 
-def collect_intersections(collision_data: SolidBoundaryData, grid: tuple[torch.Tensor, ...], lattice: Lattice):
+def collect_intersections(collision_data: SolidBoundaryData, grid: tuple[np.ndarray, ...], lattice: Lattice):
     dim = len(grid[0].shape)
     # get the interpolated surface points
     surface_x, surface_y, surface_z = [], [], []
@@ -127,7 +136,7 @@ def collect_intersections(collision_data: SolidBoundaryData, grid: tuple[torch.T
     return fluid_coords, dir_coords, surface_coords
 
 
-def plot_not_intersected(collision_data: SolidBoundaryData, grid: tuple[torch.Tensor, ...], outdir: str, name: str):
+def plot_not_intersected(collision_data: SolidBoundaryData, grid: tuple[np.ndarray, ...], outdir: str, name: str):
     if not hasattr(collision_data, 'not_intersected'):
         print('Collision data has no not_intersected field!')
         return
@@ -146,10 +155,10 @@ def plot_not_intersected(collision_data: SolidBoundaryData, grid: tuple[torch.Te
     # dir_z = collision_data.not_intersected[:, 5] * zstep if dim == 3 else None
 
     fig, ax = plt.subplots(figsize=(20, 4))
-    ax.scatter(grid[0].cpu(), grid[1].cpu(), s=1, alpha=0.4, color='c', label='grid')  # show whole grid
-    ax.scatter(grid[0][collision_data.solid_mask].cpu(), grid[1][collision_data.solid_mask].cpu(),
+    ax.scatter(grid[0], grid[1], s=1, alpha=0.4, color='c', label='grid')  # show whole grid
+    ax.scatter(grid[0][collision_data.solid_mask], grid[1][collision_data.solid_mask],
                color='k', s=4, alpha=0.4, label='solid_mask')  # show solid_mask
-    ax.quiver(fluid_x.cpu().numpy(), fluid_y.cpu().numpy(), dir_x.cpu().numpy(), dir_y.cpu().numpy(),
+    ax.quiver(fluid_x, fluid_y, dir_x, dir_y,
               angles='xy', scale_units='xy', scale=1, color='orange',
               # , marker=".", s=.5, color='orange',
               label='not intersected vectors')  # show intersection points
@@ -168,9 +177,9 @@ def plot_intersections(grid, mask, fluid_coords, dir_coords, surface_coords: lis
     if dim == 2:
         fig, ax = plt.subplots(figsize=(20, 4))
         if show_grid:
-            ax.scatter(grid[0].cpu(), grid[1].cpu(), s=1, alpha=0.4, color='c', label='grid')  # show whole grid
+            ax.scatter(grid[0], grid[1], s=1, alpha=0.4, color='c', label='grid')  # show whole grid
         if show_mask:
-            ax.scatter(grid[0][mask].cpu(), grid[1][mask].cpu(),
+            ax.scatter(grid[0][mask], grid[1][mask],
                        color='k', s=4, alpha=0.4, label='landscape_mask')  # show solid_mask
         if quiver:
             ax.quiver(fluid_x, fluid_y, dir_x, dir_y, angles='xy', scale_units='xy', scale=1, color='orange',
@@ -183,10 +192,10 @@ def plot_intersections(grid, mask, fluid_coords, dir_coords, surface_coords: lis
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
         if show_grid:
-            ax.scatter(grid[0].cpu(), grid[2].cpu(), grid[1].cpu(), s=1, alpha=0.4, color='c',
+            ax.scatter(grid[0], grid[2], grid[1], s=1, alpha=0.4, color='c',
                        label='grid')  # show whole grid
         if show_mask:
-            ax.scatter(grid[0][mask].cpu(), grid[2][mask].cpu(), grid[1][mask].cpu(),
+            ax.scatter(grid[0][mask], grid[2][mask], grid[1][mask],
                        color='k', s=4, alpha=0.4, label='solid_mask')  # show solid_mask
         for surface_x, surface_y, surface_z in surface_coords:
             ax.scatter(surface_x, surface_z, surface_y, marker=".", s=.5,
@@ -201,12 +210,12 @@ def plot_intersections(grid, mask, fluid_coords, dir_coords, surface_coords: lis
         plt.show()
 
 
-def plot_intersection_info(collisions: SolidBoundaryData or list[SolidBoundaryData], grid, lattice, full_mask, outdir,
+def plot_intersection_info(solid_boundary_data_list: SolidBoundaryData or list[SolidBoundaryData], grid, lattice, full_mask, outdir,
                            name: str = '', show=True):
     if len(name) > 0:
         name += '_'
-    ad_collision = collisions[0] if len(collisions) > 0 else collisions
-    fluid_coords, dir_coords, surface_coords = collect_intersections(ad_collision, grid, lattice)
+    solid_boundary_data_item = solid_boundary_data_list[0] if len(solid_boundary_data_list) > 0 else solid_boundary_data_list
+    fluid_coords, dir_coords, surface_coords = collect_intersections(solid_boundary_data_item, grid, lattice)
 
     if len(grid[0].shape) == 2:
         plot_intersections(grid, full_mask, fluid_coords, dir_coords, [surface_coords], outdir,
@@ -220,21 +229,26 @@ def plot_intersection_info(collisions: SolidBoundaryData or list[SolidBoundaryDa
                            name=name + 'mask_3D_and_grid', dim=3, show_grid=True, show=show)
 
     # count occurences of q's (stencil directions) in indices
-    occurences_gt = torch.bincount(ad_collision.f_index_gt[:, 0]).tolist()
-    occurences_lt = torch.bincount(ad_collision.f_index_lt[:, 0]).tolist()
+    occurences_gt = []
+    occurences_lt = []
+    if solid_boundary_data_item.f_index_gt.shape[0] > 0:
+        occurences_gt = np.bincount(solid_boundary_data_item.f_index_gt[:, 0]).tolist()
+    if solid_boundary_data_item.f_index_lt.shape[0] > 0:
+        occurences_lt = np.bincount(solid_boundary_data_item.f_index_lt[:, 0]).tolist()
+
     for iq in range(len(lattice.e)):
         occurences = occurences_gt[iq] if iq < len(occurences_gt) else 0
         occurences += occurences_lt[iq] if iq < len(occurences_lt) else 0
         print(f"Direction {[f'{_:+}' for _ in lattice.e[iq]]} occurs {occurences} times in ad collision info.")
 
-    if len(collisions) > 1:
-        perm_collision = collisions[1]
+    if len(solid_boundary_data_list) > 1:
+        perm_collision = solid_boundary_data_list[1]
         fluid_coords2, dir_coords2, surface_coords2 = collect_intersections(perm_collision, grid, lattice)
         plot_intersections(grid, full_mask, fluid_coords, dir_coords, [surface_coords, surface_coords2],
                            outdir, name=name + 'mask_visualized_overlapped', show=show)
         # count occurences of q's (stencil directions) in indices
-        occurences_gt = torch.bincount(perm_collision.f_index_gt[:, 0]).tolist()
-        occurences_lt = torch.bincount(perm_collision.f_index_lt[:, 0]).tolist()
+        occurences_gt = np.bincount(perm_collision.f_index_gt[:, 0]).tolist()
+        occurences_lt = np.bincount(perm_collision.f_index_lt[:, 0]).tolist()
         for iq in range(len(lattice.e)):
             occurences = occurences_gt[iq] if iq < len(occurences_gt) else 0
             occurences += occurences_lt[iq] if iq < len(occurences_lt) else 0

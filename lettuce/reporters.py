@@ -255,12 +255,21 @@ class Clock:
 
 class NaNReporter:
     """reports any NaN and aborts the simulation"""
-    def __init__(self, flow, lattice, n_target, t_target, interval=100, ):
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None):
         self.flow = flow
+        self.old = False
+        if simulation is None:
+            self.old = True
+        else:
+            self.simulation = simulation
         self.lattice = lattice
         self.interval = interval
         self.n_target = n_target
         self.t_target = t_target
+        self.outdir = outdir
+
+        self.n_reached = 0  # to store i before overwriting i
+
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
@@ -279,10 +288,19 @@ class NaNReporter:
                     y = self.lattice.convert_to_numpy(y)
                     z = self.lattice.convert_to_numpy(z)
                     nan_location = np.stack((q, x, y, z), axis=-1)
-                    print("(!) NaN detected at (q,x,y,z):", nan_location)
+                    if self.outdir is not None:
+                        my_file = open(self.outdir, "w")
+                        my_file.write(f"(!) NaN detected at (q,x,y,z):\n")
+                        for _ in nan_location:
+                            my_file.write(f"{_}\n")
+                        my_file.close()
+                        #print("(!) NaN detected at (q,x,y,z):", nan_location)
                 print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
                 print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.t_target)
-                sys.exit()
+                if self.old:
+                    sys.exit()
+                else:
+                    self.simulation.abort_condition = 2
 
 
 class AverageVelocityReporter:

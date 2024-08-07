@@ -37,6 +37,9 @@ class Simulation:
         self.collision = collision
         self.streaming = streaming
         self.i = 0  # index of the current timestep
+        self.abort_condition = 0
+        self.n_reached = 0
+        # TODO: abort_condition, abort_message, n_reached = self.i, n_target?
 
         # >>>
         # M.Bille:
@@ -95,12 +98,17 @@ class Simulation:
         for boundary_index in self.boundary_range:
             if hasattr(self._boundaries[boundary_index], "store_f_collided"):
                 self.store_f_collided.append(True)  # this boundary needs f_collided
-                self._boundaries[boundary_index].store_f_collided(self.f)
             else:
                 self.store_f_collided.append(False)  # this boundary doesn't need f_collided
         # (!) at the moment f_collided is passed to and stored by the boundary. This is only efficient,
         # ...if there is either only one boundary needing f_collided, or the storage of f_collided is sparse,
         # ...meaning: every boundary stores only the population needed for itself.
+
+        # initialize f_collided to correct shape after flow initialization and store first f (for hwbb and ibb BBBC)
+        for boundary_index in self.boundary_range:
+            if self.store_f_collided[boundary_index]:
+                self._boundaries[boundary_index].initialize_f_collided()
+                self._boundaries[boundary_index].store_f_collided(self.f)
 
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
@@ -148,8 +156,17 @@ class Simulation:
                 print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
                 print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
                 num_steps = _  # log current step counter
+                self.n_reached = _
+                self.abort_condition = 1  # out_of_time (t_max reached)
                 break  # end sim-loop prematurely
                 # TODO: print out real number of steps! sim.i - i_start
+
+            if self.abort_condition == 2:  # NaN detected in f
+                print(f"(!) aborting simulation due to NaN reporter detecting NaN -> see log for more details!")
+                self.n_reached = _
+                num_steps = _  # log current step counter
+                break
+
         end = timer()
 
         # calculate runtime and performance in MLUPS

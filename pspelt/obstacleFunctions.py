@@ -31,8 +31,8 @@ from lettuce.util import append_axes
 #if OCC_has_ad:
 #    from OCC.Core.ForwardAD import Standard_Adouble
 
-def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh, grid: tuple[torch.Tensor, ...],
-                   name: str = 'no_name', collision_data: SolidBoundaryData = None, cut_z: float = 0) -> SolidBoundaryData:
+def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh, grid: tuple[np.ndarray, ...],
+                   name: str = 'no_name', solid_boundary_data: SolidBoundaryData = None, cut_z: float = 0) -> SolidBoundaryData:
     is_occ = type(boundary_object) is TopoDS_Shape or type(boundary_object) is TopoDS_Solid
     is_tri = type(boundary_object) is trimesh.Trimesh
     print(f"calculate_points_inside for '{name}'.")
@@ -69,13 +69,13 @@ def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trim
                         print(f"calculate_mask {count}/{n_all} ({count / n_all:.2%}), "
                               f"ix={ix}, iy={iy}, iz={iz}, {len(points_inside)} points inside so far.")
         solid_mask = mask_from_points_list(points_inside, grid, ndim, name)
-        points_inside = torch.tensor(points_inside)
+        points_inside = np.array(points_inside)
     elif is_tri and boundary_object.is_watertight and name not in ['terrain', 'surface'] and 'landscape' not in name:
         # contains() yields also bottom points so landscape will be done with rays
         print(f"Boundary object '{name}' is watertight. Using Trimesh.contains().")
-        points_list = (np.vstack([grid[0].cpu().numpy().ravel(),
-                                  grid[1].cpu().numpy().ravel(),
-                                  grid[2].cpu().numpy().ravel() if ndim == 3 else grid[1].cpu().numpy().ravel() * 0]
+        points_list = (np.vstack([grid[0].ravel(),
+                                  grid[1].ravel(),
+                                  grid[2].ravel() if ndim == 3 else grid[1].ravel() * 0]
                                  ).T.reshape(-1, 3))
         id_grid = np.meshgrid(np.arange(ny), np.arange(nx), np.arange(nz))
         points_id_list = np.vstack([id_grid[1].ravel(),
@@ -85,8 +85,8 @@ def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trim
         points_are_inside = boundary_object.contains(points_list[:, [0, 2, 1]])
         print(f"Trimesh.contains() took {time.time() - time1:.1f} secs for {len(points_list)} grid points. "
               f"Found {sum(points_are_inside)} solid points.")
-        points_inside = torch.tensor(points_id_list[points_are_inside])
-        solid_mask = torch.tensor(points_are_inside.reshape(grid[0].shape))
+        points_inside = np.array(points_id_list[points_are_inside])
+        solid_mask = np.array(points_are_inside.reshape(grid[0].shape))
     else:
         print(f"Boundary object '{name}' is not watertight or a surface mesh. Intersecting rays from top.")
         points_inside = []
@@ -117,9 +117,9 @@ def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trim
                             print(f"is_point_inside_solid {count}/{n_all} ({count / n_all:.2%}), "
                                   f"ix={ix}, iy={iy}, iz={iz}, {len(points_inside)} points inside so far.")
         solid_mask = mask_from_points_list(points_inside, grid, ndim, name)
-        points_inside = torch.tensor(points_inside)
-    n_inside = torch.sum(solid_mask).item()
-    n_outside = torch.sum(~solid_mask).item()
+        points_inside = np.array(points_inside)
+    n_inside = np.sum(solid_mask).item()
+    n_outside = np.sum(~solid_mask).item()
     print(f"calculate_mask finished. Found {n_inside} points inside.")
     time1 = time.time() - time0
     print(f"Search for points inside '{name}' took "
@@ -132,16 +132,16 @@ def calculate_mask(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trim
             solid_mask.shape[2] if len(solid_mask.shape) > 2 else 1):
         print(f"WARNING: No intersection points found for '{name}'. This should not happen.")
     assert solid_mask.shape == grid[0].shape
-    collision_data = SolidBoundaryData() if collision_data is None else collision_data
-    collision_data.solid_mask, collision_data.points_inside = solid_mask, points_inside
-    return collision_data
+    solid_boundary_data = SolidBoundaryData() if solid_boundary_data is None else solid_boundary_data
+    solid_boundary_data.solid_mask, solid_boundary_data.points_inside = solid_mask, points_inside
+    return solid_boundary_data
 
 
-def mask_from_points_list(points: list[list[int]], grid: tuple[torch.Tensor, ...], ndim: int,
-                          name: str = 'no_name') -> torch.Tensor:
+def mask_from_points_list(points: list[list[int]], grid: tuple[np.ndarray, ...], ndim: int,
+                          name: str = 'no_name') -> np.ndarray:
     time0 = time.time()
     # create solid_mask
-    solid_mask = torch.zeros_like(grid[0], dtype=torch.bool)
+    solid_mask = np.zeros_like(grid[0], dtype=bool)
     if ndim == 2:  # expanding to 3D
         solid_mask = solid_mask[:, :, None]
     for point_inside_indices in points:
@@ -155,13 +155,16 @@ def mask_from_points_list(points: list[list[int]], grid: tuple[torch.Tensor, ...
     return solid_mask
 
 
-def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_stencil: torch.Tensor, time0: float,
-                     n_points_inside: int, solid_mask: torch.Tensor, opposite: list, ndim: int,
-                     grid: tuple[torch.Tensor, ...], name: str = 'no_name', is_occ: bool = False,
+def neighbour_search(i_point_inside: int, points_inside: np.array, this_stencil: np.array, time0: float,
+                     n_points_inside: int, solid_mask: np.array, opposite: list, ndim: int,
+                     grid: tuple[np.ndarray, ...], periodicity: tuple[bool, ...], name: str = 'no_name', is_occ: bool = False,
                      is_tri: bool = False, shell: TopoDS_Compound = None, cut_z: float = 0, cluster: bool = False, verbose: bool = False):
         # -> list[list[list[list[Any] | Any]] | list[float | Any] | list[list[float | Any]] | list[list[Any]] |
                 # list[Any] | list[list[Any] | Any]]:
-    point_index = torch.tensor(np.array(points_inside[i_point_inside]), device=this_stencil.device) # points_inside[i_point_inside]
+    point_index = np.array(points_inside[i_point_inside]) # points_inside[i_point_inside]
+
+    dx_pu = grid[0][1,0,0 if ndim == 3 else None] - grid[0][0,0,0 if ndim == 3 else None]  # for "faking" neighbor-search ghost-node outside domain for CAD-kernel, to get correct distance d
+
     time1 = time.time() - time0
     if i_point_inside % (min(int(n_points_inside / 5) + 1, 5000) + 1) == 0:  # progess Anzeige, kompliziet, wegen Praallelisierung
         print(f"neighbour_search {i_point_inside}/{n_points_inside} "
@@ -170,42 +173,78 @@ def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_sten
     f_index_tmp, d_tmp = [], []
     fluid_point_tmp, fluid_point_id_tmp, ray_tmp, iq_fluid_tmp = [], [], [], []
     for neighbour_dir in this_stencil:
-        if verbose:
-            print(point_index)
-            print(neighbour_dir)
         neighbour_point_index = point_index + neighbour_dir  # jump to neighbor node
-        # (no longer) jumping across domain borders
-        # for dim in range(ndim):
-        #     neighbour_point_index[dim] = neighbour_point_index[dim] % solid_mask.shape[dim]
-        # neighbour_point_index[neighbour_point_index < 0] = 0
-        # check if the neighbor node is in fluid
-        # disregarding rays across domain borders
+
         border_crossed = False
-        for dim in range(ndim):
-            if not 0 <= neighbour_point_index[dim] < solid_mask.shape[dim]:
-                border_crossed = True
+        # check domain border crossing from point to neighbour
+        for dim in range(ndim):  # in jeder Dimension
+            if not 0 <= neighbour_point_index[dim] < solid_mask.shape[dim]:  # falls der Nachbar außerhalb der möglichen indize [0,dim) liegt...
+                border_crossed = True   # ... wurde die domain-border "irgendwie" überschritten?
+
         if not border_crossed:
             ix, iy, iz = neighbour_point_index[0], neighbour_point_index[1], neighbour_point_index[
                 2] if ndim == 3 else None
-            is_fluid = ~solid_mask[ix, iy, iz]
-        else:
-            is_fluid = False
+            is_fluid = ~solid_mask[ix, iy, iz]  # check if neighbor is fluid
+        else:  # if border was crossed
+            crossed_dims = [0, 0, 0 if ndim == 3 else None]
+            exclude_point = False
+            for dim in range(ndim):
+                if neighbour_point_index[dim] < 0:
+                    crossed_dims[dim] = -1  # crossed in negative direction
+                elif neighbour_point_index[dim] >= solid_mask.shape[dim]:
+                    crossed_dims[dim] = 1  # crossed in positive direction
+                if not periodicity[dim] and crossed_dims[dim] != 0:  # if border crossed in a direction that is non-periodic...
+                    exclude_point = True
+            if not exclude_point:  # if point should be valid through periodicity...
+                for dim in range(ndim):  # adjust each dimension...if necessary
+                    neighbour_point_index[dim] = neighbour_point_index[dim] % solid_mask.shape[dim]  # adjust index to opposite domain side, if periodic
+                ix, iy, iz = neighbour_point_index[0], neighbour_point_index[1], neighbour_point_index[
+                    2] if ndim == 3 else None  # extract LU-indices
+                is_fluid = ~solid_mask[ix, iy, iz]  # check new (periodicity-adjusted) neighbor for fluid-ness
+                if verbose: print(f"NEIGHBOR {neighbour_point_index} is_fluid = {is_fluid} (previously SP {point_index} + {neighbour_dir} -> NP {point_index+neighbour_dir}) in domain {solid_mask.shape} with periodicity {periodicity}")
+            else:
+                is_fluid = False
+                if verbose: print(f"EXCLUDING {neighbour_point_index} (previously SP {point_index} + DIR {neighbour_dir} -> NP {point_index+neighbour_dir}) in domain {solid_mask.shape} with periodicity {periodicity}")
+
         if is_fluid:
             # iq = stencil index; get the stencil index from the point of view of the solid node
-            iq_solid = torch.where(torch.all(this_stencil == neighbour_dir, dim=1))[0].item()
+            iq_solid = np.where(np.all(this_stencil == neighbour_dir, axis=1))[0].item()
             # add the direction in which the fluid node meets a solid node (first entry in f_index_d/lt
             iq_fluid = opposite[iq_solid]
             # fp = fluid fluid_point; sp = solid fluid_point
             # get the solid and fluid indices and coordinates
             ix_fp, iy_fp, iz_fp = neighbour_point_index.tolist()  # unterhalb von hier für HWBB egal
-            ix_sp, iy_sp, iz_sp = point_index.tolist()
+
+            # SEARCH and calculate d for IBB:
+            # FÜR alle ndim durchgehen, wenn periodicity[dim] und border_crossed,
+            # ... dann muss der entsprechende Koordinateneintrag dieser Dimension modifiziert werden.
+            # ... Konkret bedeutet das, dass ich dx_pu auf den solid point drauf rechne, in "dieser" richtung...
+            # ... die (beiden) andere(n) Koordinate(n) können aus neighbor_points index berechnet werden!
+            ix_sp, iy_sp, iz_sp = point_index.tolist()  # LU-index
+
             if ndim == 3:
-                x_fp, y_fp, z_fp = [grid[dim][ix_fp, iy_fp, iz_fp].item() for dim in range(3)]
+                x_fp, y_fp, z_fp = [grid[dim][ix_fp, iy_fp, iz_fp].item() for dim in range(3)]  # PU coordinate
                 x_sp, y_sp, z_sp = [grid[dim][ix_sp, iy_sp, iz_sp].item() for dim in range(3)]
             else:
                 x_fp, y_fp = [grid[dim][ix_fp, iy_fp].item() for dim in range(2)]
                 x_sp, y_sp = [grid[dim][ix_sp, iy_sp].item() for dim in range(2)]
                 z_fp, z_sp = cut_z, cut_z
+
+            # CORRECT FP coordinates, if border was crossed -> change x_fp to be a non-existant ghost-node outside the domain to make OCC calc. ther correct d
+            x_fp_old, y_fp_old, z_fp_old = x_fp, y_fp, z_fp
+            # get x_fp
+            if neighbour_point_index[0] != (point_index[0] + neighbour_dir[0]):  # if modification occurred...
+                x_fp = x_sp - np.sign(neighbour_point_index[0] - (point_index[0] + neighbour_dir[0])) * dx_pu
+            # get y_fp
+            if neighbour_point_index[1] != (point_index[1] + neighbour_dir[1]):  # if modification occurred...
+                y_fp = y_sp - np.sign(neighbour_point_index[1] - (point_index[1] + neighbour_dir[1])) * dx_pu
+            # get z_fp
+            if ndim == 3:
+                if neighbour_point_index[2] != (point_index[2] + neighbour_dir[2]):  # if modification occurred...
+                    z_fp = y_sp - np.sign(neighbour_point_index[2] - (point_index[2] + neighbour_dir[2])) * dx_pu
+            if border_crossed:
+                if verbose: print(f"NEIGHBOR SEARCH: domain border crossed! ghost node adjustment from ({x_fp_old}, {y_fp_old}, {z_fp_old}) to ({x_fp}, {y_fp}, {z_fp})")
+
             if is_occ:
                 fluid_point = gp_Pnt(x_fp, y_fp, z_fp)
                 solid_point = gp_Pnt(x_sp, y_sp, z_sp)
@@ -230,21 +269,21 @@ def neighbour_search(i_point_inside: int, points_inside: torch.Tensor, this_sten
     return [f_index_tmp, d_tmp, fluid_point_tmp, fluid_point_id_tmp, ray_tmp, iq_fluid_tmp]
 
 
-def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh,
-                           collision_data: SolidBoundaryData, lattice: Lattice, grid: tuple[torch.Tensor, ...],
-                           name: str = 'no_name', parallel=False, outdir: str = os.getcwd(), cut_z: float = 0,
-                           cluster: bool = False) -> SolidBoundaryData:
+def collect_solid_boundary_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trimesh.Trimesh,
+                                solid_boundary_data: SolidBoundaryData, lattice: Lattice, grid: tuple[np.ndarray, ...], periodicity: tuple[bool,...],
+                                name: str = 'no_name', parallel=False, outdir: str = os.getcwd(), cut_z: float = 0,
+                                cluster: bool = False, verbose: bool = False) -> SolidBoundaryData:
     is_occ = type(boundary_object) is TopoDS_Shape or type(boundary_object) is TopoDS_Solid
     is_tri = type(boundary_object) is trimesh.Trimesh
     # get a shell object to properly calculate minimum distances
     shell = extract_faces(boundary_object) if is_occ else None
-    print(f"collect_collision_data for '{name}'.")
+    print(f"collect_solid_boundary_data for '{name}'.")
     ### search all neighbors of solid nodes for fluid nodes to be bounced back
     time0 = time.time()
-    this_stencil = torch.tensor(lattice.stencil.e, device=lattice.device, dtype=torch.int64)
+    this_stencil = np.array(lattice.stencil.e, dtype=int)
     ndim = lattice.D
     if ndim == 2:  # adding a 0 for 3rd dimension
-        this_stencil = torch.cat((this_stencil, torch.unsqueeze(torch.zeros_like(this_stencil[:, 0]), 1)), 1)
+        this_stencil = np.concatenate((this_stencil, np.expand_dims(np.zeros_like(this_stencil[:, 0]), 1)), 1)
     f_index_lt, f_index_gt, d_lt, d_gt = [], [], [], []
     ds_stencil = []
     for direction in this_stencil:
@@ -262,23 +301,25 @@ def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trim
             d12 = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
             ds_stencil.append(d12)
     fluid_points, rays, iq_fluids, fluid_point_ids, solid_point_ids, solid_points = [], [], [], [], [], []
-    n_points_inside = len(collision_data.points_inside)
+    n_points_inside = len(solid_boundary_data.points_inside)
 
+    # TODO: remove "parallel" option that doesn't increase performance.
+    # ... optional: replace with torch-ified gpu parallelism... (batch indices etc.)
     if parallel:
         print("Doing parallel run for neighbour search.")
         num_cores = multiprocessing.cpu_count()
         results = Parallel(n_jobs=num_cores, verbose=10)(
-            delayed(neighbour_search)(i_direction, collision_data.points_inside, this_stencil, time0,
-                                      n_points_inside, collision_data.solid_mask, lattice.stencil.opposite, ndim,
+            delayed(neighbour_search)(i_direction, solid_boundary_data.points_inside, this_stencil, time0,
+                                      n_points_inside, solid_boundary_data.solid_mask, lattice.stencil.opposite, ndim,
                                       grid, name, is_occ, is_tri, shell, cut_z, cluster)
             for i_direction in range(n_points_inside))
     else:
-        print("Doing sequential run for neighbour search.")
+        print(f"Doing sequential run for neighbour search with periodicity {periodicity}.")
         results = []
         for i_point_inside in range(n_points_inside):  # search all directions from
-            result_tmp = neighbour_search(i_point_inside, collision_data.points_inside, this_stencil, time0,
-                                          n_points_inside, collision_data.solid_mask, lattice.stencil.opposite, ndim,
-                                          grid, name, is_occ, is_tri, shell, cut_z, cluster)
+            result_tmp = neighbour_search(i_point_inside, solid_boundary_data.points_inside, this_stencil, time0,
+                                          n_points_inside, solid_boundary_data.solid_mask, lattice.stencil.opposite, ndim,
+                                          grid, periodicity, name, is_occ, is_tri, shell, cut_z, cluster, verbose)
             if result_tmp is not None:
                 results.append(result_tmp)
 
@@ -335,10 +376,10 @@ def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trim
                 not_intersected.append(not_intersected_ray)
         if not_intersected:
             print(f"WARNING: {len(not_intersected)} rays were not intersected.")
-            collision_data.not_intersected = torch.tensor(not_intersected)
-            plot_not_intersected(collision_data, grid, outdir, name)
+            solid_boundary_data.not_intersected = np.array(not_intersected)
+            plot_not_intersected(solid_boundary_data, grid, outdir, name)
         else:
-            collision_data.not_intersected = torch.tensor([])
+            solid_boundary_data.not_intersected = np.array([])
         for i in unique_indices:
             i_intersections = np.where(intersection_indices == i)[0]
             if len(i_intersections) > 0:
@@ -390,20 +431,17 @@ def collect_collision_data(boundary_object: TopoDS_Solid or TopoDS_Shape or trim
         print(f"{len(have_solid_opposite)} points contain f_index_lt in a direction and its opposite. "
               f"Removed lt entries and added gt entries to avoid interpolation with no_stream_points.")
     # store results in tensors
-    f_index_lt = torch.tensor(f_index_lt, dtype=torch.int, device=lattice.device)
-    f_index_gt = torch.tensor(f_index_gt, dtype=torch.int, device=lattice.device)
-    d_lt = torch.tensor(d_lt, device=lattice.device)
-    d_gt = torch.tensor(d_gt, device=lattice.device)
+    f_index_lt = np.array(f_index_lt, dtype=int)
+    f_index_gt = np.array(f_index_gt, dtype=int)
+    d_lt = np.array(d_lt)
+    d_gt = np.array(d_gt)
     time1 = time.time() - time0
     print(f"Neighbor search in '{name}' took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
-    collision_data.f_index_lt = f_index_lt
-    collision_data.f_index_gt = f_index_gt
-    collision_data.d_lt = d_lt
-    collision_data.d_gt = d_gt
-    return collision_data
-
-
-
+    solid_boundary_data.f_index_lt = f_index_lt
+    solid_boundary_data.f_index_gt = f_index_gt
+    solid_boundary_data.d_lt = d_lt
+    solid_boundary_data.d_gt = d_gt
+    return solid_boundary_data
 
 
 def makeGrid(domain_constraints, shape):
@@ -419,74 +457,74 @@ def makeGrid(domain_constraints, shape):
     return grid
 
 
-def overlap_solids(ad_collision_data: SolidBoundaryData, perm_collision_data: SolidBoundaryData):
+def overlap_solids(ad_solid_boundary_data: SolidBoundaryData, perm_solid_boundary_data: SolidBoundaryData):
     print("Doing overlap_ibb_solids")
-    full_mask = perm_collision_data.solid_mask | ad_collision_data.solid_mask
+    full_mask = perm_solid_boundary_data.solid_mask | ad_solid_boundary_data.solid_mask
     remove_ad_gt, remove_ad_lt, remove_perm_gt, remove_perm_lt = [], [], [], []
     time0 = time.time()
     ndim = len(full_mask.shape)
-    for i_ad_gt in range(len(ad_collision_data.f_index_gt)):
-        ad_index = ad_collision_data.f_index_gt[i_ad_gt]
+    for i_ad_gt in range(len(ad_solid_boundary_data.f_index_gt)):
+        ad_index = ad_solid_boundary_data.f_index_gt[i_ad_gt]
         if full_mask[ad_index[1], ad_index[2], ad_index[3] if ndim == 3 else None]:
             remove_ad_gt.append(ad_index)
-        elif torch.any(torch.all(perm_collision_data.f_index_lt == ad_index, dim=1)):
+        elif np.any(np.all(perm_solid_boundary_data.f_index_lt == ad_index, axis=1)):
             remove_ad_gt.append(ad_index)
         else:
-            in_perm_gt = torch.where(torch.all(perm_collision_data.f_index_gt == ad_index, dim=1))[0]
+            in_perm_gt = np.where(np.all(perm_solid_boundary_data.f_index_gt == ad_index, axis=1))[0]
             if len(in_perm_gt) > 0:
-                if ad_collision_data.d_gt[i_ad_gt] < perm_collision_data.d_gt[in_perm_gt]:
+                if ad_solid_boundary_data.d_gt[i_ad_gt] < perm_solid_boundary_data.d_gt[in_perm_gt]:
                     remove_perm_gt.append(in_perm_gt)
                 else:
                     remove_ad_gt.append(ad_index)
 
-    for i_ad_lt in range(len(ad_collision_data.f_index_lt)):
-        ad_index = ad_collision_data.f_index_lt[i_ad_lt]
+    for i_ad_lt in range(len(ad_solid_boundary_data.f_index_lt)):
+        ad_index = ad_solid_boundary_data.f_index_lt[i_ad_lt]
         if full_mask[ad_index[1], ad_index[2], ad_index[3] if ndim == 3 else None]:
             remove_ad_lt.append(ad_index)
-        if torch.any(torch.all(perm_collision_data.f_index_gt == ad_index, dim=1)):
+        if np.any(np.all(perm_solid_boundary_data.f_index_gt == ad_index, axis=1)):
             remove_ad_lt.append(ad_index)
         else:
-            in_perm_lt = torch.where(torch.all(perm_collision_data.f_index_lt == ad_index, dim=1))[0]
+            in_perm_lt = np.where(np.all(perm_solid_boundary_data.f_index_lt == ad_index, axis=1))[0]
             if len(in_perm_lt) > 0:
-                if ad_collision_data.d_lt[i_ad_lt] < perm_collision_data.d_lt[in_perm_lt]:
+                if ad_solid_boundary_data.d_lt[i_ad_lt] < perm_solid_boundary_data.d_lt[in_perm_lt]:
                     remove_perm_lt.append(in_perm_lt)
                 else:
                     remove_ad_lt.append(ad_index)
 
-    for i_perm_lt in range(len(perm_collision_data.f_index_lt)):
-        perm_index = perm_collision_data.f_index_lt[i_perm_lt]
+    for i_perm_lt in range(len(perm_solid_boundary_data.f_index_lt)):
+        perm_index = perm_solid_boundary_data.f_index_lt[i_perm_lt]
         if full_mask[perm_index[1], perm_index[2], perm_index[3] if ndim == 3 else None]:
             remove_perm_lt.append(perm_index)
-    for i_perm_gt in range(len(perm_collision_data.f_index_gt)):
-        perm_index = perm_collision_data.f_index_gt[i_perm_gt]
+    for i_perm_gt in range(len(perm_solid_boundary_data.f_index_gt)):
+        perm_index = perm_solid_boundary_data.f_index_gt[i_perm_gt]
         if full_mask[perm_index[1], perm_index[2], perm_index[3] if ndim == 3 else None]:
             remove_perm_gt.append(perm_index)
 
     print(
-        f"Removing {len(remove_ad_lt) + len(remove_ad_gt)}/{len(ad_collision_data.d_lt) + len(ad_collision_data.d_gt)} points from ad "
-        f"and {len(remove_perm_lt) + len(remove_perm_gt)}/{len(perm_collision_data.d_lt) + len(perm_collision_data.d_gt)} points from permanent.")
+        f"Removing {len(remove_ad_lt) + len(remove_ad_gt)}/{len(ad_solid_boundary_data.d_lt) + len(ad_solid_boundary_data.d_gt)} points from ad "
+        f"and {len(remove_perm_lt) + len(remove_perm_gt)}/{len(perm_solid_boundary_data.d_lt) + len(perm_solid_boundary_data.d_gt)} points from permanent.")
 
     for remove_fs in remove_ad_gt:
-        ad_collision_data.d_gt = ad_collision_data.d_gt[
-            torch.where(~torch.all(ad_collision_data.f_index_gt == remove_fs, dim=1))]
-        ad_collision_data.f_index_gt = ad_collision_data.f_index_gt[
-            torch.where(~torch.all(ad_collision_data.f_index_gt == remove_fs, dim=1))]
+        ad_solid_boundary_data.d_gt = ad_solid_boundary_data.d_gt[
+            np.where(~np.all(ad_solid_boundary_data.f_index_gt == remove_fs, axis=1))]
+        ad_solid_boundary_data.f_index_gt = ad_solid_boundary_data.f_index_gt[
+            np.where(~np.all(ad_solid_boundary_data.f_index_gt == remove_fs, axis=1))]
     for remove_fs in remove_ad_lt:
-        ad_collision_data.d_lt = ad_collision_data.d_lt[
-            torch.where(~torch.all(ad_collision_data.f_index_lt == remove_fs, dim=1))]
-        ad_collision_data.f_index_lt = ad_collision_data.f_index_lt[
-            torch.where(~torch.all(ad_collision_data.f_index_lt == remove_fs, dim=1))]
+        ad_solid_boundary_data.d_lt = ad_solid_boundary_data.d_lt[
+            np.where(~np.all(ad_solid_boundary_data.f_index_lt == remove_fs, axis=1))]
+        ad_solid_boundary_data.f_index_lt = ad_solid_boundary_data.f_index_lt[
+            np.where(~np.all(ad_solid_boundary_data.f_index_lt == remove_fs, axis=1))]
     for remove_fs in remove_perm_gt:
-        perm_collision_data.d_gt = perm_collision_data.d_gt[
-            torch.where(~torch.all(perm_collision_data.f_index_gt == remove_fs, dim=1))]
-        perm_collision_data.f_index_gt = perm_collision_data.f_index_gt[
-            torch.where(~torch.all(perm_collision_data.f_index_gt == remove_fs, dim=1))]
+        perm_solid_boundary_data.d_gt = perm_solid_boundary_data.d_gt[
+            np.where(~np.all(perm_solid_boundary_data.f_index_gt == remove_fs, axis=1))]
+        perm_solid_boundary_data.f_index_gt = perm_solid_boundary_data.f_index_gt[
+            np.where(~np.all(perm_solid_boundary_data.f_index_gt == remove_fs, axis=1))]
     for remove_fs in remove_perm_lt:
-        perm_collision_data.d_lt = perm_collision_data.d_lt[
-            torch.where(~torch.all(perm_collision_data.f_index_lt == remove_fs, dim=1))]
-        perm_collision_data.f_index_lt = perm_collision_data.f_index_lt[
-            torch.where(~torch.all(perm_collision_data.f_index_lt == remove_fs, dim=1))]
+        perm_solid_boundary_data.d_lt = perm_solid_boundary_data.d_lt[
+            np.where(~np.all(perm_solid_boundary_data.f_index_lt == remove_fs, axis=1))]
+        perm_solid_boundary_data.f_index_lt = perm_solid_boundary_data.f_index_lt[
+            np.where(~np.all(perm_solid_boundary_data.f_index_lt == remove_fs, axis=1))]
 
     time1 = time.time() - time0
     print(f"overlap_solids calculations took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
-    return ad_collision_data, perm_collision_data, full_mask
+    return ad_solid_boundary_data, perm_solid_boundary_data, full_mask

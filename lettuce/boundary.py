@@ -66,13 +66,13 @@ class PartiallySaturatedBoundary:
 
 
 class SolidBoundaryData(dict):
-    f_index_lt: torch.IntTensor
-    f_index_gt: torch.IntTensor
-    d_lt: torch.Tensor
-    d_gt: torch.Tensor
-    points_inside: torch.Tensor
-    solid_mask: torch.Tensor
-    not_intersected: torch.Tensor = torch.tensor([])
+    f_index_lt: np.ndarray
+    f_index_gt: np.ndarray
+    d_lt: np.ndarray
+    d_gt: np.ndarray
+    points_inside: np.ndarray
+    solid_mask: np.ndarray
+    not_intersected: np.ndarray = np.ndarray([])
 
 
 class InterpolatedBounceBackBoundary:
@@ -934,9 +934,13 @@ class InterpolatedBounceBackBoundary_occ:
 
     def __init__(self, mask, lattice: Lattice, solid_boundary_data: SolidBoundaryData, calc_force=None, ad_enabled=False):
         t_init_start = time.time()
-        self.mask = mask  # location of solid-nodes  # könnte man auch aus Coll_data ziehen, die hatte aber ursprünglihc mal nicht die Solid_mask...
+        if not hasattr(solid_boundary_data, "solid_mask"):
+            self.mask = mask
+            self.solid_mask = mask
+        else:
+            self.mask = solid_boundary_data.solid_mask
+            self.solid_mask = solid_boundary_data.solid_mask
         self.lattice = lattice
-        self.ad_enabled = ad_enabled
         if calc_force is not None:
             self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
                 self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
@@ -945,23 +949,20 @@ class InterpolatedBounceBackBoundary_occ:
             self.calc_force = False
 
         # convert relevant tensors:
-        ### TODO: fix this, efficient copying of tensors and index-datatype
+        ### TODO: fix batch-index-datatype...?
         self.f_index_lt = torch.tensor(solid_boundary_data.f_index_lt, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
         self.f_index_gt = torch.tensor(solid_boundary_data.f_index_gt, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
-        # self.f_index_lt = solid_boundary_data.f_index_lt
-        # self.f_index_gt = solid_boundary_data.f_index_gt
 
-        self.d_lt = solid_boundary_data.d_lt
-        self.d_gt = solid_boundary_data.d_gt
-        self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
-                                            dtype=torch.int64)  # batch-index has to be a tensor
+        self.d_lt = lattice.convert_to_tensor(solid_boundary_data.d_lt)
+        self.d_gt = lattice.convert_to_tensor(solid_boundary_data.d_gt)
+        self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device, dtype=torch.int64)  # batch-index has to be a tensor
 
-        f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
-        f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
-        f_collided_lt_opposite = torch.zeros_like(self.d_lt)
-        f_collided_gt_opposite = torch.zeros_like(self.d_gt)
-        self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
-        self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
+        # f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
+        # f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
+        # f_collided_lt_opposite = torch.zeros_like(self.d_lt)
+        # f_collided_gt_opposite = torch.zeros_like(self.d_gt)
+        # self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
+        # self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
         print(f"IBB initialization took {time.time() - t_init_start:.2f} seconds")
 
     def __call__(self, f):
@@ -1068,6 +1069,15 @@ class InterpolatedBounceBackBoundary_occ:
                     f_collided_lgt[:, 0] = torch.clone(f_collided[indices])
                     indices[0] = self.opposite_tensor[f_index_lgt[:, 0]]
                     f_collided_lgt[:, 1] = torch.clone(f_collided[indices])
+        # TODO: compare performance of THIS to original hardcoded "store_f_collided()" of IBB1
+
+    def initialize_f_collided(self):
+        f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
+        f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
+        f_collided_lt_opposite = torch.zeros_like(self.d_lt)
+        f_collided_gt_opposite = torch.zeros_like(self.d_gt)
+        self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
+        self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
 
 
 class SlipBoundary:
@@ -1240,7 +1250,6 @@ class FullwayBounceBackBoundary_compact:
         # ...(marks all fs which streamed into the boundary in prior streaming step)
 
         self.f_index = []
-        self.bounce_index = []
 
         if self.lattice.D == 2:
             nx, ny = mask.shape  # domain size in x and y
@@ -1342,6 +1351,145 @@ class FullwayBounceBackBoundary_compact:
                                                                  self.f_index[:, 2],
                                                                  self.f_index[:, 3]], self.lattice.e[self.f_index[:, 0]])
 
+
+class FullwayBounceBackBoundary_occ:
+
+    def __init__(self, mask, lattice, solid_boundary_data: SolidBoundaryData = None, global_solid_mask=None, periodicity: tuple[bool,...] = None, calc_force=None):
+        if not hasattr(solid_boundary_data, "solid_mask"):
+            self.mask = mask
+            self.solid_mask = mask
+        else:
+            self.mask = solid_boundary_data.solid_mask
+            self.solid_mask = solid_boundary_data.solid_mask
+
+        if periodicity is None:
+            periodicity = (False, False, False if lattice.D == 3 else None)
+
+        # TODO: correct periodicity and solid-to-solid contact: periodicity attribute and global solid mask! in neighbor search
+        # global_solid_mask to filter out all "fake" fluid neighbors, which are outside the FWBB but not in the fluid region
+        if global_solid_mask is None:
+            global_solid_mask = np.zeros_like(self.mask, dtype=bool)
+        other_solid_bc_mask = np.where(~self.mask, global_solid_mask, False)  # exclude self.mask from global_solid_mask
+
+        self.lattice = lattice
+        if calc_force is not None:
+            self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
+                self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
+            self.calc_force = True
+        else:
+            self.calc_force = False
+
+        ### create f_mask_fwbb, needed for force-calculation
+        # ...(marks all fs which streamed into the boundary in prior streaming step)
+        # ... in other words: marks all fs that need to be bounced
+        self.f_index_fwbb = []
+
+        if self.lattice.D == 2:
+            nx, ny = mask.shape  # domain size in x and y
+
+                # f_mask: [q, nx, ny], marks all fs on the boundary-border, which point into the boundary/solid
+            ix_sp, iy_sp = np.where(mask)
+                # np.arrays: list of (ix_sp) x-indizes and (iy_sp) y-indizes in the boundary.mask
+                # ...to enable iteration over all boundary/wall/object-nodes
+            for sp_index in range(0, len(ix_sp)):  # for all TRUE-nodes in boundary.mask
+                for q_index in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                    # check for boundary-nodes neighboring the domain-border.
+                    # ...they have to take the periodicity into account...
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if ix_sp[sp_index] == 0 and self.lattice.stencil.e[q_index, 0] == -1 and periodicity[0]:  # searching border on left
+                        border[0] = -1
+                    elif ix_sp[sp_index] == nx - 1 and self.lattice.e[q_index, 0] == 1 and periodicity[0]:  # searching border on right
+                        border[0] = 1
+                    if iy_sp[sp_index] == 0 and self.lattice.stencil.e[q_index, 1] == -1 and periodicity[1]:  # searching border on left
+                        border[1] = -1
+                    elif iy_sp[sp_index] == ny - 1 and self.lattice.e[q_index, 1] == 1 and periodicity[1]:  # searching border on right
+                        border[1] = 1
+                    try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
+                        if (not mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0]*nx,
+                                    iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1]*ny]
+                                and not other_solid_bc_mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0]*nx,
+                                    iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1]*ny]):
+                            # if the neighbour of sp_index is False in the boundary.mask, sp_index is ix_sp solid node, neighbouring ix_sp fluid node:
+                            # ...the direction pointing from the fluid neighbour to solid sp_index is marked on the solid sp_index
+
+                            self.f_index_fwbb.append([self.lattice.stencil.opposite[q_index], ix_sp[sp_index], iy_sp[sp_index]])  # list of [q, nx, ny], marks all fs on the boundary-border, which point into the boundary/solid
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
+            nx, ny, nz = mask.shape
+
+            ix_sp, iy_sp, c = np.where(mask)
+            for sp_index in range(0, len(ix_sp)):
+                for q_index in range(0, self.lattice.Q):
+                    border = np.zeros(self.lattice.D, dtype=int)
+                    if ix_sp[sp_index] == 0 and self.lattice.stencil.e[q_index, 0] == -1 and periodicity[0]:  # searching border on left
+                        border[0] = -1
+                    elif ix_sp[sp_index] == nx - 1 and self.lattice.e[q_index, 0] == 1 and periodicity[0]:  # searching border on right
+                        border[0] = 1
+                    if iy_sp[sp_index] == 0 and self.lattice.stencil.e[q_index, 1] == -1 and periodicity[1]:  # searching border on left
+                        border[1] = -1
+                    elif iy_sp[sp_index] == ny - 1 and self.lattice.e[q_index, 1] == 1 and periodicity[1]:  # searching border on right
+                        border[1] = 1
+                    if c[sp_index] == 0 and self.lattice.stencil.e[q_index, 2] == -1 and periodicity[2]:  # searching border on left
+                        border[2] = -1
+                    elif c[sp_index] == nz - 1 and self.lattice.e[q_index, 2] == 1 and periodicity[2]:  # searching border on right
+                        border[2] = 1
+                    try:  # try in case the neighboring cell does not exist (and f pointing out of simulation domain)
+                        if (not mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0] * nx,
+                                    iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1] * ny,
+                                    c[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]
+                                and not other_solid_bc_mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0] * nx,
+                                    iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1] * ny,
+                                    c[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]):
+                            self.f_index_fwbb.append([self.lattice.stencil.opposite[q_index], ix_sp[sp_index], iy_sp[sp_index], c[sp_index]])
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+
+        self.f_index_fwbb = torch.tensor(np.array(self.f_index_fwbb), device=self.lattice.device, dtype=torch.int64) # the batch-index has to be integer
+        #PHILIPP_occ_angepasst? self.f_index = torch.tensor(self.f_index, device=self.lattice.device, dtype=torch.int64)  # the batch-index has to be integer
+        self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
+                                            dtype=torch.int64)  # batch-index has to be ix_sp tensor
+
+
+    def __call__(self, f):
+        # FULLWAY-BBBC: inverts populations on all boundary nodes
+
+        # calc force on boundary:#
+        if self.calc_force:
+            self.calc_force_on_boundary(f)
+        # bounce (invert populations on boundary nodes)
+        # f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+
+        if self.lattice.D == 2:
+            f[self.opposite_tensor[self.f_index_fwbb[:, 0]],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2]] = f[self.f_index_fwbb[:, 0],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2]]
+        if self.lattice.D == 3:
+            f[self.opposite_tensor[self.f_index_fwbb[:, 0]],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2],
+            self.f_index_fwbb[:, 3]] = f[self.f_index_fwbb[:, 0],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2],
+            self.f_index_fwbb[:, 3]]
+        return f
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]
+        return self.lattice.convert_to_tensor(self.mask)
+
+    def calc_force_on_boundary(self, f):
+        if self.lattice.D == 2:
+            self.force_sum = 2 * torch.einsum('i..., id -> d', f[self.f_index_fwbb[:, 0],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2]], self.lattice.e[self.f_index_fwbb[:, 0]])
+        if self.lattice.D == 3:
+            self.force_sum = 2 * torch.einsum('i..., id -> d', f[self.f_index_fwbb[:, 0],
+            self.f_index_fwbb[:, 1],
+            self.f_index_fwbb[:, 2],
+            self.f_index_fwbb[:, 3]], self.lattice.e[self.f_index_fwbb[:, 0]])
 
 class HalfwayBounceBackBoundary:
     """Halfway Bounce Back Boundary (with added force_on_boundary calculation)
@@ -1649,7 +1797,7 @@ class HalfwayBounceBackBoundary_compact_v1:
 
 class HalfwayBounceBackBoundary_compact_v2:
 
-    def __init__(self, mask, lattice):
+    def __init__(self, mask, lattice, calc_force = False):
         self.mask = mask  # location of solid-nodes
         self.lattice = lattice
         self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
@@ -1731,9 +1879,9 @@ class HalfwayBounceBackBoundary_compact_v2:
                                        dtype=torch.int64)  # the batch-index has to be integer
         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
                                             dtype=torch.int64)  # batch-index has to be a tensor
-        f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
-        f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
-        self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
+        # f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        # f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        # self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
 
     def __call__(self, f):
         # calc force on boundary:
@@ -1791,6 +1939,192 @@ class HalfwayBounceBackBoundary_compact_v2:
                                                           self.f_index[:, 2],  # y
                                                           self.f_index[:, 3]])  # z
 
+    def initialize_f_collided(self):
+        f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
+
+class HalfwayBounceBackBoundary_occ:
+
+    def __init__(self, mask, lattice, solid_boundary_data: SolidBoundaryData = None, global_solid_mask=None, periodicity: tuple[bool,...] = None, calc_force=None):
+        if not hasattr(solid_boundary_data, "solid_mask"):
+            self.mask = mask
+            self.solid_mask = mask
+        else:
+            self.mask = solid_boundary_data.solid_mask
+            self.solid_mask = solid_boundary_data.solid_mask
+
+        # global_solid_mask to filter out all "fake" fluid neighbors, which are outside this HWBB but not in the fluid region
+        if global_solid_mask is None:
+            global_solid_mask = self.mask
+
+        if periodicity is None:
+            periodicity = (False, False, False if lattice.D == 3 else None)
+
+        self.lattice = lattice
+        if calc_force is not None:
+            self.force_sum = torch.zeros_like(self.lattice.convert_to_tensor(
+                self.lattice.stencil.e[0]))  # summed force vector on all boundary nodes, in D dimensions (x,y,(z))
+            self.calc_force = True
+        else:
+            self.calc_force = False
+
+        self.f_index = []
+
+        # combine f_index_lt and f_index_gt to self.f_index
+        if (hasattr(solid_boundary_data, "f_index_gt") or hasattr(solid_boundary_data, "f_index_lt")) and len(solid_boundary_data.f_index_lt.shape) == len(solid_boundary_data.f_index_gt.shape):  # if solid_boundary_data contains batch_indices, use them
+            self.f_index = np.concatenate((solid_boundary_data.f_index_lt, solid_boundary_data.f_index_gt), axis=0)
+        elif hasattr(solid_boundary_data, "f_index_gt") and solid_boundary_data.f_index_lt.shape[0] == 0:
+            self.f_index = solid_boundary_data.f_index_gt
+        elif hasattr(solid_boundary_data, "f_index_lt") and solid_boundary_data.f_index_gt.shape[0] == 0:
+            self.f_index = solid_boundary_data.f_index_lt
+        else:  #else do ghetto-neighbour_search below
+            print("(INFO) HWBB didn't find solid_boundary_data, doing legacy neighbour_search on mask...")
+            # searching boundary-fluid-interface and append indices to f_index, distance to boundary to d
+            if self.lattice.D == 2:
+                nx, ny = mask.shape  # domain size in x and y
+                a, b = np.where(mask)  # x- and y-index of boundaryTRUE nodes for iteration over boundary area
+
+                for p in range(0, len(a)):  # for all TRUE-nodes in boundary.mask
+                    for i in range(0, self.lattice.Q):  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+                        # check for boundary-nodes neighboring the domain-border.
+                        # ...they have to take the periodicity into account...
+                        border = np.zeros(self.lattice.D, dtype=int)
+
+                        if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[0]:  # searching border on left [x]
+                            border[0] = -1
+                        elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[0]:  # searching border on right [x]
+                            border[0] = 1
+
+                        if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[1]:  # searching border on left [y]
+                            border[1] = -1
+                        elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[1]:  # searching border on right [y]
+                            border[1] = 1
+
+                        try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
+                            if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]
+                                and not global_solid_mask[
+                                    a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]):
+                                # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
+                                # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
+
+                                self.f_index.append([self.lattice.stencil.opposite[i],
+                                                     a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                                     b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny])
+                        except IndexError:
+                            pass  # just ignore this iteration since there is no neighbor there
+
+            if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
+                nx, ny, nz = mask.shape
+                a, b, c = np.where(mask)
+
+                for p in range(0, len(a)):
+                    for i in range(0, self.lattice.Q):
+                        border = np.zeros(self.lattice.D, dtype=int)
+                        # x - direction
+                        if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[0]:  # searching border on left
+                            border[0] = -1
+                        elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[0]:  # searching border on right
+                            border[0] = 1
+                        # y - direction
+                        if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[1]:  # searching border on left
+                            border[1] = -1
+                        elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[1]:  # searching border on right
+                            border[1] = 1
+                        # z - direction
+                        if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1 and periodicity[2]:  # searching border on left
+                            border[2] = -1
+                        elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1 and periodicity[2]:  # searching border on right
+                            border[2] = 1
+
+                        try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                            if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                        b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                        c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]
+                                and not global_solid_mask[
+                                    a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                    b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                    c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]):
+
+                                    self.f_index.append([self.lattice.stencil.opposite[i],
+                                                         a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+                                                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+                                                         c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz])
+                        except IndexError:
+                            pass  # just ignore this iteration since there is no neighbor there
+
+        # convert relevant tensors:
+        self.f_index = torch.tensor(np.array(self.f_index), device=self.lattice.device,
+                                       dtype=torch.int64)  # the batch-index has to be integer
+        self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
+                                            dtype=torch.int64)  # batch-index has to be a tensor
+        # f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        # f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        # self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
+
+    def __call__(self, f):
+        # calc force on boundary:
+        if self.calc_force:
+            self.calc_force_on_boundary()
+        # bounce (invert populations on fluid nodes neighboring solid nodes)
+        # f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
+
+        if self.lattice.D == 2:
+            f[self.opposite_tensor[self.f_index[:, 0]],
+              self.f_index[:, 1],
+              self.f_index[:, 2]] = self.f_collided[:, 0]
+        if self.lattice.D == 3:
+            f[self.opposite_tensor[self.f_index[:, 0]],
+              self.f_index[:, 1],
+              self.f_index[:, 2],
+              self.f_index[:, 3]] = self.f_collided[:, 0]
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]  # all dimensions of f except the 0th (q)
+        # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+        # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
+        return self.lattice.convert_to_tensor(self.mask)
+
+    def make_no_collision_mask(self, f_shape):
+        # INFO: for the halfway bounce back boundary, a no_collision_mask ist not necessary, because the no_stream_mask
+        # ...prevents interaction between nodes inside and outside of the boundary region.
+        # INFO: pay attention to the initialization of observable/moment-fields (u, rho,...) on the boundary nodes,
+        # ...in the initial solution of your flow, especially if visualization or post processing uses the field-values
+        # ...in the whole domain (including the boundary region)!
+        assert self.mask.shape == f_shape[1:]
+        return self.lattice.convert_to_tensor(self.mask)
+
+    def calc_force_on_boundary(self):
+        # calculate force on boundary by momentum exchange method (MEA, MEM) according to Kruger et al., 2017, pp.215-217:
+        # momentum (f_i*c_i - f_i_opposite*c_i_opposite = 2*f_i*c_i for a resting boundary) is summed for all...
+        # ...populations pointing at the surface of the boundary
+        self.force_sum = 2 * torch.einsum('i..., id -> d', self.f_collided[:, 0], self.lattice.e[self.f_index[:, 0]])
+
+    def store_f_collided(self, f_collided):
+        if self.lattice.D == 2:
+            self.f_collided[:, 0] = torch.clone(f_collided[self.f_index[:, 0],  # q
+                                                          self.f_index[:, 1],  # x
+                                                          self.f_index[:, 2]])  # y
+            self.f_collided[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index[:,0]],  # q
+                                                          self.f_index[:, 1],  # x
+                                                          self.f_index[:, 2]])  # y
+        if self.lattice.D == 3:
+            self.f_collided[:, 0] = torch.clone(f_collided[self.f_index[:, 0],  # q
+                                                          self.f_index[:, 1],  # x
+                                                          self.f_index[:, 2],  # y
+                                                          self.f_index[:, 3]])  # z
+            self.f_collided[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index[:,0]],  # q
+                                                          self.f_index[:, 1],  # x
+                                                          self.f_index[:, 2],  # y
+                                                          self.f_index[:, 3]])  # z
+
+    def initialize_f_collided(self):
+        f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+        self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
 
 class HalfwayBounceBackBoundary_compact_v3:
 

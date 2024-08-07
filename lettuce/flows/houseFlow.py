@@ -7,7 +7,7 @@ from lettuce.util import append_axes
 from lettuce.boundary import EquilibriumBoundaryPU, \
     BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, \
     InterpolatedBounceBackBoundary, InterpolatedBounceBackBoundary_compact_v1, InterpolatedBounceBackBoundary_compact_v2, InterpolatedBounceBackBoundary_occ, \
-    SlipBoundary, FullwayBounceBackBoundary_compact, HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, \
+    SlipBoundary, FullwayBounceBackBoundary_compact, FullwayBounceBackBoundary_occ, HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, HalfwayBounceBackBoundary_occ, \
     HalfwayBounceBackBoundary_compact_v3, PartiallySaturatedBoundary
 from lettuce.boundary_mk import NonEquilibriumExtrapolationInletU, SyntheticEddyInlet, ZeroGradientOutlet
 from pspelt.obstacleFunctions import makeGrid
@@ -17,6 +17,7 @@ import time
 # houseFlow3D by M.Kliemank, from MA-Thesis-CD-ROM "simulation_code.py"
 class HouseFlow3D(object):
     shape: tuple[int, int, int] or tuple[int, int]
+
     def __init__(self, shape: tuple, reynolds_number: float, mach_number: float, lattice: Lattice,
                  domain_constraints: tuple, char_length_lu: float,
                  char_length_pu: float = 1, char_velocity_pu=1, u_init: 0 or 1 or 2 = 0,
@@ -56,7 +57,6 @@ class HouseFlow3D(object):
         self.house_solid_boundary_data = house_solid_boundary_data
         self.ground_solid_boundary_data = ground_solid_boundary_data
 
-
         self.units = UnitConversion(
             lattice,
             reynolds_number=reynolds_number,
@@ -72,7 +72,7 @@ class HouseFlow3D(object):
             self.in_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all inlet nodes (if EQin is used)
             self.in_mask[0, 1:, :] = True  # inlet in positive x-direction, exklusive "Boden"
         self.ground_mask = np.zeros(shape=self.shape, dtype=bool)  # marks ground on base layer (xy-plane)
-        self.ground_mask[:, 0, :] = True  # mark ground/bottom floor (for standard FWBB/HWBB object-boundary)
+        #self.ground_mask[:, 0, :] = True  # mark ground/bottom floor (for standard FWBB/HWBB object-boundary)
 
         self.house_mask = np.zeros(shape=self.shape, dtype=bool)
         if self.house_solid_boundary_data is not None:
@@ -95,8 +95,8 @@ class HouseFlow3D(object):
 
         if self.u_init == 0:  # 0: uniform u=0
             print("(INFO) initializing with u_init=zero throughout domain")
-            print(f"u.shape = {u.shape}")
-            print(f"p.shape = {p.shape}")
+            # print(f"u.shape = {u.shape}")
+            # print(f"p.shape = {p.shape}")
             pass
         elif self.u_init == 1:  # 1: simple velocity profile everywhere, where there is no other BC
             u[0] = self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
@@ -146,6 +146,9 @@ class HouseFlow3D(object):
             N = self.N
         # <<<
 
+        # (1/2) overlap solid masks
+        self.overlap_all_solid_masks()
+
         # INLET, OUTLET, TOP/HEAVEN, BOTTOM/GROUND, HOUSE/SOLID
         # ...lateral sides in 3D are periodic BC by default
         # TODO: pass periodicity to Solid BCs (FWBB, HWBB, IBB).
@@ -187,7 +190,7 @@ class HouseFlow3D(object):
                                                           velocityProfile=self.wind_speed_profile)
         else:
             print("(!) flow-class encountered illegal inlet_bc-parameter! Using EquilibriumBoundaryPU")
-            #inlet_boundary_condition = EquilibriumBoundaryPU()
+            inlet_boundary_condition = EquilibriumBoundaryPU(self.in_mask, self.units.lattice, self.units, u_inlet)
 
         # OUTLET (BACK)
         print("initializing outlet boundary condition...")
@@ -196,27 +199,35 @@ class HouseFlow3D(object):
         outlet_boundary_condition = EquilibriumOutletP(self.units.lattice, [1, 0, 0], rho0=self.units.convert_pressure_pu_to_density_lu(0))
 
         # TOP
-        print("initlializing top boundary condition...")
+        print("initializing top boundary condition...")
         if self.top_bc.casefold() == 'zgo':
             top_boundary_condition = ZeroGradientOutlet(self.units.lattice, [0, 1, 0])
         else:
             top_mask = np.zeros_like(self.solid_mask)
-            top_mask[:, :, -1] = True
+            top_mask[:, -1, :] = True
             top_boundary_condition = EquilibriumBoundaryPU(top_mask, self.units.lattice, self.units, self.initial_solution(self.grid)[0])
 
         # GROUND
         print("initializing ground boundary condition...")
         ground_boundary_condition = None
         if self.ground_solid_boundary_data is not None:  # ground as IBB
-            ground_boundary_condition = InterpolatedBounceBackBoundary_occ(self.ground_solid_boundary_data.solid_mask,
-                                                                           self.lattice,
-                                                                           solid_boundary_data=self.ground_solid_boundary_data)
+            if self.ground_bc.casefold() == 'ibb':
+                ground_boundary_condition = InterpolatedBounceBackBoundary_occ(self.ground_solid_boundary_data.solid_mask,self.lattice, solid_boundary_data=self.ground_solid_boundary_data)
+            elif self.ground_bc.casefold() == 'hwbb':
+                ground_boundary_condition = HalfwayBounceBackBoundary_occ(self.ground_solid_boundary_data.solid_mask, self.units.lattice, solid_boundary_data=self.ground_solid_boundary_data)
+            elif self.ground_bc.casefold() == 'fwbb':
+                ground_boundary_condition = FullwayBounceBackBoundary_occ(self.ground_solid_boundary_data.solid_mask, self.units.lattice, solid_boundary_data=self.ground_solid_boundary_data, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
+            else:  # default to basic full-mask (fullway) BounceBack
+                ground_boundary_condition = BounceBackBoundary(self.ground_solid_boundary_data.solid_mask, self.units.lattice)
+
         else:
+            print(f"(INFO) no ground_solid_boundary_data available to flow.boundaries but ground_bc appears to be wanted. Using self.ground_mask[:, 0, :] = True as ground_mask")
+            self.ground_mask[:, 0, :] = True  # TODO: diese Anpassung hier ist irgendwie hässlich, weil ich dann jeweils vorher die global_solid_mask anders habe...
             if self.ground_bc is not None:  # if ground BC is specified for regular SBB
                 if self.ground_bc.casefold() == 'hwbb':
-                    ground_boundary_condition = HalfwayBounceBackBoundary_compact_v2(self.ground_mask, self.units.lattice)
+                    ground_boundary_condition = HalfwayBounceBackBoundary_occ(self.ground_mask, self.units.lattice, periodicity=(False, False, True))
                 elif self.ground_bc.casefold() == 'fwbb':
-                    ground_boundary_condition = FullwayBounceBackBoundary_compact(self.ground_mask, self.units.lattice)
+                    ground_boundary_condition = FullwayBounceBackBoundary_occ(self.ground_mask, self.units.lattice, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
                 else:  #default to basic full-mask (fullway) BounceBack
                     ground_boundary_condition = BounceBackBoundary(self.ground_mask, self.units.lattice)
 
@@ -224,21 +235,20 @@ class HouseFlow3D(object):
         # HOUSE
         print("initializing house boundary condition...")
         if self.house_bc.casefold() == 'fwbb':
-            # TODO: implement FWBB with solid_boundary_data usage
-            pass
+            house_boundary_condition = FullwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
         elif self.house_bc.casefold() == 'hwbb':
-            # TODO: implement HWBB with solid_boundary_data usage
+            house_boundary_condition = HalfwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, periodicity=(False, False, True))
             pass
         elif self.house_bc.casefold() == 'ibb' or 'ibb1':
             house_boundary_condition = InterpolatedBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data)
         else:
             house_boundary_condition = BounceBackBoundary(self.house_solid_boundary_data.solid_mask, self.lattice)
 
-        # overlap solid masks
+        # (1/2) overlap solid masks
         self.overlap_all_solid_masks()
 
         if ground_boundary_condition is not None:
-            print("INFO: flow.boundaries conatains SEPERATE house and ground solid boundaries")
+            print("INFO: flow.boundaries contains SEPERATE house and ground solid boundaries")
             boundaries = [
                 inlet_boundary_condition,
                 outlet_boundary_condition,
@@ -246,24 +256,51 @@ class HouseFlow3D(object):
                 ground_boundary_condition,
                 house_boundary_condition
             ]
+            i = 0
+            for boundary in boundaries:
+                print(f"boundaries[{i}]: {str(boundary)}")
+                i += 1
         else:  # if there is no ground_boundary_condition use only one solid_boundary, which is in house_BC
-            print("INFO: flow.boundaries conatains COMBINED house and ground solid boundaries")
+            print("INFO: flow.boundaries contains COMBINED house and ground solid boundaries")
             boundaries = [
                 inlet_boundary_condition,
                 outlet_boundary_condition,
                 top_boundary_condition,
                 house_boundary_condition
             ]
-        print("flow.boundaries = ", boundaries)
+            i = 0
+            for boundary in boundaries:
+                print(f"boundaries[{i}]: {str(boundary)}")
+                i += 1
         # exclude solid nodes from f_indices of all solid boundaries
         print("exlcuding solid nodes from f_index(_gt_lt) of bounce back boundaries")
         for boundary in boundaries:
             if hasattr(boundary, 'f_index'):
-                boundary.f_index = boundary.f_index[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index[:, 1], boundary.f_index[:, 2], boundary.f_index[:, 3] if len(self.shape) == 3 else None])]
+                num_entries = boundary.f_index.shape[0]
+                print(f"boundary {boundary} has f_index with {num_entries} entries")
+                if boundary.f_index.shape[0] > 0:
+                    boundary.f_index = boundary.f_index[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index[:, 1], boundary.f_index[:, 2], boundary.f_index[:, 3] if len(self.shape) == 3 else None])]
+                print(f"removed {num_entries - boundary.f_index.shape[0]} entries")
+            if hasattr(boundary, 'f_index_fwbb'):
+                num_entries = boundary.f_index_fwbb.shape[0]
+                print(f"boundary {boundary} has f_index with {num_entries} entries, but is FWBB so no cleanup possible. Provide global_solid_mask to FWBB-initialization, if you need cleanup of f_index_fwbb")
+                # if boundary.f_index_fwbb.shape[0] > 0:
+                #     boundary.f_index_fwbb = boundary.f_index_fwbb[torch.where(~self.lattice.convert_to_tensor(np.logical_and(self.solid_mask, ~boundary.mask))[boundary.f_index_fwbb[:, 1], boundary.f_index_fwbb[:, 2], boundary.f_index_fwbb[:, 3] if len(self.shape) == 3 else None])]
+                # print(f"removed {num_entries - boundary.f_index_fwbb.shape[0]} entries")
             if hasattr(boundary, 'f_index_gt'):
-                boundary.f_index_gt = boundary.f_index_gt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                num_entries = boundary.f_index_gt.shape[0]
+                print(f"boundary {boundary} has f_index_gt with {num_entries} entries")
+                if boundary.f_index_gt.shape[0] > 0:
+                    boundary.d_gt = boundary.d_gt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.f_index_gt = boundary.f_index_gt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                print(f"removed {num_entries - boundary.f_index_gt.shape[0]} entries")
             if hasattr(boundary, 'f_index_lt'):
-                boundary.f_index_lt = boundary.f_index_lt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                num_entries = boundary.f_index_lt.shape[0]
+                print(f"boundary {boundary} has f_index_lt with {num_entries} entries")
+                if boundary.f_index_lt.shape[0] > 0:
+                    boundary.d_lt = boundary.d_lt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.f_index_lt = boundary.f_index_lt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                print(f"removed {num_entries - boundary.f_index_lt.shape[0]} entries")
 
         # time execution of flow.boundary()
         time1 = time.time() - time0
@@ -274,7 +311,6 @@ class HouseFlow3D(object):
         print("overlap_all_solid_masks")
         time0 = time.time()
         ###assert self.boundary_objects is not None
-        # TODO: anpassen auf ANWENDUNG ohne boundary_objects LISTE!
             # boundaries_list = [_ for _ in self.boundary_objects
             #                    if _.unique_boundary and _.boundary_type is not PartiallySaturatedBoundary]
         #boundaries_list = self.boundaries
@@ -286,11 +322,13 @@ class HouseFlow3D(object):
         # for boundary in boundaries_list:
         #     self._solid_mask = self.solid_mask | boundary.solid_mask.to(self.lattice.device)
 
+        # TODO: geht das irgendwie anders? ich kann nicht self.boundaries aufrufen, weil die boundaries dann komplett neu initialisiert werden und das Zeit kostet!
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)
-        self._solid_mask = self.solid_mask | self.lattice.convert_to_numpy(self.house_mask) | self.ground_mask
-        #TODO: WICHTIG welche Masken sind tensoren und welche ndarrays -> siehe oneNote
+        self._solid_mask = self.solid_mask | self.house_mask | self.ground_mask
+        # TODO: falls hier weitere solids hinzugefügt werden (in diesem flow), dann müssen deren Masken nach Erstellung noch entsprechend verschnitten werden...
+        #  alternativ: man könnte ein "update solid mask" oderso machen, in dem man dann alle True Punkte hinzufügt... und das wird von einer boundary selbst bei initialisierung aufgerufen
         time1 = time.time() - time0
-        print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].\n")
+        print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return
 
     def wind_speed_profile(self, y, y_ref=None, y_0=0, u_ref=None, alpha=0.25):
@@ -304,7 +342,8 @@ class HouseFlow3D(object):
         #return torch.where(y < y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
         print("y_0, y_ref, alpha:", y_0, y_ref, alpha)
         # print("y:", y)
-        print("WSP is:\n", np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha))
+        # TODO: fix runtime warning, that (y-y_0)**alpha produces error with fractional power of negative number, even though the specific calc. doesn't have to be done, because y<=y_0
+       # print("WSP is:\n", np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha))
         return np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
 
     def wind_speed_profile_turb(self, y, u_0):
@@ -317,9 +356,10 @@ class HouseFlow3D(object):
         k_r = 0.19 * (y_0 / 0.05) ** 0.07
         y_min = 1.2
 
-        return torch.where(y < y_min,
-                           u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1,
-                           u_0 * k_r * torch.log(y / y_0) * 1)
+        ##(MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
+        return np.where(y < y_min,
+                           u_0 * k_r * np.log(y_min / y_0) * 1,
+                           u_0 * k_r * np.log(y / y_0) * 1)
 
     def reyolds_stress_tensor(self, z, u_0):
         # z is y is height, depending on your coordinate system
