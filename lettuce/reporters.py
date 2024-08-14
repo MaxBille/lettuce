@@ -262,7 +262,7 @@ class ProgressReporter:
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
-            print(f"Progress: {i/self.n_target:3.2f} % - Simulating step {i:6d} of {self.n_target:6d} (t_PU {self.flow.units.convert_time_to_pu(i):9.3f} of {self.flow.units.convert_time_to_pu(self.n_target):9.3f})...")
+            print(f"Progress: {(i/self.n_target)*100:3.2f} % - Simulating step {i:6d} of {self.n_target:6d} (t_PU {self.flow.units.convert_time_to_pu(i):9.3f} of {self.flow.units.convert_time_to_pu(self.n_target):9.3f})...")
 
 
 class NaNReporter:
