@@ -15,39 +15,133 @@ rcParams["image.origin"] = 'lower'
 
 
 class Show2D:
+    '''
+    A class to visualize data in a 2D slice. Initialization plots the mask. call() plots the data in a 2D slice,
+    on the plane defined by normal_dir = [1,2,3] and 0 <= position < mask.shape[normal_dir]. If no position is given,
+    it defaults to the center of the Z-plane (center plane in flow direction). If data is 2D, all of it is plotted
+    and position and normal_dir are ignored.
+
+    x- and y-axis on plot are inferred from domain_constraints
+    '''
     def __init__(self, lattice: Lattice, mask: np.ndarray, domain_constraints, outdir: str, p_mask=None,
                  dpi: int = 600, save: bool = True, show: bool = True, show_mask: bool = True, mask_alpha=1,
-                 figsize: tuple = (20, 4)):
+                 figsize: tuple = (20, 4), position:int = None, normal_dir: int = 2):
         # TODO: add colormap as parameter (inferno etc. looks cool)
         self.lattice = lattice
         self.outdir = outdir
+
+        dx_pu = (domain_constraints[1][0] - domain_constraints[0][0]) / mask.shape[0]
+        self.half_pixel_shift = dx_pu/2
+
+        self.mask = mask
+        mask_2d = self.mask
+
+        adjust_extent = False
+        transpose = False
         if len(mask.shape) > 2:
-            mask = mask[:, :, int(mask.shape[2] / 2)]
-        self.mask = mask.transpose()
-        minx, maxx = [_ for _ in domain_constraints]
-        self.extent = (minx[0], maxx[0], minx[1], maxx[1])
+            adjust_extent = True
+            if position is not None and normal_dir in [0,1,2] and 0 <= position < mask.shape[normal_dir]:
+                if normal_dir == 0:
+                    mask_2d = mask[position, :, :]
+                elif normal_dir == 1:
+                    mask_2d = mask[:, position, :]
+                else:  # normal_dir==2
+                    mask_2d = mask[:, :, position]
+                    transpose = True
+            else:
+                mask_2d = mask[:, :, int(mask.shape[2] / 2)]
+                transpose = True
+
+        if transpose:
+            mask_2d = mask_2d.transpose()
+
+        #OLD if len(mask.shape) > 2:
+        #OLD     mask = mask[:, :, int(mask.shape[2] / 2)]
+
+        #OLD self.mask = mask.transpose()
+        self.minx, self.maxx = [_ for _ in domain_constraints]
+
+        if adjust_extent:
+            if position is not None and normal_dir in [0, 1, 2] and 0 <= position < mask.shape[normal_dir]:
+                if normal_dir == 0:
+                    self.extent = (self.minx[2] - self.half_pixel_shift, self.maxx[2] - self.half_pixel_shift, self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+                elif normal_dir == 1:
+                    self.extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift, self.minx[2] - self.half_pixel_shift, self.maxx[2] - self.half_pixel_shift)
+                else:  # normal_dir==2
+                    self.extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift, self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+            else:
+                self.extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift, self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+
+        #OLD self.extent = (minx[0], maxx[0], minx[1], maxx[1])
         self.dpi = dpi
         self.save = save
         self.show = show
         self.show_mask = show_mask
 
+        self.position = position
+        self.normal_dir = normal_dir
+
         # maske für spezielle Ansicht der partially saturated boundary (philipp)
+        # >>>
         if p_mask is not None:
             if len(p_mask.shape) > 2:  # falls p_mask ("plotting"-mask?) 3D ist... -> NE; partially-saturated (!)
                 p_mask = p_mask[:, :, int(p_mask.shape[2] / 2)]   # reduziere auf 2D als slice in der Mitte der Z-dimension
             self.p_mask = p_mask.transpose()
+        # <<<
+
         self.mask_alpha = mask_alpha
         self.figsize = figsize  # tupel für die fig-Größe in (in,in)
-        self.__call__(mask, "solid_mask", "solid_mask")  # wenn man initialisiert, wird einmal die (aktuelle) SOLID_MASK ausgegeben...
+        self.__call__(mask, "solid_mask", "solid_mask", position=int(mask.shape[2] / 2) if len(mask.shape) > 2 else None, normal_dir=2)  # wenn man initialisiert, wird einmal die (aktuelle) SOLID_MASK ausgegeben...
 
-    def __call__(self, data, title: str, name: str, vlim: tuple[float, float] = None, cmap=None):
+    def __call__(self, data, title: str, name: str, vlim: tuple[float, float] = None, cmap=None, position: int = None, normal_dir: int = None):
+
+        # if positioning of 2d plane is not defined, take position from initialization
+        if position is None and self.position is not None:
+            position = self.position
+        if normal_dir is None and self.normal_dir is not None:
+            normal_dir = self.normal_dir
+        extent = self.extent
+
         fig, ax = plt.subplots(2, figsize=self.figsize)
+
+        transpose = False
         if len(data.shape) > 2:
-            data = data[:, :, int(data.shape[2] / 2)]  # wenn die Daten 3D sind, dann wird ein 2D-slice in der Mitte der Z-dimension entnommen
+            if position is not None and normal_dir in [0,1,2] and 0 <= position < data.shape[normal_dir]:
+                if normal_dir == 0:
+                    data = data[position, :, :]
+                    mask_2d = self.mask[position, :, :]
+                    extent = (self.minx[2] - self.half_pixel_shift, self.maxx[2] - self.half_pixel_shift, self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+                elif normal_dir == 1:
+                    data = data[:, position, :]
+                    mask_2d = self.mask[:, position, :]
+                    extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift, self.minx[2] - self.half_pixel_shift, self.maxx[2] - self.half_pixel_shift)
+                else:  # normal_dir==2
+                    data = data[:, :, position]
+                    mask_2d = self.mask[:, :, position]
+                    extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift, self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+                    transpose = True
+            else:
+                data = data[:, :, int(data.shape[2] / 2)]
+                mask_2d = self.mask[:, :, int(self.mask.shape[2] / 2) if len(self.mask.shape) > 2 else None]
+                extent = (self.minx[0] - self.half_pixel_shift, self.maxx[0] - self.half_pixel_shift,
+                          self.minx[1] - self.half_pixel_shift, self.maxx[1] - self.half_pixel_shift)
+                transpose = True
+        else:  # data already 2d...
+            mask_2d = self.mask
+
+        if transpose:
+            mask_2d = mask_2d.transpose()
+
+
+        # if len(data.shape) > 2:
+        #     data = data[:, :, int(data.shape[2] / 2)]  # wenn die Daten 3D sind, dann wird ein 2D-slice in der Mitte der Z-dimension entnommen
+
         vmin, vmax = vlim if vlim is not None else None, None
 
-        p = ax[0].imshow(data.transpose(), extent=self.extent, vmin=vmin, vmax=vmax, cmap=cmap)  #  zeigt Daten oben an (p als pointer für die Überlagerung der Maske untgen)
-        ax[1].imshow(data.transpose(), extent=self.extent, vmin=vmin, vmax=vmax, cmap=cmap)  # zeigt Daten ohne Maske an
+        if transpose:
+            data = data.transpose()
+        p = ax[0].imshow(data, extent=extent, vmin=vmin, vmax=vmax, cmap=cmap)  #  zeigt Daten oben an (p als pointer für die Überlagerung der Maske untgen)
+        ax[1].imshow(data, extent=extent, vmin=vmin, vmax=vmax, cmap=cmap)  # zeigt Daten ohne Maske an
 
         if self.show_mask:
             b = colorConverter.to_rgba('white')
@@ -55,12 +149,14 @@ class Show2D:
             cmap_solid = LinearSegmentedColormap.from_list('my_cmap', [b, w], 256)
             cmap_solid._init()  # create the _lut array, with rgba values
             cmap_solid._lut[:, -1] = np.linspace(0, 1, cmap_solid.N + 3)
-            ax[0].imshow(self.mask, extent=self.extent, cmap=cmap_solid, vmin=0, vmax=1)  # ZEIGT MASKE in S/W an
+            ax[0].imshow(mask_2d, extent=extent, cmap=cmap_solid, vmin=0, vmax=1)  # ZEIGT MASKE in S/W an
+            # PSM >>>
             if hasattr(self, 'p_mask'):
                 cmap_partial = LinearSegmentedColormap.from_list('my_cmap1', [b, w], 256)
                 cmap_partial._init()  # create the _lut array, with rgba values
                 cmap_partial._lut[:, -1] = np.linspace(0, self.mask_alpha, cmap_solid.N + 3)
-                ax[0].imshow(self.p_mask, extent=self.extent, cmap=cmap_partial, vmin=0, vmax=1)  # NUR FÜR PARTIALLY SATURATED
+                ax[0].imshow(self.p_mask, extent=extent, cmap=cmap_partial, vmin=0, vmax=1)  # NUR FÜR PARTIALLY SATURATED
+            # <<<
 
         fig.suptitle(title)
         ax[0].set_title("data with overlayed solid_mask")

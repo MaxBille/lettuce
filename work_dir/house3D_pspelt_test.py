@@ -5,6 +5,7 @@ import sys
 import os
 import psutil
 import shutil
+import hashlib
 from time import time, sleep
 import datetime
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
@@ -104,6 +105,7 @@ parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo
 parser.add_argument("--plot_intersection_info", action='store_true', help="plot intersection info to outdir to debug solid-boundary problems")
 parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
+parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
 
 
 #pspelt
@@ -258,7 +260,7 @@ def save_gif(filename: str = "./animation",
     print(f"(save_gif): Animation file \"{filename}\" was created with {fps} fps")
 
 class Slice2dReporter:
-    def __init__(self, lattice, simulation, normal_dir = 3, position=None, domain_constraints=None, interval=None, start=None, end=None, outdir=None, show=False, cmap=None):
+    def __init__(self, lattice, simulation, normal_dir = 2, position=None, domain_constraints=None, interval=None, start=None, end=None, outdir=None, show=False, cmap=None):
         self.lattice = lattice
         self.simulation = simulation
         self.interval = interval
@@ -386,12 +388,12 @@ if roof_height_pu == 0: # if roof_height ist not given infer it from eg_height
     if eg_height_pu == 0: # if nothing is given house is square/cube shaped plus roof
         eg_height_pu = house_length_pu
         print(f"(INFO) roof_height == eg_height == 0: implies eg_height = house_length (char. length) -> cubic EG-XY-shape")
-    roof_height_pu = eg_height_pu * (1 + 0) + np.tan(roof_angle) * roof_length_pu/2 #0.01*house_length_pu/house_length_lu
+    roof_height_pu = eg_height_pu * (1 + 0) + np.tan(roof_angle*np.pi/180) * roof_length_pu/2 #0.01*house_length_pu/house_length_lu
     print(f"(INFO) roof_height == 0: calculating roof_height from eg_height: eg_height_pu = {eg_height_pu}, roof_angle = {roof_angle}, roof_length_pu = {roof_length_pu}")
     reference_height_pu = eg_height_pu
     print(f"(INFO) Setting reference_height = eg_height")
 else:
-    eg_height_pu = roof_height_pu - (house_length_pu/2 + overhang_pu) * np.tan(roof_angle)
+    eg_height_pu = roof_height_pu - np.tan(roof_angle*np.pi/180) * roof_length_pu/2
     print(f"(INFO) eg_height == 0: calculating eg_height from roof_height: roof_height_pu = {roof_height_pu}, roof_angle = {roof_angle}")
     reference_height_pu = roof_height_pu
     print(f"(INFO) Setting reference_height = roof_height")
@@ -445,8 +447,8 @@ output_file.write(f"\nhouse_position_PU (on XZ ground plane) = {house_position}"
 output_file.write(f"\nground_height PU = {ground_height_pu:.4f}")
 output_file.write(f"\nhouse_length LU = {house_length_lu}")
 output_file.write(f"\nhouse_length PU = {house_length_pu:.4f}")
+output_file.write(f"\nhouse width PU = {house_width_pu:.4f}")
 output_file.write(f"\neg height PU = {eg_height_pu:.4f}")
-output_file.write(f"\neg width PU = {house_width_pu:.4f}")
 output_file.write(f"\nroof height PU = {roof_height_pu:.4f}")
 output_file.write(f"\nroof angle = {roof_angle:.4f}")
 output_file.write(f"\noverhangs PU = {overhang_pu:.4f}")
@@ -456,13 +458,16 @@ output_file.close()
 
 ## CALCULATE SOLID BOUNDARY DATA
 print("Calculating 3D TopoDS_Shapes...")
-house_bc_name = "house_BC_name_placeholder"
-ground_bc_name = "ground_BC_name_placeholder"
+
+# create unique ID of geometry parameters:
+geometry_hash = hashlib.md5(f"{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+house_bc_name = "house_BC_"+ str(geometry_hash)
+ground_bc_name = "ground_BC_" + str(geometry_hash)
 
 house_prism_shape = build_house_max(house_polygon, minz=minz_house, maxz=maxz_house)  #TopoDS_Shape als Rückgabe
 ground_prism_shape = build_house_max(ground_polygon, minz=zmin-0.1*domain_width_pu, maxz=zmax+0.1*domain_width_pu)
 if combine_solids:
-    print("(INFO) Combining Shapes of house and ground...")
+    print("(INFO) combine_solids==True -> Combining Shapes of house and ground...")
     house_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(house_prism_shape, ground_prism_shape).Shape())
 
 # (opt.) combine house and ground solid objects to single object
@@ -534,81 +539,82 @@ streaming = lt.StandardStreaming(lattice)
 print("Initializing simulation object...")
 simulation = lt.Simulation(flow, lattice, collision_obj, streaming)
 
-# OTPIONAL
+# OPTIONAL
 #simulation.initialize_f_neq()
-grid_reynolds_number = flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5))  # RE_grid as a measure for free flow resolution (should be ~O(10) )
-print(f"-> Grid Reynolds number Re_grid = {grid_reynolds_number:.3f}")
 
 ## CHECK INITIALISATION AND 2D DOMAIN
 print(f"Initializing Show2D instances for 2d plots...")
 observable_2D_plots_path = outdir + "/observable_2D_plots"
-boundary_masks_2D_plots_path = outdir + "/boundary_data_2D_plots"
+if args["plot_sbd_2d"]:
+    boundary_masks_2D_plots_path = outdir + "/boundary_data_2D_plots"
 
 if not os.path.isdir(observable_2D_plots_path):
     os.makedirs(observable_2D_plots_path)
-if not os.path.isdir(boundary_masks_2D_plots_path):
+if args["plot_sbd_2d"] and not os.path.isdir(boundary_masks_2D_plots_path):
     os.makedirs(boundary_masks_2D_plots_path)
 show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not cluster, figsize=(8,8))
-show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(8,8))
+if args["plot_sbd_2d"]:
+    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(8,8))
 
 # plot initial u_x velocity field as 2D slice
 show2d_observables(lattice.convert_to_numpy(flow.units.convert_velocity_to_pu(lattice.u(simulation.f))[0]), "u_x_INIT(t=0)", "u_x_t0")
 
 # PRINT ALL boundary.mask(s) to check positioning...
-print(f"Analyzing and plotting masks and f_indices to dir = {boundary_masks_2D_plots_path} ...")
-baguette = 0
-for boundary in simulation.boundaries:
-    print(f"Analyzing and plotting masks for simulation.boundary[{baguette}]...")
-    if hasattr(boundary, "mask"):
-        show2d_boundaries(lattice.convert_to_numpy(boundary.mask) if not isinstance(boundary.mask, np.ndarray) else boundary.mask, title="boundary.mask of boundary[{baguette}]:\n"+str(boundary), name="boundary_mask_"+str(baguette))
-    # FWBB
-    if hasattr(boundary, "f_index_fwbb"):
-        temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
-        temp_mask = np.zeros_like(boundary.mask)
-        if boundary.f_index_fwbb.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
-            idx_numpy = lattice.convert_to_numpy(boundary.f_index_fwbb)
-            temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-            temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-        show2d_boundaries(temp_mask, title="f_index_fwbb of boundary[{baguette}]:\n"+str(boundary), name="f_index_fwbb_"+str(baguette))
-    # HWBB
-    if hasattr(boundary, "f_index"):
-        temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
-        temp_mask = np.zeros_like(boundary.mask)
-        if boundary.f_index.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
-            idx_numpy = lattice.convert_to_numpy(boundary.f_index)
-            temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-            temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-        show2d_boundaries(temp_mask, title="f_index of boundary[{baguette}]:\n" + str(boundary), name="f_index_" + str(baguette))
-    # IBB
-    if hasattr(boundary, "f_index_lt"):
-        temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
-        temp_mask = np.zeros_like(boundary.mask)
-        if boundary.f_index_lt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
-            idx_numpy = lattice.convert_to_numpy(boundary.f_index_lt)
-            temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-            temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-        show2d_boundaries(temp_mask, title="f_index_lt of boundary[{baguette}]:\n" + str(boundary), name="f_index_lt_" + str(baguette))
-    if hasattr(boundary, "f_index_gt"):
-        temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
-        temp_mask = np.zeros_like(boundary.mask)
-        if boundary.f_index_gt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
-            idx_numpy = lattice.convert_to_numpy(boundary.f_index_gt)
-            temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-            temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-        show2d_boundaries(temp_mask, title="f_index_gt of boundary[{baguette}]:\n" + str(boundary), name="f_index_gt_" + str(baguette))
-    if hasattr(boundary, "f_index_lt") and hasattr(boundary, "f_index_gt"):
-        temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
-        temp_mask = np.zeros_like(boundary.mask)
-        if boundary.f_index_lt.shape[0] > 0 and boundary.f_index_gt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
-            idx_numpy = np.concatenate([lattice.convert_to_numpy(boundary.f_index_lt), lattice.convert_to_numpy(boundary.f_index_gt)], axis=0)
-            temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
-            temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+if args["plot_sbd_2d"]:
+    print(f"Analyzing and plotting masks and f_indices to dir = '{boundary_masks_2D_plots_path}' ...")
+    baguette = 0
+    for boundary in simulation.boundaries:
+        print(f"Analyzing and plotting masks and f_indices for simulation.boundary[{baguette}]...")
+        if hasattr(boundary, "mask"):
+            show2d_boundaries(lattice.convert_to_numpy(boundary.mask) if not isinstance(boundary.mask, np.ndarray) else boundary.mask, title="boundary.mask of boundary[{baguette}]:\n"+str(boundary), name="boundary_mask_"+str(baguette))
+        # FWBB
+        if hasattr(boundary, "f_index_fwbb"):
+            temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
+            temp_mask = np.zeros_like(boundary.mask)
+            if boundary.f_index_fwbb.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index_fwbb)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            show2d_boundaries(temp_mask, title=f"f_index_fwbb of boundary[{baguette}]:\n"+str(boundary), name="f_index_fwbb_"+str(baguette))
+        # HWBB
+        if hasattr(boundary, "f_index"):
+            temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
+            temp_mask = np.zeros_like(boundary.mask)
+            if boundary.f_index.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            show2d_boundaries(temp_mask, title=f"f_index of boundary[{baguette}]:\n" + str(boundary), name="f_index_" + str(baguette))
+        # IBB
+        if hasattr(boundary, "f_index_lt"):
+            temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
+            temp_mask = np.zeros_like(boundary.mask)
+            if boundary.f_index_lt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index_lt)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            show2d_boundaries(temp_mask, title=f"f_index_lt of boundary[{baguette}]:\n" + str(boundary), name="f_index_lt_" + str(baguette))
+        if hasattr(boundary, "f_index_gt"):
+            temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
+            temp_mask = np.zeros_like(boundary.mask)
+            if boundary.f_index_gt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index_gt)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            show2d_boundaries(temp_mask, title=f"f_index_gt of boundary[{baguette}]:\n" + str(boundary), name="f_index_gt_" + str(baguette))
+        if hasattr(boundary, "f_index_lt") and hasattr(boundary, "f_index_gt"):
+            temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
+            temp_mask = np.zeros_like(boundary.mask)
+            if boundary.f_index_lt.shape[0] > 0 and boundary.f_index_gt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = np.concatenate([lattice.convert_to_numpy(boundary.f_index_lt), lattice.convert_to_numpy(boundary.f_index_gt)], axis=0)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in XY:\n" + str(boundary), name="f_index_ltgt_" + str(baguette))
+            show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in YZ:\n" + str(boundary), name="f_index_ltgt_" + str(baguette) + "YZ", position=int(flow.units.convert_length_to_lu(house_position[0])), normal_dir=0)
 
-        show2d_boundaries(temp_mask, title="f_index_ltgt of boundary[{baguette}]:\n" + str(boundary), name="f_index_ltgt_" + str(baguette))
-
-    # TODO: (OPT) Schleife über alle q in temp_q_mask und dann alle in ein DIR ausgeben, sodass man sieht, wo jeweils hingezeigt wird.
-    #  Das könnte dann noch mit d_lt und d_gt auf den d-Wert gesetzt werden, sodass man eine heatmap der ds hat!
-    baguette += 1
+        # TODO: (OPT) Schleife über alle q in temp_q_mask und dann alle in ein DIR ausgeben, sodass man sieht, wo jeweils hingezeigt wird.
+        #  Das könnte dann noch mit d_lt und d_gt auf den d-Wert gesetzt werden, sodass man eine heatmap der ds hat!
+        baguette += 1
 
 
 
@@ -666,17 +672,18 @@ if vtk:
 # TODO: passe transform-filter im vtk an, um entsprechend die cell-Maske für das solid korrekt auszugeben
 #  MK hat da auch den "ouput_mask" zum vtk_reporter hinzugefügt und kann das nach der Initialisierung aufrufen
 
+# PROGRESS REPORTER
+progress_reporter = lt.ProgressReporter(flow, n_stop_target)
+simulation.reporters.append(progress_reporter)
+
 
 # NAN REPORTER
-nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=10, simulation=simulation, outdir=outdir+"/nan_repotert.txt")
+nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=100, simulation=simulation, outdir=outdir+"/nan_repotert.txt")
 simulation.reporters.append(nan_reporter)
-# TODO: flag in simulation, welcher den Step regulär beendet, wenn a) Zeit erreicht, oder b) NaN detektiert wurde.
-#       ... Idee: simulation besitzt einen flag "abort" oder "stop" und ein "reason" (string), in den die Reporter schreiben können.
-#       ...Dafür werden die Variablen dem Reporter als simulation.variable übergeben, dann muss man nicht komplett simulation übergeben.
 
 # slice2dReporter for u_mag and p fields:
 if args["save_animations"]:
-    slice2dReporter = Slice2dReporter(lattice, simulation, domain_constraints=domain_constraints, interval=10, start=0, outdir=observable_2D_plots_path, show = False)
+    slice2dReporter = Slice2dReporter(lattice, simulation, domain_constraints=domain_constraints, interval=int(n_steps/100), start=0, outdir=observable_2D_plots_path, show = False)
     simulation.reporters.append(slice2dReporter)
 
 ## WRITE PARAMETERS to file in outdir
@@ -701,23 +708,28 @@ runtime = t_end-t_start
 # PRINT SOME STATS TO STDOUT:
 print("\n***** SIMULATION FINISHED *****\n")
 print("MLUPS:", mlups)
-print("PU-Time: ", flow.units.convert_time_to_pu(simulation.i)," seconds")
-print("number of steps:", simulation.i)
+print(f"runtime: {runtime:.3f} seconds (= {round(runtime/60, 2)} min = {round(runtime/3600, 2)} h)")
+print(f"\nsimulated PU-Time: {flow.units.convert_time_to_pu(simulation.i):.3f} seconds")
+print("simulated number of steps:", simulation.i)
 print(f"Domain (L,H,B) = {flow.shape}")
 print(f"number of gridpoints = {flow.shape[0]*flow.shape[1]*flow.shape[2] if len(flow.shape) else flow.shape[0]*flow.shape[1]}")
-#print("number of gridpoints:", flow.shape[0]*flow.shape[1]*flow.shape[2] if len(flow.shape) else flow.shape[0]*flow.shape[1])
 # TODO: PU_time (target, reached), n_steps (target, reached), gridpoints, domain (GP³)
-print(f"runtime: {runtime:.3f} seconds (= {round(runtime/60, 2)} min = {round(runtime/3600, 2)} h)")
+grid_reynolds_number = flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5))  # RE_grid as a measure for free flow resolution (should be ~O(10) )
+print(f"-> Grid Reynolds number Re_grid = {grid_reynolds_number:.3f}")
+
+
 # TODO: change output to f-string
-print("\n*** STATS ***\n")
-print("current GPU VRAM (MB) usage: ", torch.cuda.memory_allocated(device=default_device)/1024/1024)
-print("max. GPU VRAM (MB) usage: ", torch.cuda.max_memory_allocated(device=default_device)/1024/1024)
+print("\n*** HARDWARE UTILIZATION ***\n")
+print(f"current GPU VRAM (MB) usage: {torch.cuda.memory_allocated(device=default_device)/1024/1024:.3f}")
+print(f"max. GPU VRAM (MB) usage: {torch.cuda.max_memory_allocated(device=default_device)/1024/1024:.3f}")
 
 [cpuLoad1,cpuLoad5,cpuLoad15] = [x / psutil.cpu_count() * 100 for x in psutil.getloadavg()]
 print("CPU LOAD AVG.-% over last 1 min, 5 min, 15 min; ", round(cpuLoad1,2), round(cpuLoad5,2), round(cpuLoad15,2))
 
 ram = psutil.virtual_memory()
 print("Current total (CPU) RAM usage [MB]: " + str(round(ram.used/(1024*1024),2)) + " of " + str(round(ram.total/(1024*1024),2)) + " MB")
+
+print("\n")
 
 ### export stats
 output_file = open(outdir+"/stats.txt", "a")
@@ -818,8 +830,7 @@ output_file.close()
 ### OUTPUT RESULTS
 # TODO: output results to human-readable file AND to copy-able file (or csv)
 
-if args["save_animations"]:
-    # TODO: save_gif zum slice reporter hinzufügen, wenn i==end -> dann ist der eine Step langsamer, aber das ist ja egal? -> MLUPS werden dann wack... besser als post-processing, aber von den namen her scheiße
+if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     print(f"(INFO) creating animations from slice2dRepoter Data...")
     os.makedirs(outdir+"/animations")
     save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=2)
@@ -829,7 +840,9 @@ if args["save_animations"]:
     save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=2)
     save_gif(outdir+"/animations/lim95_p", observable_2D_plots_path, "lim95_p", fps=2)
     save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=2)
-else:
+else:  # plots final u_mag and p fields
+    print(f"(INFO) plotting final u_mag and p fields...")
+    t0 = time()
     t = flow.units.convert_time_to_pu(simulation.i)
     u_LU = lattice.u(simulation.f)
     rho_LU = lattice.rho(simulation.f)
@@ -848,7 +861,10 @@ else:
     show2d_observables(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM95",
                                f"lim95_u_mag_i{simulation.i:08}_t{int(t)}",
                                vlim=(np.percentile(u_magnitude.flatten(), 1), np.percentile(u_magnitude.flatten(), 95)))
-
+    t1 = time()
+    if not cluster:
+        print("(INFO) Waiting for 6.5 seconds to avoid 'HTTP Error 429: Too Many Requests'...")
+        sleep(max(6.5 - (t1 - t0), 0))
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) noLIM",
                                f"nolim_p_i{simulation.i:08}_t{int(t)}")
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM99",
@@ -859,7 +875,27 @@ else:
                                vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 95)))
 
 
-### SAVE SCRIPT: save this script to outdir
-# TODO: save this script to outdir for later reproducibility and reference
+# PLOT max. Ma in domain over time...
+fig, ax = plt.subplots(constrained_layout=True)
+max_u_lu = np.array(max_u_lu_reporter.out)
+ax.plot(max_u_lu[:, 1], max_u_lu[:, 2]/lattice.convert_to_numpy(lattice.cs))
+ax.set_xlabel("physical time / s")
+ax.set_ylabel("maximum Ma")
+ax.set_ylim([0,0.1])
+secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+secax.set_xlabel("timesteps (simulation time / LU)")
+plt.savefig(outdir+"/max_Ma.png")
+if not cluster:
+    plt.show()
 
+
+
+### SAVE SCRIPT: save this script to outdir
+print(f"\nSaving simulation script to outdir...")
+temp_script_name = sim_id + "_" + os.path.basename(__file__)
+shutil.copy(__file__, outdir+"/"+temp_script_name)
+print(f"Saved simulation script to '{str(outdir+'/'+temp_script_name)}'")
+
+## END OF SCRIPT
+print(f"\n♬ THE END ♬")
 sys.stdout = old_stdout

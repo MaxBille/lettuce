@@ -47,14 +47,14 @@ def getIBBdata(cad_data: trimesh.Trimesh or TopoDS_Shape, grid: tuple[np.ndarray
     for data_name in ['f_index_gt_', 'f_index_lt_', 'd_gt_', 'd_lt_', 'not_intersected_']:
         solid_boundary_data_exists *= os.path.exists(os.path.join(solid_boundary_data_path, f"{data_name}{name}.npy"))
     if solid_boundary_data_exists and not redo_calculations:
-        print("Collision data found.")
+        print("Solid Boundary Data data found.")
         solid_boundary_data.f_index_gt = np.load(os.path.join(solid_boundary_data_path, f"f_index_gt_{name}.npy"))
         solid_boundary_data.f_index_lt = np.load(os.path.join(solid_boundary_data_path, f"f_index_lt_{name}.npy"))
         solid_boundary_data.d_gt = np.load(os.path.join(solid_boundary_data_path, f"d_gt_{name}.npy"))
         solid_boundary_data.d_lt = np.load(os.path.join(solid_boundary_data_path, f"d_lt_{name}.npy"))
         solid_boundary_data.not_intersected = np.load(os.path.join(solid_boundary_data_path, f"not_intersected_{name}.npy"))
     else:
-        print("No collision data found or recalculation requested. Redoing collision calculations.")
+        print("No Solid Boundary Data found or recalculation requested. Redoing Solid Boundary Data calculations.")
         solid_boundary_data = collect_solid_boundary_data(cad_data, solid_boundary_data, lattice, grid, periodicity, name, outdir=solid_boundary_data_path, cut_z=cut_z, cluster=cluster, verbose=verbose)
         if not no_store_solid_boundary_data:
             np.save(os.path.join(solid_boundary_data_path, f"f_index_gt_{name}.npy"), solid_boundary_data.f_index_gt)
@@ -62,7 +62,7 @@ def getIBBdata(cad_data: trimesh.Trimesh or TopoDS_Shape, grid: tuple[np.ndarray
             np.save(os.path.join(solid_boundary_data_path, f"d_gt_{name}.npy"), solid_boundary_data.d_gt)
             np.save(os.path.join(solid_boundary_data_path, f"d_lt_{name}.npy"), solid_boundary_data.d_lt)
             np.save(os.path.join(solid_boundary_data_path, f"not_intersected_{name}.npy"), solid_boundary_data.not_intersected)
-            print(f"Collision data saved to {solid_boundary_data_path}.")
-    print(f"Collision data loaded for {name}.")
+            print(f"Solid Boundary Data saved to {solid_boundary_data_path}.")
+    print(f"Solid Boundary Data loaded for {name}.")
 
     return solid_boundary_data

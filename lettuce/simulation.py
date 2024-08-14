@@ -37,9 +37,10 @@ class Simulation:
         self.collision = collision
         self.streaming = streaming
         self.i = 0  # index of the current timestep
-        self.abort_condition = 0
-        self.n_reached = 0
-        # TODO: abort_condition, abort_message, n_reached = self.i, n_target?
+        self.abort_condition = 0  # 0: no abort, 1: abort
+        self.abort_message = ""  # string where reporters etc. can write, why they want to abort
+        self.n_steps_target = None  # num_steps passed to simulation.call()
+        self.n_steps_reached = 0  # to save last i in, before finishing simulation
 
         # >>>
         # M.Bille:
@@ -115,19 +116,17 @@ class Simulation:
         M.Bille: added force_calculation on object/boundaries
         M.Bille: added halfway bounce back boundary
         """
+        self.n_steps_target = num_steps
         start = timer()
         if self.i == 0:
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
-            time1 = timer()
 
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             # ...and store post-collision population for certain bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-
-            time2 = timer()
 
             ### STORE f_collided FOR BOUNDARIES needing post-collision-, pre-streaming populations for bounce or force-calculation
             for boundary_index in self.boundary_range:
@@ -148,26 +147,30 @@ class Simulation:
             # call reporters
             self._report()
 
-            # BETA: if simulation is running close to t_max (host job-duraction limit),
+            # BETA: if simulation is running close to t_max (host job-duration limit),
             # ...end simulation prematurely to allow for postprocessing and storage of so far gathered results.
             # If you suspect your simulation to end prematurely due to the execution time limit, remember to write a
             # ...checkpoint to continue the simulation in a new job.
             if timer() - start > self.t_max:  # if T_total > 71:50:00 h
-                print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
-                print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
-                num_steps = _  # log current step counter
-                self.n_reached = _
+                #print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
+                #print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
+                num_steps = _ # log current step counter
+                self.n_steps_reached = self.i
                 self.abort_condition = 1  # out_of_time (t_max reached)
+                self.abort_message = f'(!) ABORT MESSAGE: prematurely ending simulation.step({self.n_steps_target}) at step = {self.n_steps_reached}, because walltime t_max = {self.t_max} is reached!'
                 break  # end sim-loop prematurely
-                # TODO: print out real number of steps! sim.i - i_start
 
-            if self.abort_condition == 2:  # NaN detected in f
-                print(f"(!) aborting simulation due to NaN reporter detecting NaN -> see log for more details!")
-                self.n_reached = _
+            if self.abort_condition > 1:  # NaN detected in f or something else...
+                # print(f"(!) aborting simulation due to NaN reporter detecting NaN -> see log for more details!")
                 num_steps = _  # log current step counter
+                self.n_steps_reached = self.i
+                # self.abort_condition = 2  # NaN detected in f
                 break
 
         end = timer()
+
+        if self.abort_condition > 0:
+            print(f"(!) Simulation was aborted prematurely at step {self.i} (t_PU = {self.flow.units.convert_time_to_pu(self.i):.3f}) of {self.n_steps_target} (T_PU = {self.flow.units.convert_time_to_pu(self.n_steps_target):.3f})...\n"+self.abort_message)
 
         # calculate runtime and performance in MLUPS
         seconds = end - start

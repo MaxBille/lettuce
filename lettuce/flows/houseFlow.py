@@ -344,7 +344,7 @@ class HouseFlow3D(object):
         # print("y:", y)
         # TODO: fix runtime warning, that (y-y_0)**alpha produces error with fractional power of negative number, even though the specific calc. doesn't have to be done, because y<=y_0
        # print("WSP is:\n", np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha))
-        return np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
+        return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / y_ref) ** alpha)
 
     def wind_speed_profile_turb(self, y, u_0):
         ## entspricht 3D_literature_neue_Boundary "wsp" und TestSEMBoundary/Empty/...
