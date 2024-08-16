@@ -9,7 +9,7 @@ import numpy as np
 from lettuce.util import torch_gradient
 from packaging import version
 
-__all__ = ["Observable", "MaximumVelocity", "MaximumVelocityLU", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient", "Mass"]
+__all__ = ["Observable", "MaximumVelocity", "MaximumVelocityLU", "MaxMinPressure", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Vorticity", "DragCoefficient", "LiftCoefficient", "Mass"]
 
 
 class Observable:
@@ -22,7 +22,7 @@ class Observable:
 
 
 class MaximumVelocity(Observable):
-    """Maximum velocitiy"""
+    """Maximum velocitiy magnitude in PU"""
 
     def __call__(self, f):
         u = self.lattice.u(f)
@@ -30,11 +30,20 @@ class MaximumVelocity(Observable):
 
 
 class MaximumVelocityLU(Observable):
-    """Maximum velocitiy"""
+    """Maximum velocitiy magnitude in LU"""
 
     def __call__(self, f):
         u = self.lattice.u(f)
         return torch.norm(u, dim=0).max()
+
+class MaxMinPressure(Observable):
+    '''Maximum and minimum pressure in PU'''
+
+    def __call__(self, f):
+        rho = self.lattice.rho(f)
+        p_min = self.flow.units.convert_density_lu_to_pressure_pu(rho.min())
+        p_max = self.flow.units.convert_density_lu_to_pressure_pu(rho.max())
+        return torch.tensor([p_min, p_max], device=rho.device)
 
 
 class IncompressibleKineticEnergy(Observable):

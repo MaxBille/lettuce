@@ -215,8 +215,6 @@ sys.stdout = Logger(outdir)
 # INPUT: z(Höhenwerte-Feld) z0, z_ref, u_ref, alpha
 # OUTPUT: u-Feld in abhängigkeit von z(Höhenwertefeld) in gleichem Format und shape
 
-## PHILIPP ür index-cleanup: f_index = f_index[torch.where(~solid_mask[f_index[:, 1],f_index[:, 2],f_index[:, 3] if d==3 else None])]
-
 
 def save_gif(filename: str = "./animation",
              database: str = None,
@@ -252,12 +250,15 @@ def save_gif(filename: str = "./animation",
     # Print the number of files found
     print(f"(save_gif): Number of files found: {len(filesForAnimation)}. Creating animation...")
 
-    # Open and compile the images into a GIF
-    imgs = [Image.open(database+file) for file in filesForAnimation]
-    imgs[0].save(fp=filename, format='GIF', append_images=imgs[1:], save_all=True, duration=int(1000/fps), loop=loop)
+    if len(filesForAnimation) > 1:
+        # Open and compile the images into a GIF
+        imgs = [Image.open(database+file) for file in filesForAnimation]
+        imgs[0].save(fp=filename, format='GIF', append_images=imgs[1:], save_all=True, duration=int(1000/fps), loop=loop)
 
-    # Print a confirmation message
-    print(f"(save_gif): Animation file \"{filename}\" was created with {fps} fps")
+        # Print a confirmation message
+        print(f"(save_gif): Animation file \"{filename}\" was created with {fps} fps")
+    else:
+        print(f"(save_gif): WARNING: Less than 2 files found for '{dataName}', no GIF created!")
 
 class Slice2dReporter:
     def __init__(self, lattice, simulation, normal_dir = 2, position=None, domain_constraints=None, interval=None, start=None, end=None, outdir=None, show=False, cmap=None):
@@ -275,6 +276,8 @@ class Slice2dReporter:
         self.outdir = outdir
         self.show = show
 
+        self.u_lim = (0, 2 * self.simulation.flow.units.characteristic_velocity_pu)
+        self.p_lim = (-1e-5, +1e-5)
         self.cmap = cmap
 
         if outdir is None and show is None:
@@ -295,11 +298,11 @@ class Slice2dReporter:
 
             self.show2d_slice_reporter(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) noLIM",f"nolim_u_mag_i{simulation.i:08}_t{int(t)}", cmap=self.cmap)
             self.show2d_slice_reporter(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM99",f"lim99_u_mag_i{simulation.i:08}_t{int(t)}", vlim=(np.percentile(u_magnitude.flatten(), 1), np.percentile(u_magnitude.flatten(), 99)), cmap=self.cmap)
-            self.show2d_slice_reporter(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM95", f"lim95_u_mag_i{simulation.i:08}_t{int(t)}", vlim=(np.percentile(u_magnitude.flatten(), 1), np.percentile(u_magnitude.flatten(), 95)), cmap=self.cmap)
+            self.show2d_slice_reporter(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM2uchar", f"lim2uchar_u_mag_i{simulation.i:08}_t{int(t)}", vlim=self.u_lim, cmap=self.cmap)
 
             self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) noLIM", f"nolim_p_i{simulation.i:08}_t{int(t)}", cmap=self.cmap)
             self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM99",f"lim99_p_i{simulation.i:08}_t{int(t)}", vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 99)), cmap=self.cmap)
-            self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM95",f"lim95_p_i{simulation.i:08}_t{int(t)}", vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 95)), cmap=self.cmap)
+            self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIMfix",f"limfix_p_i{simulation.i:08}_t{int(t)}", vlim=self.p_lim, cmap=self.cmap)
 
 
 
@@ -622,14 +625,23 @@ if args["plot_sbd_2d"]:
 # create and append reporters
 print("Initializing reporters...")
 
+#TODO: experiment with larger interval for obs_reportes...
+#TODO: measure impact of interval1 obs_reporters...
+
 # OBSERVABLE REPORTERS
-max_u_lu_observable = lt.MaximumVelocityLU(lattice,flow)
+max_u_lu_observable = lt.MaximumVelocityLU(lattice, flow)
 max_u_lu_reporter = lt.ObservableReporter(max_u_lu_observable, interval=1, out=None)
 simulation.reporters.append(max_u_lu_reporter)
+
+max_p_pu_observable = lt.MaxMinPressure(lattice, flow)
+min_max_p_pu_reporter = lt.ObservableReporter(max_p_pu_observable, interval=1, out=None)
+simulation.reporters.append(min_max_p_pu_reporter)
+
 
 # VTK REPORTER
 if vtk:
     print(f"(INFO) Appending vtk reporter with vtk_interval = {int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval)} and vtk_dir: {outdir_vtk}/vtk/out")
+    print(f"(INFO) This will create approx. {n_steps/(int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval))+1} .vti or .vtk files!")
     vtk_reporter = lt.VTKReporter(lattice, flow,
                                   interval=int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval),
                                   filename_base=outdir_vtk+"/vtk/out")
@@ -673,9 +685,14 @@ if vtk:
 #  MK hat da auch den "ouput_mask" zum vtk_reporter hinzugefügt und kann das nach der Initialisierung aufrufen
 
 # PROGRESS REPORTER
-progress_reporter = lt.ProgressReporter(flow, n_stop_target)
-simulation.reporters.append(progress_reporter)
+# progress_reporter = lt.ProgressReporter(flow, n_stop_target)
+# simulation.reporters.append(progress_reporter)
 
+# WATCHDOG-REPORTER
+watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=n_steps/100, i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
+simulation.reporters.append(watchdog_reporter)
+
+# TODO: aktualisiere watchdog-reporter (Name?) mit abort-messages etc. und lasse den mitlaufen, mit "show=True/False", dass er dann printed, oder nur ins watchdog_log-file schreibt.
 
 # NAN REPORTER
 nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=100, simulation=simulation, outdir=outdir+"/nan_repotert.txt")
@@ -699,14 +716,14 @@ if args["save_animations"]:
 #n_steps = n_stop_target - n_start
 t_start = time()
 
-print("\n\n***** RUNNING SIMULATION *****\n")
+print(f"\n\n***** SIMULATION STARTED AT {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} *****\n")
 mlups = simulation.step(n_steps)
 
 t_end = time()
 runtime = t_end-t_start
 
 # PRINT SOME STATS TO STDOUT:
-print("\n***** SIMULATION FINISHED *****\n")
+print(f"\n***** SIMULATION FINISHED AT {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} *****\n")
 print("MLUPS:", mlups)
 print(f"runtime: {runtime:.3f} seconds (= {round(runtime/60, 2)} min = {round(runtime/3600, 2)} h)")
 print(f"\nsimulated PU-Time: {flow.units.convert_time_to_pu(simulation.i):.3f} seconds")
@@ -754,7 +771,7 @@ output_file.close()
 
 ### *** PLOTTING OF FINAL OBSERVABLE FIELDS ***
 
-# # TODO: make plotting parametrisierbar, digga
+# # TODO: make plotting parametrisierbar
 # ### PLOTTING u, p, vorticity over 2D slice:
 # t = flow.units.convert_time_to_pu(simulation.i)
 # dx = flow.units.convert_length_to_pu(1.0)
@@ -834,11 +851,11 @@ if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     print(f"(INFO) creating animations from slice2dRepoter Data...")
     os.makedirs(outdir+"/animations")
     save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=2)
-    save_gif(outdir+"/animations/lim95_u_mag", observable_2D_plots_path, "lim95_u_mag", fps=2)
+    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=2)
     save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=2)
 
     save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=2)
-    save_gif(outdir+"/animations/lim95_p", observable_2D_plots_path, "lim95_p", fps=2)
+    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=2)
     save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=2)
 else:  # plots final u_mag and p fields
     print(f"(INFO) plotting final u_mag and p fields...")
@@ -888,6 +905,35 @@ plt.savefig(outdir+"/max_Ma.png")
 if not cluster:
     plt.show()
 
+# PLOT max. u_mag for abs. anaylsis
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
+ax.set_xlabel("physical time / s")
+ax.set_ylabel("maximum momentary velocity magnitude (PU)")
+y_lim_50 = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/2), 2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+ax.set_ylim([0, y_lim_50*1.1])  # show 10% more than u_mag_max
+secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+secax.set_xlabel("timesteps (simulation time / LU)")
+plt.savefig(outdir+"/max_u_mag.png")
+if not cluster:
+    plt.show()
+
+# PLOT max/min p for abs. analysis
+fig, ax = plt.subplots(constrained_layout=True)
+min_max_p_pu = np.array(min_max_p_pu_reporter.out)
+ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
+ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
+ax.set_xlabel("physical time / s")
+ax.set_ylabel("min. and max. momentary pressure (PU)")
+y_lim_50_min = min_max_p_pu[:int(min_max_p_pu.shape[0]/2), 2].min()
+y_lim_50_max = min_max_p_pu[:int(min_max_p_pu.shape[0]/2), 3].max()
+ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_max)])  # show 10% more above and below
+secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+secax.set_xlabel("timesteps (simulation time / LU)")
+ax.legend()
+plt.savefig(outdir+"/min_max_p.png")
+if not cluster:
+    plt.show()
 
 
 ### SAVE SCRIPT: save this script to outdir

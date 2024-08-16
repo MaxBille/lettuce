@@ -262,7 +262,7 @@ class ProgressReporter:
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
-            print(f"Progress: {(i/self.n_target)*100:3.2f} % - Simulating step {i:6d} of {self.n_target:6d} (t_PU {self.flow.units.convert_time_to_pu(i):9.3f} of {self.flow.units.convert_time_to_pu(self.n_target):9.3f})...")
+            print(f"Progress: {(i/self.n_target)*100:5.2f} % - Simulating step {i:6d} of {self.n_target:6d} (t_PU {self.flow.units.convert_time_to_pu(i):9.3f} of {self.flow.units.convert_time_to_pu(self.n_target):9.3f})...")
 
 
 class NaNReporter:
@@ -354,7 +354,8 @@ class AverageVelocityReporter:
                 self.out.append(np.mean(u, axis=2))
 
 
-def append_txt_file(filename, line):
+def append_txt_file(filename, line: str):
+    ''' append a line to a file with an added linebreak'''
     file = open(filename, "a")
     file.write(line + "\n")
     file.close()
@@ -370,7 +371,7 @@ class Watchdog:
 
     '''
 
-    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog"):
+    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog", show=False):
         self.interval = interval
         self.lattice = lattice
         self.flow = flow
@@ -386,6 +387,7 @@ class Watchdog:
             pass
         self.running = False
         self.t_start = 0
+        self.show = show
 
     def __call__(self, i, t, f):
         #print("calling watchdog")
@@ -395,7 +397,7 @@ class Watchdog:
             #print("watchdog in interval")
             #print("watchdog with", str(i))
             timestamp = datetime.datetime.now()
-            timestamp_str = timestamp.strftime("%y%m%d") + "_" + timestamp.strftime("%H%M%S")
+            timestamp_str = timestamp.strftime("%y%m%d_%H%M%S")
 
             t_now = timer()
             t_elapsed = t_now - self.t_start
@@ -407,9 +409,13 @@ class Watchdog:
 
             # write DATA and warn if t_total_estimate > t_max
             if t_total_estimate > self.t_max:
-                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26) + " WARNING t_total>t_max=" + str(self.t_max))
+                append_txt_file(self.filebase+"/watchdog_log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20) + " WARNING t_total>t_max=" + str(self.t_max))
+                if self.show:
+                    print(timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20) + " WARNING t_total>t_max=" + str(self.t_max))
             else:
-                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26))
+                append_txt_file(self.filebase+"/watchdog_log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20))
+                if self.show:
+                    print(timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20))
             # write checkpoint if t_elapsed > t_max
             if t_elapsed > self.t_max:
                 self.sim.save_checkpoint(self.filebase+"/"+timestamp_str + "_f_"+str(self.sim.i)+".cpt")
@@ -418,6 +424,10 @@ class Watchdog:
         self.running = True
         self.t_start = timer()
         #print("starting timer")
-        append_txt_file(self.filebase+"/log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
-        append_txt_file(self.filebase+"/log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(26)+"|"+" T WARNING")
+        if self.show:
+            print("-> WATCHDOG_REPORTER ACTIVE:\nt_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
+            print("timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")
+
+        append_txt_file(self.filebase+"/watchdog_log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
+        append_txt_file(self.filebase+"/watchdog_log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")
         # sizes:                                   13, 10, 7+2.(rjust10), 7+2.(rjust10), 1+6.(rjust10), 7+2.(rjust10), 7+2.(rjust15), 27
