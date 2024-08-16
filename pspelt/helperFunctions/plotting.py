@@ -91,7 +91,11 @@ class Show2D:
 
         self.mask_alpha = mask_alpha
         self.figsize = figsize  # tupel für die fig-Größe in (in,in)
-        self.__call__(mask, "solid_mask", "solid_mask", position=int(mask.shape[2] / 2) if len(mask.shape) > 2 else None, normal_dir=2)  # wenn man initialisiert, wird einmal die (aktuelle) SOLID_MASK ausgegeben...
+
+        # plot current solid_mask (= mask that was passed to show2d with initialization)
+        self.__call__(mask, "solid_mask_XY" if len(mask.shape) > 2 else "solid_mask", "solid_mask_XY" if len(mask.shape) > 2 else "solid_mask", position=int(round(mask.shape[2] / 2, 0)) if len(mask.shape) > 2 else None, normal_dir=2)
+        if len(mask.shape) > 2:
+            self.__call__(mask, "solid_mask_YZ", "solid_mask_YZ", position=int(round(mask.shape[0] / 3, 0)), normal_dir=0)
 
     def __call__(self, data, title: str, name: str, vlim: tuple[float, float] = None, cmap=None, position: int = None, normal_dir: int = None):
 

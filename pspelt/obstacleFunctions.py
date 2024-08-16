@@ -407,29 +407,33 @@ def collect_solid_boundary_data(boundary_object: TopoDS_Solid or TopoDS_Shape or
             else:
                 print(f"WARNING: No intersections found for intersection index {i}.")
         print(f"{len(d_lt)} ds in [0.,0.5], {len(d_gt)} ds in [0.5,1.)")
-    # fixing fluid nodes in dents with d<=0.5 in both directions
-    if len(f_index_lt) > 0:
-        have_solid_opposite = []
-        for i in range(len(f_index_lt)):
-            iq, ix, iy, iz = f_index_lt[i]
-            iqo = lattice.stencil.opposite[iq]
-            if [iqo, ix, iy, iz] in f_index_lt or [iqo, ix, iy, iz] in f_index_gt:
-                have_solid_opposite.append([iq, ix, iy, iz])
-        for index_list in have_solid_opposite:
-            iq, ix, iy, iz = index_list
-            x, y, *z = [grid[_][ix, iy, iz if ndim == 3 else None].item() for _ in range(ndim)]
-            z = z[0] if z else cut_z
-            i_to_remove = [i for i in range(len(f_index_lt)) if f_index_lt[i] == index_list]
-            d_tmp = [d_lt[_] for _ in i_to_remove]
-            new_d = 0.50001
-            print(f"Changing ray {index_list} at fluid node {[round(_, 2) for _ in [x, y, z]]} "
-                  f"with d={d_tmp} from lt to gt with d={new_d}")
-            del d_lt[i_to_remove[0]]
-            del f_index_lt[i_to_remove[0]]
-            d_gt.append(new_d)
-            f_index_gt.append(index_list)
-        print(f"{len(have_solid_opposite)} points contain f_index_lt in a direction and its opposite. "
-              f"Removed lt entries and added gt entries to avoid interpolation with no_stream_points.")
+    # >>> NTO NECESSARY?
+    # TODO (MAX): check if this is actually necessary... I don't think so...
+    #  because the "second fluid node population is actually taken as post-streaming population on the nearest fluid node!
+    # # fixing fluid nodes in dents with d<=0.5 in both directions
+    # if len(f_index_lt) > 0:
+    #     have_solid_opposite = []
+    #     for i in range(len(f_index_lt)):
+    #         iq, ix, iy, iz = f_index_lt[i]
+    #         iqo = lattice.stencil.opposite[iq]
+    #         if [iqo, ix, iy, iz] in f_index_lt or [iqo, ix, iy, iz] in f_index_gt:
+    #             have_solid_opposite.append([iq, ix, iy, iz])
+    #     for index_list in have_solid_opposite:
+    #         iq, ix, iy, iz = index_list
+    #         x, y, *z = [grid[_][ix, iy, iz if ndim == 3 else None].item() for _ in range(ndim)]
+    #         z = z[0] if z else cut_z
+    #         i_to_remove = [i for i in range(len(f_index_lt)) if f_index_lt[i] == index_list]
+    #         d_tmp = [d_lt[_] for _ in i_to_remove]
+    #         new_d = 0.50001
+    #         print(f"Changing ray {index_list} at fluid node {[round(_, 2) for _ in [x, y, z]]} "
+    #               f"with d={d_tmp} from lt to gt with d={new_d}")
+    #         del d_lt[i_to_remove[0]]
+    #         del f_index_lt[i_to_remove[0]]
+    #         d_gt.append(new_d)
+    #         f_index_gt.append(index_list)
+    #     print(f"{len(have_solid_opposite)} points contain f_index_lt in a direction and its opposite. "
+    #           f"Removed lt entries and added gt entries to avoid interpolation with no_stream_points.")
+
     # store results in tensors
     f_index_lt = np.array(f_index_lt, dtype=int)
     f_index_gt = np.array(f_index_gt, dtype=int)
