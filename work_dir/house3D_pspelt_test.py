@@ -57,6 +57,8 @@ parser.add_argument("--vtk_interval", default=0, type=int, help="how many steps 
 parser.add_argument("--vtk_start", default=0, type=float, help="at which percentage of t_target or n_steps the vtk-reporter starts, default is 0 (from the beginning); values from 0.0 to 1.0")
 
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
+parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
+parser.add_argument("--watchdog", action='store_true', help="report progress, ETA and warn, if Sim is estimated to run longer than t_max (~72 h)")
 parser.add_argument("--from_cpt", action='store_true', help="start from checkpoint. (!) provide --cpt_file path")
 parser.add_argument("--cpt_file", default=None, help="path and name of cpt_file to use if --from_cpt=True")
 parser.add_argument("--sim_i", default=0, type=int, help="step index of last checkpoints-step to start from for time-indexing of observables etc.")
@@ -173,6 +175,18 @@ for key in args:
     output_file.write('{:30s} {:30s}\n'.format(str(key), str(args[key])))
 output_file.close()
 
+if cluster:
+    dpi = 1200
+else:
+    dpi = 600
+
+
+### SAVE SCRIPT: save this script to outdir
+print(f"\nSaving simulation script to outdir...")
+temp_script_name = sim_id + "_" + os.path.basename(__file__)
+shutil.copy(__file__, outdir+"/"+temp_script_name)
+print(f"Saved simulation script to '{str(outdir+'/'+temp_script_name)}'")
+
 # START LOGGER -> get all terminal output into file
 old_stdout = sys.stdout
 sys.stdout = Logger(outdir)
@@ -282,7 +296,7 @@ class Slice2dReporter:
 
         if outdir is None and show is None:
             print(f"(WARNING) slice2dReporter was initialized with outdir = None and show = False... no results will be shown or saved...BRUH...")
-        self.show2d_slice_reporter = Show2D(lattice, simulation.flow.solid_mask, domain_constraints, outdir, save=True if outdir is not None else False, show=show, figsize=(6, 6))
+        self.show2d_slice_reporter = Show2D(lattice, simulation.flow.solid_mask, domain_constraints, outdir, save=True if outdir is not None else False, show=show, figsize=(4, 4), dpi=dpi)
 
     def __call__(self, i, t, f):
         if self.interval is not None and (self.start+i) % self.interval == 0 and i >= self.start and i <= self.end:
@@ -443,6 +457,7 @@ ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
+output_file.write(f"\ncombine_solids = {combine_solids}")
 output_file.write(f"\ndx_pu [m] = {(house_length_pu/house_length_lu):.4f}")
 output_file.write(f"\ndomain_constraints PU = {domain_constraints}")
 output_file.write(f"\ndomain shape LU = {shape}")
@@ -458,12 +473,11 @@ output_file.write(f"\noverhangs PU = {overhang_pu:.4f}")
 output_file.close()
 
 
-
 ## CALCULATE SOLID BOUNDARY DATA
 print("Calculating 3D TopoDS_Shapes...")
 
 # create unique ID of geometry parameters:
-geometry_hash = hashlib.md5(f"{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
 house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
@@ -555,9 +569,9 @@ if not os.path.isdir(observable_2D_plots_path):
     os.makedirs(observable_2D_plots_path)
 if args["plot_sbd_2d"] and not os.path.isdir(boundary_masks_2D_plots_path):
     os.makedirs(boundary_masks_2D_plots_path)
-show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not cluster, figsize=(8,8))
+show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not cluster, figsize=(4,4), dpi=dpi)
 if args["plot_sbd_2d"]:
-    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(8,8))
+    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(4,4), dpi=dpi)
 
 # plot initial u_x velocity field as 2D slice
 show2d_observables(lattice.convert_to_numpy(flow.units.convert_velocity_to_pu(lattice.u(simulation.f))[0]), "u_x_INIT(t=0)", "u_x_t0")
@@ -629,7 +643,7 @@ print("Initializing reporters...")
 #TODO: measure impact of interval1 obs_reporters...
 
 # OBSERVABLE REPORTERS
-max_u_lu_observable = lt.MaximumVelocityLU(lattice, flow)
+max_u_lu_observable = lt.MaximumVelocityLU(lattice, flow, track_index=False)  # TODO: test "track_index" -> überlege sinnvolle Ausgabe bzw. plotting dafür. Grafisch? "wo"?
 max_u_lu_reporter = lt.ObservableReporter(max_u_lu_observable, interval=1, out=None)
 simulation.reporters.append(max_u_lu_reporter)
 
@@ -689,14 +703,16 @@ if vtk:
 # simulation.reporters.append(progress_reporter)
 
 # WATCHDOG-REPORTER
-watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=n_steps/100, i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
-simulation.reporters.append(watchdog_reporter)
+if args["watchdog"]:
+    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=n_steps/100, i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
+    simulation.reporters.append(watchdog_reporter)
 
 # TODO: aktualisiere watchdog-reporter (Name?) mit abort-messages etc. und lasse den mitlaufen, mit "show=True/False", dass er dann printed, oder nur ins watchdog_log-file schreibt.
 
 # NAN REPORTER
-nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=100, simulation=simulation, outdir=outdir+"/nan_repotert.txt")
-simulation.reporters.append(nan_reporter)
+if args["nan_reporter"]:
+    nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=outdir+"/nan_reporter.txt")
+    simulation.reporters.append(nan_reporter)
 
 # slice2dReporter for u_mag and p fields:
 if args["save_animations"]:
@@ -881,7 +897,7 @@ else:  # plots final u_mag and p fields
     t1 = time()
     if not cluster:
         print("(INFO) Waiting for 6.5 seconds to avoid 'HTTP Error 429: Too Many Requests'...")
-        sleep(max(6.5 - (t1 - t0), 0))
+        sleep(max(7 - (t1 - t0), 0))
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) noLIM",
                                f"nolim_p_i{simulation.i:08}_t{int(t)}")
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM99",
@@ -934,13 +950,6 @@ ax.legend()
 plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()
-
-
-### SAVE SCRIPT: save this script to outdir
-print(f"\nSaving simulation script to outdir...")
-temp_script_name = sim_id + "_" + os.path.basename(__file__)
-shutil.copy(__file__, outdir+"/"+temp_script_name)
-print(f"Saved simulation script to '{str(outdir+'/'+temp_script_name)}'")
 
 ## END OF SCRIPT
 print(f"\n♬ THE END ♬")

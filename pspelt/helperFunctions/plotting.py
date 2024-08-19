@@ -25,7 +25,7 @@ class Show2D:
     '''
     def __init__(self, lattice: Lattice, mask: np.ndarray, domain_constraints, outdir: str, p_mask=None,
                  dpi: int = 600, save: bool = True, show: bool = True, show_mask: bool = True, mask_alpha=1,
-                 figsize: tuple = (20, 4), position:int = None, normal_dir: int = 2):
+                 figsize: tuple = (3.4876,2.301816), position:int = None, normal_dir: int = 2):
         # TODO: add colormap as parameter (inferno etc. looks cool)
         self.lattice = lattice
         self.outdir = outdir
@@ -106,8 +106,6 @@ class Show2D:
             normal_dir = self.normal_dir
         extent = self.extent
 
-        fig, ax = plt.subplots(2, figsize=self.figsize)
-
         transpose = False
         if len(data.shape) > 2:
             if position is not None and normal_dir in [0,1,2] and 0 <= position < data.shape[normal_dir]:
@@ -144,6 +142,34 @@ class Show2D:
 
         if transpose:
             data = data.transpose()
+
+        # NEW ADAPTIVE FIG-scaling for 1:1 pixel-to-node ratio on a 4 x (~4) figrue
+        # print(f"data.shape: {data.shape}")
+        # pixel_height, pixel_width = data.shape
+        # axis_padding = 50  #Pixel
+        # spacing_between = 20
+        # dpi_width = self.figsize[0] * pixel_width / (pixel_width + 2*axis_padding)
+        # dpi_height = self.figsize[0] * 2 * pixel_height / (2 * pixel_height + 2*axis_padding)
+        # dpi = min(dpi_width, dpi_height)
+        #
+        # min_dpi = 300
+        #
+        # if dpi < min_dpi:
+        #     print("unter dpimin")
+        #     dpi = min_dpi
+        #     pixels_per_entry_width = int(dpi * (pixel_width + 2*axis_padding) / self.figsize[0])
+        #     pixels_per_entry_height = int(dpi * (2*pixel_height + axis_padding) / self.figsize[0])
+        #     fig_width = pixels_per_entry_width / dpi
+        #     fig_height = pixels_per_entry_height / dpi
+        # else:
+        #     fig_width = (pixel_width+2*axis_padding)/dpi
+        #     fig_height = (2*pixel_height+2*axis_padding)/dpi
+        # fig, ax = plt.subplots(2,figsize=(fig_width, fig_height), dpi=dpi)
+
+
+        fig, ax = plt.subplots(2, figsize=self.figsize)
+
+
         p = ax[0].imshow(data, extent=extent, vmin=vmin, vmax=vmax, cmap=cmap)  #  zeigt Daten oben an (p als pointer für die Überlagerung der Maske untgen)
         ax[1].imshow(data, extent=extent, vmin=vmin, vmax=vmax, cmap=cmap)  # zeigt Daten ohne Maske an
 

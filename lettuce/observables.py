@@ -29,12 +29,50 @@ class MaximumVelocity(Observable):
         return self.flow.units.convert_velocity_to_pu(torch.norm(u, dim=0).max())
 
 
+def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tensor:
+    r"""Converts flat indices into unraveled coordinates in a target shape.
+
+    This is a `torch` implementation of `numpy.unravel_index`.
+
+    Args:
+        indices: A tensor of (flat) indices, (*, N).
+        shape: The targeted shape, (D,).
+
+    Returns:
+        The unraveled coordinates, (*, N, D).
+    """
+
+    coord = []
+
+    for dim in reversed(shape):
+        coord.append(indices % dim)
+        indices = indices // dim
+
+    coord = torch.stack(coord[::-1], dim=-1)
+
+    return coord
+
+
 class MaximumVelocityLU(Observable):
     """Maximum velocitiy magnitude in LU"""
 
+    def __init__(self, lattice, flow, track_index=False):
+        super().__init__(lattice, flow)
+        self.lattice = lattice
+        self.flow = flow
+        self.track_index = track_index
+
     def __call__(self, f):
         u = self.lattice.u(f)
-        return torch.norm(u, dim=0).max()
+        if self.track_index:
+            pass
+            u_mag = torch.norm(u, dim=0)
+            indices = torch.argmax(u_mag)
+            indices = unravel_index(indices, u_mag.shape)
+            return torch.tensor([u_mag.max(), indices], device=u.device)
+        else:
+            return torch.norm(u, dim=0).max()
+
 
 class MaxMinPressure(Observable):
     '''Maximum and minimum pressure in PU'''
