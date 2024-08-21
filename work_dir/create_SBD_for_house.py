@@ -201,14 +201,14 @@ house_prism_shape = build_house_max(house_polygon, minz=minz_house, maxz=maxz_ho
 ground_prism_shape = build_house_max(ground_polygon, minz=zmin-0.1*domain_width_pu, maxz=zmax+0.1*domain_width_pu)
 
 time1 = time()
-print(f"(TIME) Calculating TopoDS_Shapes took {floor(time1-time0 / 60):02d}:{floor(time1-time0 % 60):02d} [mm:ss]")
+print(f"(TIME) Calculating TopoDS_Shapes took {floor((time1-time0) / 60):02d}:{floor((time1-time0) % 60):02d} [mm:ss]")
 
 if combine_solids:
     print("(INFO) combine_solids==True -> Combining Shapes of house and ground...")
     house_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(house_prism_shape, ground_prism_shape).Shape())
     time11 = time()
     print(
-        f"(TIME) Combining TopoDS_Shapes took {floor(time11 - time1 / 60):02d}:{floor(time11 - time1 % 60):02d} [mm:ss]")
+        f"(TIME) Combining TopoDS_Shapes took {floor((time11 - time1) / 60):02d}:{floor((time11 - time1) % 60):02d} [mm:ss]")
 
 time1 = time()
 
@@ -247,4 +247,4 @@ if args["plot_intersection_info"]:
 
 time_end = time()
 
-print(f"(INFO) Total runtime of SBD creation: {floor(time_end - time0 / 60):02d}:{floor(time_end - time0 % 60):02d} [mm:ss]")
+print(f"(INFO) Total runtime of SBD creation: {floor((time_end - time0) / 60):02d}:{floor((time_end - time0) % 60):02d} [mm:ss]")

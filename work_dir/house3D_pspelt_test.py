@@ -108,6 +108,9 @@ parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo
 parser.add_argument("--plot_intersection_info", action='store_true', help="plot intersection info to outdir to debug solid-boundary problems")
 parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
+parser.add_argument("--animations_number_of_frames", default=0, tyoe=int, help="number of frames to take over the course of the simulation every t_target/#frames time units, overwrites animations_fps!")
+parser.add_argument("--animations_fps_pu", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Not the fps for the GIF, but the rate at which frames are taken from simulation (relative to it's simulated PU-time)")
+parser.add_argument("--animations_fps_gif", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Actual fps of the resulting GIF. (Not the fps at which frames are taken from simulation!")
 parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
 
 
@@ -717,7 +720,15 @@ if args["nan_reporter"]:
 
 # slice2dReporter for u_mag and p fields:
 if args["save_animations"]:
-    slice2dReporter = Slice2dReporter(lattice, simulation, domain_constraints=domain_constraints, interval=int(n_steps/100), start=0, outdir=observable_2D_plots_path, show = False)
+    if args["animations_number_of_frames"] > 0:  # number of 2D frames to take for animations
+        interval = int(n_steps/args["animations_number_of_frames"])
+    elif args["animations_fps_pu"] > 0:  # if no number of frames given, calculate it from fps
+        number_of_frames = t_target * args["animations_fps_pu"]
+        interval = int(n_steps/number_of_frames)
+    else:  #neither number of frames, nor fps are given, take 1000 frames...
+        interval = int(n_steps / 1000)
+
+    slice2dReporter = Slice2dReporter(lattice, simulation, domain_constraints=domain_constraints, interval=interval, start=0, outdir=observable_2D_plots_path, show = False)
     simulation.reporters.append(slice2dReporter)
 
 ## WRITE PARAMETERS to file in outdir
@@ -869,13 +880,19 @@ output_file.close()
 if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     print(f"(INFO) creating animations from slice2dRepoter Data...")
     os.makedirs(outdir+"/animations")
-    save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=2)
-    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=2)
-    save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=2)
 
-    save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=2)
-    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=2)
-    save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=2)
+    if args["animations_fps_gif"] > 0:
+        fps = int(args["animations_fps_gif"])
+    else:
+        fps = 3
+
+    save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=3)
+    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=3)
+    save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=3)
+
+    save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=3)
+    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=3)
+    save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=3)
 else:  # plots final u_mag and p fields
     print(f"(INFO) plotting final u_mag and p fields...")
     t0 = time()
