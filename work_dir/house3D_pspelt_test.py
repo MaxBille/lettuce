@@ -6,6 +6,7 @@ import os
 import psutil
 import shutil
 import hashlib
+import resource
 from time import time, sleep
 import datetime
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
@@ -761,6 +762,7 @@ print("CPU LOAD AVG.-% over last 1 min, 5 min, 15 min; ", round(cpuLoad1,2), rou
 
 ram = psutil.virtual_memory()
 print("Current total (CPU) RAM usage [MB]: " + str(round(ram.used/(1024*1024),2)) + " of " + str(round(ram.total/(1024*1024),2)) + " MB")
+print("maximum total (CPU) RAM usage ('MaxRSS') [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 
 print("\n")
 
@@ -775,7 +777,8 @@ output_file.write("\nVRAM_current [MB] = " + str(torch.cuda.memory_allocated(lat
 output_file.write("\nVRAM_peak [MB] = " + str(torch.cuda.max_memory_allocated(lattice.device)/1024/1024))
 output_file.write("\n")
 output_file.write("\nCPU load % avg. over last 1, 5, 15 min: " + str(round(cpuLoad1, 2)) + " %, " + str(round(cpuLoad5, 2)) + " %, " + str(round(cpuLoad15, 2)) + " %")
-output_file.write("\ntotal current RAM usage [MB]: " + str(round(ram.used/(1024*1024),2)) + " of " + str(round(ram.total/(1024*1024),2)) + " MB")
+output_file.write("\nCurrent total RAM usage [MB]: " + str(round(ram.used/(1024*1024),2)) + " of " + str(round(ram.total/(1024*1024),2)) + " MB")
+output_file.write("\nmaximum total RAM usage ('MaxRSS') [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 output_file.close()
 
 ### export CUDA-summary
