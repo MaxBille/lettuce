@@ -454,6 +454,11 @@ ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
                 # alles außer der Höhe "außerhalb" der boundary setzen ("ich setze der Nachbarsuche, dort etwas hin, was er findet")
 
 
+# create unique ID of geometry parameters:
+geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+house_bc_name = "house_BC_"+ str(geometry_hash)
+ground_bc_name = "ground_BC_" + str(geometry_hash)
+
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
@@ -470,16 +475,11 @@ output_file.write(f"\neg height PU = {eg_height_pu:.4f}")
 output_file.write(f"\nroof height PU = {roof_height_pu:.4f}")
 output_file.write(f"\nroof angle = {roof_angle:.4f}")
 output_file.write(f"\noverhangs PU = {overhang_pu:.4f}")
+output_file.write(f"\n\ngeometry hash: {geometry_hash}")
 output_file.close()
-
 
 ## CALCULATE SOLID BOUNDARY DATA
 print("Calculating 3D TopoDS_Shapes...")
-
-# create unique ID of geometry parameters:
-geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
-house_bc_name = "house_BC_"+ str(geometry_hash)
-ground_bc_name = "ground_BC_" + str(geometry_hash)
 
 house_prism_shape = build_house_max(house_polygon, minz=minz_house, maxz=maxz_house)  #TopoDS_Shape als Rückgabe
 ground_prism_shape = build_house_max(ground_polygon, minz=zmin-0.1*domain_width_pu, maxz=zmax+0.1*domain_width_pu)

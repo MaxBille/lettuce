@@ -170,7 +170,7 @@ class Simulation:
         end = timer()
 
         if self.abort_condition > 0:
-            print(f"(!) Simulation was aborted prematurely at step {self.i} (t_PU = {self.flow.units.convert_time_to_pu(self.i):.3f}) of {self.n_steps_target} (T_PU = {self.flow.units.convert_time_to_pu(self.n_steps_target):.3f})...\n"+self.abort_message)
+            print(f"\n(!) Simulation was aborted prematurely at step {self.i} (t_PU = {self.flow.units.convert_time_to_pu(self.i):.3f}) of {self.n_steps_target} (T_PU = {self.flow.units.convert_time_to_pu(self.n_steps_target):.3f})...\n"+self.abort_message)
 
         # calculate runtime and performance in MLUPS
         seconds = end - start
