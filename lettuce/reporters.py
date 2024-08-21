@@ -371,7 +371,7 @@ class Watchdog:
 
     '''
 
-    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog", show=False):
+    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=(72 * 3600 - 10 * 60), filebase="./watchdog", show=False):
         self.interval = interval
         self.lattice = lattice
         self.flow = flow
@@ -424,9 +424,12 @@ class Watchdog:
         self.running = True
         self.t_start = timer()
         #print("starting timer")
+        print("-> WATCHDOG_REPORTER ACTIVE:\nt_start: " + str(self.t_start) + ", interval: " + str(
+            self.interval) + ", i_target: " + str(self.i_target))
         if self.show:
-            print("-> WATCHDOG_REPORTER ACTIVE:\nt_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
             print("timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")
+        else:
+            print(f"-> WATCHDOG_REPORTER (on cluster): see '{self.filebase}/watchdog_log.txt' for output")
 
         append_txt_file(self.filebase+"/watchdog_log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
         append_txt_file(self.filebase+"/watchdog_log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")

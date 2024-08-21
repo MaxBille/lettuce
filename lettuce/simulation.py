@@ -151,7 +151,7 @@ class Simulation:
             # ...end simulation prematurely to allow for postprocessing and storage of so far gathered results.
             # If you suspect your simulation to end prematurely due to the execution time limit, remember to write a
             # ...checkpoint to continue the simulation in a new job.
-            if timer() - start > self.t_max:  # if T_total > 71:50:00 h
+            if timer() - start > self.t_max:  # if T_total > 71:50:00 h (cluster kills process after 72h, so 10min are left for post-processing...)
                 #print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
                 #print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
                 num_steps = _ # log current step counter

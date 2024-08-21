@@ -704,7 +704,7 @@ if vtk:
 
 # WATCHDOG-REPORTER
 if args["watchdog"]:
-    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=n_steps/100, i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
+    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=int(n_steps/100), i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
     simulation.reporters.append(watchdog_reporter)
 
 # TODO: aktualisiere watchdog-reporter (Name?) mit abort-messages etc. und lasse den mitlaufen, mit "show=True/False", dass er dann printed, oder nur ins watchdog_log-file schreibt.

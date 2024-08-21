@@ -5,7 +5,7 @@ from math import floor, sqrt
 import torch
 import numpy as np
 import os
-import trimesh
+#import trimesh
 import lettuce as lt
 from time import time, sleep
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
