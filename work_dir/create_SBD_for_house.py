@@ -1,12 +1,15 @@
 ### IMPORT
 import os
 import hashlib
+import resource
+import sys
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from time import time, sleep
 from math import ceil, floor, sqrt
 import datetime
 
 import numpy as np
+import psutil
 import torch
 from OCC.Core.TopoDS import TopoDS_Shape
 from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
@@ -16,6 +19,7 @@ import lettuce as lt
 from pspelt.geometric_building_model import build_house_max
 from pspelt.helperFunctions.getIBBdata import getIBBdata
 from pspelt.helperFunctions.plotting import plot_intersection_info
+from pspelt.helperFunctions.logging import Logger
 from pspelt.obstacleFunctions import makeGrid
 
 ### ARGUMENTS
@@ -70,6 +74,10 @@ os.makedirs(outdir+"/"+dir_id)
 print(f"Outdir/simID = {outdir}/{dir_id}")
 outdir = outdir+"/"+dir_id # adding individal sim-ID to outdir path to get individual DIR per simulation
 print(f"Input arguments: {args}")
+
+# START LOGGER -> get all terminal output into file
+old_stdout = sys.stdout
+sys.stdout = Logger(outdir)
 
 # STENCIL
 if dim == 2:
@@ -247,4 +255,12 @@ if args["plot_intersection_info"]:
 
 time_end = time()
 
+
 print(f"(INFO) Total runtime of SBD creation: {floor((time_end - time0) / 60):02d}:{floor((time_end - time0) % 60):02d} [mm:ss]")
+print("maximum total (CPU) RAM usage ('MaxRSS') [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
+[cpuLoad1,cpuLoad5,cpuLoad15] = [x / psutil.cpu_count() * 100 for x in psutil.getloadavg()]
+print("CPU LOAD AVG.-% over last 1 min, 5 min, 15 min; ", round(cpuLoad1, 2), round(cpuLoad5, 2), round(cpuLoad15, 2))
+
+## END OF SCRIPT
+print(f"\n♬ THE END ♬")
+sys.stdout = old_stdout

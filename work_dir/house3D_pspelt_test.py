@@ -3,6 +3,8 @@
 # sys, os etc.
 import sys
 import os
+from math import floor
+
 import psutil
 import shutil
 import hashlib
@@ -108,7 +110,7 @@ parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo
 parser.add_argument("--plot_intersection_info", action='store_true', help="plot intersection info to outdir to debug solid-boundary problems")
 parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
-parser.add_argument("--animations_number_of_frames", default=0, tyoe=int, help="number of frames to take over the course of the simulation every t_target/#frames time units, overwrites animations_fps!")
+parser.add_argument("--animations_number_of_frames", default=0, type=int, help="number of frames to take over the course of the simulation every t_target/#frames time units, overwrites animations_fps!")
 parser.add_argument("--animations_fps_pu", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Not the fps for the GIF, but the rate at which frames are taken from simulation (relative to it's simulated PU-time)")
 parser.add_argument("--animations_fps_gif", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Actual fps of the resulting GIF. (Not the fps at which frames are taken from simulation!")
 parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
@@ -878,6 +880,7 @@ output_file.close()
 # TODO: output results to human-readable file AND to copy-able file (or csv)
 
 if args["save_animations"]:  # takes images from slice2dReporter and created GIF
+    t0 = time()
     print(f"(INFO) creating animations from slice2dRepoter Data...")
     os.makedirs(outdir+"/animations")
 
@@ -886,13 +889,15 @@ if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     else:
         fps = 3
 
-    save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=3)
-    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=3)
-    save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=3)
+    save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=fps)
+    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=fps)
+    save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=fps)
 
-    save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=3)
-    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=3)
-    save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=3)
+    save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=fps)
+    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=fps)
+    save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
+    t1 = time()
+    print(f"Creating animations from slice2dRepoter Data took {floor((t1 - t0) / 60):02d}:{floor((t1- t0) % 60):02d} [mm:ss]")
 else:  # plots final u_mag and p fields
     print(f"(INFO) plotting final u_mag and p fields...")
     t0 = time()

@@ -2337,6 +2337,7 @@ class EquilibriumBoundaryPU:
         f = torch.where(self.mask, feq, f)
         return f
 
+    # TODO: add no_streaming_mask to counter the BC-order artifacts through "in"-streaming of outlet populations!
 
 class AntiBounceBackOutlet:
     """Allows distributions to leave domain unobstructed through this boundary.

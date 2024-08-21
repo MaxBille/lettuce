@@ -68,9 +68,9 @@ class HouseFlow3D(object):
         #self.parallel = parallel
 
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all solid nodes (obstacle, walls, ...)
-        if inlet_bc.casefold() == 'eqin':
-            self.in_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all inlet nodes (if EQin is used)
-            self.in_mask[0, 1:, :] = True  # inlet in positive x-direction, exklusive "Boden"
+        #if inlet_bc.casefold() == 'eqin':
+        self.in_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all inlet nodes (if EQin is used)
+        self.in_mask[0, 1:, :] = True  # inlet in positive x-direction, exklusive "Boden"
         self.ground_mask = np.zeros(shape=self.shape, dtype=bool)  # marks ground on base layer (xy-plane)
         #self.ground_mask[:, 0, :] = True  # mark ground/bottom floor (for standard FWBB/HWBB object-boundary)
 
@@ -86,6 +86,12 @@ class HouseFlow3D(object):
         if not hasattr(self, '_solid_mask'):
             self.overlap_all_solid_masks()
         return self._solid_mask
+
+    @property
+    def non_free_flow_mask(self):
+        if not hasattr(self, '_non_free_flow_mask'):
+            self.calculate_non_free_flow_mask()
+        return self._non_free_flow_mask()
 
     def initial_solution(self, x: torch.Tensor):
         # initial velocity field: "u_init"-parameter
@@ -247,6 +253,16 @@ class HouseFlow3D(object):
         # (1/2) overlap solid masks
         self.overlap_all_solid_masks()
 
+        # ÜBERLEGUNGEN ZUR REIHENFOLGE VON BCs
+        # - EQin hat keine NSM, d.h. dort wird durch das streaming regulär der "outlet" rübergeströmt -> PROBLEM
+        # - EQ_outP hat NSM -> dort bleibt einfach ein konstanter Wert, des letzten Durchlaufs, im Zweifel also auch die Geschwindigkeit des Nachbarknotens von letztem Step...
+        # (!) DENKE: wo kommen Populationen her und wo SOLLTEN sie herkommen?
+        # - EQ_out + HWBB -> EQ_out "nimmt" sich Populationen vom Nachbarknoten. welcher diagonal ja ein SOLID Knoten ist! Und dort ist "Null" Geschwindigkeit -> d.h. von dort strömt ETWAS mehr zurück, als erwartbar wäre...
+        # - EQ_in + HWBB -> das sollte durch NCM und NSM behebbar sein, weil dann die Pops. des vorherigen Steps einfach "bleiben" / ABER die EQ_in müsste nach hinten, damit "VOR dem Reporter und Streaming die korrekten Pops. stehen"
+        #   -> EQ_in hinten: die Pops. werden zwischen Streaming und EQ nochmal kurz von der HWBB angefasst, dann aber wieder überschrieben
+        # - vermutlich ist das mit FWBB halt getestet...und damit liefs... weils "IN" der boundary trotzdem "sinnvolle" Fluidpopulationen gibt.
+        # (!) aus der Boden-Boundary alle f_index rausnehmen, welche in ihren LU-Koordinaten auf der EQ_in.mask liegen
+
         if ground_boundary_condition is not None:
             print("INFO: flow.boundaries contains SEPERATE house and ground solid boundaries")
             boundaries = [
@@ -283,7 +299,7 @@ class HouseFlow3D(object):
                 print(f"removed {num_entries - boundary.f_index.shape[0]} entries")
             if hasattr(boundary, 'f_index_fwbb'):
                 num_entries = boundary.f_index_fwbb.shape[0]
-                print(f"boundary {boundary} has f_index with {num_entries} entries, but is FWBB so no cleanup possible. Provide global_solid_mask to FWBB-initialization, if you need cleanup of f_index_fwbb")
+                print(f"boundary {boundary} has f_index_fwbb with {num_entries} entries, but is FWBB so no cleanup possible. Provide global_solid_mask to FWBB-initialization, if you need cleanup of f_index_fwbb")
                 # if boundary.f_index_fwbb.shape[0] > 0:
                 #     boundary.f_index_fwbb = boundary.f_index_fwbb[torch.where(~self.lattice.convert_to_tensor(np.logical_and(self.solid_mask, ~boundary.mask))[boundary.f_index_fwbb[:, 1], boundary.f_index_fwbb[:, 2], boundary.f_index_fwbb[:, 3] if len(self.shape) == 3 else None])]
                 # print(f"removed {num_entries - boundary.f_index_fwbb.shape[0]} entries")
@@ -329,6 +345,19 @@ class HouseFlow3D(object):
         #  alternativ: man könnte ein "update solid mask" oderso machen, in dem man dann alle True Punkte hinzufügt... und das wird von einer boundary selbst bei initialisierung aufgerufen
         time1 = time.time() - time0
         print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
+        return
+
+    def calculate_non_free_flow_mask(self):
+        print("calculating non_free_flow_mask")
+        time0 = time.time()
+        self._non_free_flow_mask = np.zeros(shape=self.shape, dtype=bool)
+
+        out_mask = np.zeros_like(self.solid_mask)
+        out_mask[-1, 1:, :] = True
+
+        self._non_free_flow_mask = self.solid_mask | self.house_mask | self.ground_mask | out_mask | self.in_mask
+        time1 = time.time() - time0
+        print(f"calculate_non_free_flow_mask took {floor(time1/ 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return
 
     def wind_speed_profile(self, y, y_ref=None, y_0=0, u_ref=None, alpha=0.25):
@@ -390,3 +419,4 @@ class HouseFlow3D(object):
         stress[..., 2, 2] = 0.08 ** 2 * self.wind_speed_profile(z, u_0) ** 2
 
         return stress * self.units.convert_density_to_pu(self.units.convert_pressure_pu_to_density_lu(0))
+
