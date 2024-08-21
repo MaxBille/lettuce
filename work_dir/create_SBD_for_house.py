@@ -2,6 +2,8 @@
 import os
 import hashlib
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from time import time, sleep
+from math import ceil, floor, sqrt
 import datetime
 
 import numpy as np
@@ -49,6 +51,8 @@ parser.add_argument("--plot_intersection_info", action='store_true', help="plot 
 parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 
 args = vars(parser.parse_args())
+
+time0 = time()
 
 default_device = "cpu"
 
@@ -195,9 +199,18 @@ print("Calculating 3D TopoDS_Shapes...")
 
 house_prism_shape = build_house_max(house_polygon, minz=minz_house, maxz=maxz_house)  #TopoDS_Shape als Rückgabe
 ground_prism_shape = build_house_max(ground_polygon, minz=zmin-0.1*domain_width_pu, maxz=zmax+0.1*domain_width_pu)
+
+time1 = time()
+print(f"(TIME) Calculating TopoDS_Shapes took {floor(time1-time0 / 60):02d}:{floor(time1-time0 % 60):02d} [mm:ss]")
+
 if combine_solids:
     print("(INFO) combine_solids==True -> Combining Shapes of house and ground...")
     house_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(house_prism_shape, ground_prism_shape).Shape())
+    time11 = time()
+    print(
+        f"(TIME) Combining TopoDS_Shapes took {floor(time11 - time1 / 60):02d}:{floor(time11 - time1 % 60):02d} [mm:ss]")
+
+time1 = time()
 
 # (opt.) combine house and ground solid objects to single object
 
@@ -223,9 +236,15 @@ if not combine_solids:
                                             verbose=verbose
                                             )
 
+time2 = time()
+
 # inspect solid_boundary/IBB-data
 if args["plot_intersection_info"]:
     print("(INFO) plotting intersection info...")
     plot_intersection_info(house_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, house_solid_boundary_data.solid_mask, outdir, name=house_bc_name, show=not cluster)
     if not combine_solids:
         plot_intersection_info(ground_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, ground_solid_boundary_data.solid_mask, outdir, name=ground_bc_name, show=not cluster)
+
+time_end = time()
+
+print(f"(INFO) Total runtime of SBD creation: {floor(time_end - time0 / 60):02d}:{floor(time_end - time0 % 60):02d} [mm:ss]")
