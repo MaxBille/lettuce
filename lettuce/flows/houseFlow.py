@@ -80,7 +80,6 @@ class HouseFlow3D(object):
         if self.ground_solid_boundary_data is not None:
             self.ground_mask = self.ground_solid_boundary_data.solid_mask
 
-
     @property
     def solid_mask(self):
         if not hasattr(self, '_solid_mask'):
@@ -91,7 +90,7 @@ class HouseFlow3D(object):
     def non_free_flow_mask(self):
         if not hasattr(self, '_non_free_flow_mask'):
             self.calculate_non_free_flow_mask()
-        return self._non_free_flow_mask()
+        return self._non_free_flow_mask
 
     def initial_solution(self, x: torch.Tensor):
         # initial velocity field: "u_init"-parameter
@@ -154,6 +153,7 @@ class HouseFlow3D(object):
 
         # (1/2) overlap solid masks
         self.overlap_all_solid_masks()
+        self.calculate_non_free_flow_mask()
 
         # INLET, OUTLET, TOP/HEAVEN, BOTTOM/GROUND, HOUSE/SOLID
         # ...lateral sides in 3D are periodic BC by default
@@ -250,19 +250,23 @@ class HouseFlow3D(object):
         else:
             house_boundary_condition = BounceBackBoundary(self.house_solid_boundary_data.solid_mask, self.lattice)
 
-        # (1/2) overlap solid masks
+        # (2/2) overlap solid masks
         self.overlap_all_solid_masks()
+        self.calculate_non_free_flow_mask()
 
-        # ÜBERLEGUNGEN ZUR REIHENFOLGE VON BCs
-        # - EQin hat keine NSM, d.h. dort wird durch das streaming regulär der "outlet" rübergeströmt -> PROBLEM
-        # - EQ_outP hat NSM -> dort bleibt einfach ein konstanter Wert, des letzten Durchlaufs, im Zweifel also auch die Geschwindigkeit des Nachbarknotens von letztem Step...
-        # (!) DENKE: wo kommen Populationen her und wo SOLLTEN sie herkommen?
-        # - EQ_out + HWBB -> EQ_out "nimmt" sich Populationen vom Nachbarknoten. welcher diagonal ja ein SOLID Knoten ist! Und dort ist "Null" Geschwindigkeit -> d.h. von dort strömt ETWAS mehr zurück, als erwartbar wäre...
-        # - EQ_in + HWBB -> das sollte durch NCM und NSM behebbar sein, weil dann die Pops. des vorherigen Steps einfach "bleiben" / ABER die EQ_in müsste nach hinten, damit "VOR dem Reporter und Streaming die korrekten Pops. stehen"
-        #   -> EQ_in hinten: die Pops. werden zwischen Streaming und EQ nochmal kurz von der HWBB angefasst, dann aber wieder überschrieben
-        # - vermutlich ist das mit FWBB halt getestet...und damit liefs... weils "IN" der boundary trotzdem "sinnvolle" Fluidpopulationen gibt.
-        # (!) aus der Boden-Boundary alle f_index rausnehmen, welche in ihren LU-Koordinaten auf der EQ_in.mask liegen
+        #>>>
+            # ÜBERLEGUNGEN ZUR REIHENFOLGE VON BCs
+            # - EQin hat keine NSM, d.h. dort wird durch das streaming regulär der "outlet" rübergeströmt -> PROBLEM
+            # - EQ_outP hat NSM -> dort bleibt einfach ein konstanter Wert, des letzten Durchlaufs, im Zweifel also auch die Geschwindigkeit des Nachbarknotens von letztem Step...
+            # (!) DENKE: wo kommen Populationen her und wo SOLLTEN sie herkommen?
+            # - EQ_out + HWBB -> EQ_out "nimmt" sich Populationen vom Nachbarknoten. welcher diagonal ja ein SOLID Knoten ist! Und dort ist "Null" Geschwindigkeit -> d.h. von dort strömt ETWAS mehr zurück, als erwartbar wäre...
+            # - EQ_in + HWBB -> das sollte durch NCM und NSM behebbar sein, weil dann die Pops. des vorherigen Steps einfach "bleiben" / ABER die EQ_in müsste nach hinten, damit "VOR dem Reporter und Streaming die korrekten Pops. stehen"
+            #   -> EQ_in hinten: die Pops. werden zwischen Streaming und EQ nochmal kurz von der HWBB angefasst, dann aber wieder überschrieben
+            # - vermutlich ist das mit FWBB halt getestet...und damit liefs... weils "IN" der boundary trotzdem "sinnvolle" Fluidpopulationen gibt.
+            # (!) aus der Boden-Boundary alle f_index rausnehmen, welche in ihren LU-Koordinaten auf der EQ_in.mask liegen
+        #<<<
 
+        # LIST OF BOUNDARIES
         if ground_boundary_condition is not None:
             print("INFO: flow.boundaries contains SEPERATE house and ground solid boundaries")
             boundaries = [
@@ -272,10 +276,6 @@ class HouseFlow3D(object):
                 ground_boundary_condition,
                 house_boundary_condition
             ]
-            i = 0
-            for boundary in boundaries:
-                print(f"boundaries[{i}]: {str(boundary)}")
-                i += 1
         else:  # if there is no ground_boundary_condition use only one solid_boundary, which is in house_BC
             print("INFO: flow.boundaries contains COMBINED house and ground solid boundaries")
             boundaries = [
@@ -284,18 +284,19 @@ class HouseFlow3D(object):
                 top_boundary_condition,
                 house_boundary_condition
             ]
-            i = 0
-            for boundary in boundaries:
-                print(f"boundaries[{i}]: {str(boundary)}")
-                i += 1
-        # exclude solid nodes from f_indices of all solid boundaries
+        i = 0
+        for boundary in boundaries:
+            print(f"boundaries[{i}]: {str(boundary)}")
+            i += 1
+
+        # exclude solid nodes (and non-free-flow nodes) from f_indices of all solid boundaries
         print("exlcuding solid nodes from f_index(_gt_lt) of bounce back boundaries")
         for boundary in boundaries:
             if hasattr(boundary, 'f_index'):
                 num_entries = boundary.f_index.shape[0]
                 print(f"boundary {boundary} has f_index with {num_entries} entries")
                 if boundary.f_index.shape[0] > 0:
-                    boundary.f_index = boundary.f_index[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index[:, 1], boundary.f_index[:, 2], boundary.f_index[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.f_index = boundary.f_index[torch.where(~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index[:, 1], boundary.f_index[:, 2], boundary.f_index[:, 3] if len(self.shape) == 3 else None])]
                 print(f"removed {num_entries - boundary.f_index.shape[0]} entries")
             if hasattr(boundary, 'f_index_fwbb'):
                 num_entries = boundary.f_index_fwbb.shape[0]
@@ -307,15 +308,15 @@ class HouseFlow3D(object):
                 num_entries = boundary.f_index_gt.shape[0]
                 print(f"boundary {boundary} has f_index_gt with {num_entries} entries")
                 if boundary.f_index_gt.shape[0] > 0:
-                    boundary.d_gt = boundary.d_gt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
-                    boundary.f_index_gt = boundary.f_index_gt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.d_gt = boundary.d_gt[torch.where(~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.f_index_gt = boundary.f_index_gt[torch.where(~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
                 print(f"removed {num_entries - boundary.f_index_gt.shape[0]} entries")
             if hasattr(boundary, 'f_index_lt'):
                 num_entries = boundary.f_index_lt.shape[0]
                 print(f"boundary {boundary} has f_index_lt with {num_entries} entries")
                 if boundary.f_index_lt.shape[0] > 0:
-                    boundary.d_lt = boundary.d_lt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
-                    boundary.f_index_lt = boundary.f_index_lt[torch.where(~self.lattice.convert_to_tensor(self.solid_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.d_lt = boundary.d_lt[torch.where(~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                    boundary.f_index_lt = boundary.f_index_lt[torch.where(~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
                 print(f"removed {num_entries - boundary.f_index_lt.shape[0]} entries")
 
         # time execution of flow.boundary()
@@ -352,6 +353,7 @@ class HouseFlow3D(object):
         time0 = time.time()
         self._non_free_flow_mask = np.zeros(shape=self.shape, dtype=bool)
 
+        # (!) outlet is currently defined through "direction" and not mask, this is why this is "ghetto-style" implemented locally like this
         out_mask = np.zeros_like(self.solid_mask)
         out_mask[-1, 1:, :] = True
 

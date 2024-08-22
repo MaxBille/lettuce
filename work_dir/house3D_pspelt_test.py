@@ -577,7 +577,7 @@ if args["plot_sbd_2d"] and not os.path.isdir(boundary_masks_2D_plots_path):
     os.makedirs(boundary_masks_2D_plots_path)
 show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not cluster, figsize=(4,4), dpi=dpi)
 if args["plot_sbd_2d"]:
-    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(4,4), dpi=dpi)
+    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(8,8), dpi=dpi/2)
 
 # plot initial u_x velocity field as 2D slice
 show2d_observables(lattice.convert_to_numpy(flow.units.convert_velocity_to_pu(lattice.u(simulation.f))[0]), "u_x_INIT(t=0)", "u_x_t0")
