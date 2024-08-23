@@ -717,7 +717,7 @@ if args["watchdog"]:
 
 # NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=outdir+"/nan_reporter.txt")
+    nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
 # slice2dReporter for u_mag and p fields:

@@ -267,6 +267,9 @@ class ProgressReporter:
 
 class NaNReporter:
     """reports any NaN and aborts the simulation"""
+    # WARNING: too many NaNs in very large simulations can confuse torch and trigger an error, when trying to create and store the nan_location tensor.
+    # ...to avoid this, leave outdir=None to omit creation and file-output of nan_location. This will not impact the abortion of sim. by NaN_Reporter
+
     def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None):
         self.flow = flow
         self.old = False
@@ -285,14 +288,14 @@ class NaNReporter:
     def __call__(self, i, t, f):
         if i % self.interval == 0:
             if torch.isnan(f).any() == True:
-                if self.lattice.D == 2:
+                if self.lattice.D == 2 and self.outdir is not None:
                     q, x, y = torch.where(torch.isnan(f))
                     q = self.lattice.convert_to_numpy(q)
                     x = self.lattice.convert_to_numpy(x)
                     y = self.lattice.convert_to_numpy(y)
                     nan_location = np.stack((q, x, y), axis=-1)
                     print("(!) NaN detected at (q,x,y):", nan_location)
-                if self.lattice.D == 3:
+                if self.lattice.D == 3 and self.outdir is not None:
                     q, x, y, z = torch.where(torch.isnan(f))
                     q = self.lattice.convert_to_numpy(q)
                     x = self.lattice.convert_to_numpy(x)

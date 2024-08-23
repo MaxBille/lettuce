@@ -277,6 +277,7 @@ class SyntheticEddyInlet(object):
         self.N = N  # TODO mal N pro Fläche bei denen und bei mir ausrechnen, ob das passt
         self.direction = direction
         self.velocityProfile = velocityProfile
+        # velocity Profile can be Eurocode profile from flow. Buffa2021 describes an ln()-profile with h_min and h_max
 
         # produce N random vorteces 2L downstream from inlet
         self.vorteces = torch.zeros((N, 6), device=self.lattice.device)
@@ -286,7 +287,7 @@ class SyntheticEddyInlet(object):
                 torch.tensor(self.grid.shape, device=self.lattice.device))[i]
         self.vorteces[:, 3:6] = torch.rand((N, 3), device=self.lattice.device) - 0.5
 
-        # Cholesky decomposition of prescribed Reynolds stress tensor
+        # Buffa_Eq.5 - A, the Cholesky decomposition of prescribed Reynolds stress tensor R_ij(x)
         R = self.reynolds_stress_tensor(self.lattice.convert_to_tensor(self.grid()[2][0, :, :]), self.u_0)
         A = torch.zeros_like(R)
         A[..., 0, 0] = torch.sqrt(R[..., 0, 0])
@@ -295,10 +296,11 @@ class SyntheticEddyInlet(object):
         A[..., 2, 0] = R[..., 2, 0] / A[..., 0, 0]
         A[..., 2, 1] = (R[..., 2, 1] - A[..., 1, 0] * A[..., 2, 0]) / A[..., 1, 1]
         A[..., 2, 2] = torch.sqrt(R[..., 2, 2] - A[..., 2, 0] ** 2 - A[..., 2, 1] ** 2)
-        print(f"Redacted Nans: {torch.isnan(A.view(-1)).sum().item()}")
+        print(f"Redacted NaNs in Cholesky decomposition A: {torch.isnan(A.view(-1)).sum().item()}")
         A = torch.nan_to_num(A, nan=0)
-        self.A = A * self.K
+        self.A = A * self.K  # "new scaling factor" aus Buffa et. al (2021)
 
+        # EXTEND GRID to accommodate vortex field upstream of the inlet
         grid = self.lattice.convert_to_tensor(self.grid())
         self.grid_extended = torch.cat((torch.flip(grid[:, 1:4, ...], [1]), grid), dim=1)
         self.grid_extended[0, 0:3, ...] = self.grid_extended[0, 0:3, ...] * -1
@@ -308,23 +310,38 @@ class SyntheticEddyInlet(object):
 
     def __call__(self, f):
         # move vorteces passively at each time step by Uĉ until they pass the inlet... each time a vortex passes the inlet a new one is produced at x - L
+
+        # Buffa: eigentlich sollten die vortices mit U^c bewegt werden mit U^c = 0.8 * U_inf (= 8.8 m/s)
+        # - U_inf free flow wind speed
+
         self.vorteces[:, 0] += self.velocityProfile(self.vorteces[:, 2], self.u_0) * self.units.convert_time_to_pu(
             1)  # TODO freeflow windspeed einsetzen (was ist das?)? EXPERIMENTELL: u(z) statt 0.8 * self.u_0
         replace = torch.where((self.vorteces[:, 0] > self.L))[0].tolist()
         if len(replace) > 0:
             self.vorteces[[replace] + [0]] = -self.L
             self.vorteces[[replace], slice(1, 3)] = torch.rand([len(replace), 2],
-                                                               device=self.lattice.device) * self.units.convert_length_to_pu(
-                torch.tensor(self.grid.shape, device=self.lattice.device))[1:3]
+                                                               device=self.lattice.device) * self.units.convert_length_to_pu(torch.tensor(self.grid.shape, device=self.lattice.device))[1:3]
             self.vorteces[[replace], slice(3, 6)] = torch.rand([len(replace), 3], device=self.lattice.device) - 0.5
 
         def shape_fun(x, sigma=0.225):
+            # Buffa Eq.6 - "isotropic Gaussian shape function"
+            # - x is x~ the normalized coordinate (s.u.)
             return 2 * torch.exp(-1 / (2 * sigma ** 2) * x ** 2)
 
         def calculate_f(u, rho):
             """Initialize the distribution function values. The f^(1) contributions are approximated by finite differences.
             See Krüger et al. (2017).
             """
+            # 1. MK hat die "frozen density" gewählt, also einen konstanten Dichtewert nach Buffa 2021
+            # 2. Velocity components nach Buffa_Eq.7: u(x,t) = U(x) + u'(x,t) mit u' nach Eq.3: u_i' = A_ij * u_j~ mit u_j~ nach Eq.1
+            # 3. Velocity gradients (FINITE DIFFERENZEN)
+            # 4. f_eq aus U und rho nach Buffa_Eq.15
+            #    - cs
+            #    - omage_i (Gewichte von D3Q19 (!)
+            #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (kronneker delta? -> nur diagonal?)
+            # 4.2. f_neq über Dichte und Geschwindigkeitsgradienten (und der Relaxationskonstante
+            # 5. f_i = f_eq + f_neq ( (!) unten ist das Minus in die Endrechnung verschoben, sollte aber stimmen?)
+
 
             grad_u0 = torch_gradient(u[0], dx=1, order=6)[None, ...]
 
@@ -346,30 +363,37 @@ class SyntheticEddyInlet(object):
             feq = self.lattice.equilibrium(rho[3, ...], u[:, 3, ...])
             return feq - fneq
 
+        # Buffa_Eq.1 - "isotropic fluctuating field u~(x,y,z,t) auf dem Inlet
+        # - N votices (index i in paper)
+        # - j Komponente von u~
+        # - f = shape_fun = "vortex shape function"
+        # EQ. 2,3,4 - Koordinaten (normalisiert?) des Vortex i
+        #   - x_i~, y_i~, z_i~ Koordinaten, welche als (x-x_i)/L definiert
+        #   - L charakteristische Länge des Vortex i
+        #   - x_i ist die Koordinate ds Vortex i
         u = torch.einsum("xyzN, Nj -> jxyz", (
-                    shape_fun((self.grid_extended[0][0:4, :, :, None] - self.vorteces[:, 0]) / self.L) * (
-                        shape_fun((self.grid_extended[1][0:4, :, :, None] - self.vorteces[:, 1]) / self.L) + shape_fun((
-                                                                                                                                   self.grid_extended[
-                                                                                                                                       1][
-                                                                                                                                   0:4,
-                                                                                                                                   :,
-                                                                                                                                   :,
-                                                                                                                                   None] - self.vorteces[
-                                                                                                                                           :,
-                                                                                                                                           1] +
-                                                                                                                                   self.grid_extended[
-                                                                                                                                       1][
-                                                                                                                                       4, -1, -1]) / self.L) + shape_fun(
-                    (self.grid_extended[1][0:4, :, :, None] - self.vorteces[:, 1] - self.grid_extended[1][
-                        4, -1, -1]) / self.L)) * shape_fun(
-                (self.grid_extended[2][0:4, :, :, None] - self.vorteces[:, 2]) / self.L)),
-                         torch.sign(self.vorteces[:, 3:6])) / np.sqrt(self.N)
+                         shape_fun((self.grid_extended[0][0:4, :, :, None] - self.vorteces[:, 0]) / self.L)
+                            * (shape_fun((self.grid_extended[1][0:4, :, :, None] - self.vorteces[:, 1]) / self.L)
+                         + shape_fun((self.grid_extended[1][0:4,:,:,None] - self.vorteces[:, 1] + self.grid_extended[1][4, -1, -1]) / self.L)
+                         + shape_fun((self.grid_extended[1][0:4, :, :, None] - self.vorteces[:, 1] - self.grid_extended[1][4, -1, -1]) / self.L))
+                            * shape_fun((self.grid_extended[2][0:4, :, :, None] - self.vorteces[:, 2]) / self.L)
+                         ), torch.sign(self.vorteces[:, 3:6])) / np.sqrt(self.N)
+
+        # Buffa_Eq.3 - fluctuating velocity field u'(x,y,z,t), korrespondierend zum Reynolds Stress Tensor R_i,j(x)
+        # - u_i' = A_ij * u_j~
+        # - A: Cholesky decomposition (of the prescribed Reynolds stress tensor (s.o.)
         u = torch.einsum('...ij, j... -> i...', self.A, u)
+
+        # Buffa_Eq.7 - resulting total velocity field at the inlet:
+        # u(x,t) = U(x) + u'(x,t)
+        # - u(x,t) resulting total velocity field
+        # - U(x) steady mean velocity profile (WSP?)
+        # - u'(x,t) fluktuierendes Geschwindigkeitsfeld, welches zum RST korrespondiert ist (s.o. Eq.3)
         u[0] += self.velocityProfile(self.grid_extended[2][0:4, :, :], self.u_0)
         u = torch.cat((self.units.convert_velocity_to_lu(u), self.lattice.u(f[:, 1:4, ...])), dim=1)
-        rho = torch.ones_like(
-            u[0]) * self.rho  # TODO ersetzt anderes rho, weil ja p addiert werden sollte und nicht rho?
+        rho = torch.ones_like(u[0]) * self.rho  # TODO ersetzt anderes rho, weil ja p addiert werden sollte und nicht rho?
         # rho = self.units.convert_density_to_pu(self.units.convert_pressure_pu_to_density_lu(0.5 * self.rho * torch.norm(u, dim=0) ** 2))
+
         # calculate feq and fneq from u and rho
         f[:, 0, :, 1:] = calculate_f(u, self.units.convert_density_to_lu(rho))[..., 1:]
         return f
