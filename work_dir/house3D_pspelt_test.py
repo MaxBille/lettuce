@@ -14,6 +14,7 @@ import datetime
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 from PIL import Image
+import subprocess
 
 import numpy as np
 import torch
@@ -169,7 +170,7 @@ os.makedirs(outdir+"/"+sim_id)
 if outdir_vtk is None:
     outdir_vtk = outdir
 outdir_vtk = outdir_vtk+"/"+sim_id
-if vtk and not os.path.exists(outdir_vtk):
+if vtk or args["save_animations"] and not os.path.exists(outdir_vtk):
     os.makedirs(outdir_vtk)
 print(f"Outdir/simID = {outdir}/{sim_id}")
 outdir = outdir+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
@@ -279,6 +280,56 @@ def save_gif(filename: str = "./animation",
         print(f"(save_gif): Animation file \"{filename}\" was created with {fps} fps")
     else:
         print(f"(save_gif): WARNING: Less than 2 files found for '{dataName}', no GIF created!")
+
+def save_mp4(filename: str = "./animation",
+             database: str = None,
+             dataName: str = None,
+             fps: int = 20,
+             loop: int = 0):
+    """
+    Description:
+    The save_gif function is a helper utility designed to create an animated GIF from a series of image files.
+    The images are read from a specified directory and filtered based on a given chart name. The resulting GIF is saved
+    to a specified output file.
+
+    Parameters:
+    - filename (str): The path where the output GIF will be saved. Default is ./animation.
+    - database (str): The directory containing the image files. This should be a valid directory path.
+    - dataName (str): A substring to filter the image files in the origin directory. Only files containing this
+      substring in their names will be included in the GIF.
+    - fps (int): Frames per second for the GIF. This determines the speed of the animation. Default is 20.
+    - loop (int): Number of times the GIF will loop. Default is 0, which means the GIF will loop indefinitely.
+    """
+    # Ensure the database path ends with a slash
+    database += '/' if database[-1] != "/" else ''
+
+    # List all files in the database directory
+    filesInOrigin = sorted(os.listdir(database))
+
+    # Filter files based on the dataName substring
+    filesForAnimation = []
+    for file in filesInOrigin:
+        if dataName in file:
+            filesForAnimation.append(file)
+
+    # Print the number of files found
+    print(f"(save_mp4): Number of files found: {len(filesForAnimation)}. Creating animation...")
+
+    # TODO (OPT) - Ausgabe der Bilder in eigene Unterordner, sodass dann einfach "alles" aus einem Unterordner von ffmpeg genutzt werden kann...
+    if len(filesForAnimation) > 1:
+        # create list of files for ffmpeg
+        filelist_content = "\n".join([f"file '{database+'/'+filename_h}'" for filename_h in filesForAnimation])
+        with open(outdir+"/filelist.txt", "w") as f:
+            f.write(filelist_content)
+
+        command = ["ffmpeg", "-r", str(fps), "-vsync", "passthrough", "-f", "concat", "-safe", "0", "-i", outdir+"/filelist.txt", "-c:v", "libx264" , "-pix_fmt", "yuv420p", filename+".mp4"]
+        with open(database+"ffmpeg_log_for_"+dataName, "w") as outfile:
+            subprocess.run(command, stdout=outfile, stderr=subprocess.STDOUT, check=True)
+
+        # Print a confirmation message
+        print(f"(save_mp4): Animation file \"{filename}\".mp4 was created with {fps} fps")
+    else:
+        print(f"(save_mp4): WARNING: Less than 2 files found for '{dataName}', no mp4 created!")
 
 class Slice2dReporter:
     def __init__(self, lattice, simulation, normal_dir = 2, position=None, domain_constraints=None, interval=None, start=None, end=None, outdir=None, show=False, cmap=None):
@@ -465,6 +516,7 @@ geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{house_
 house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
+# TODO: reformat to output_file.write('{:30s} {:30s}\n'.format(str(key), str(args[key])))
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
@@ -544,6 +596,31 @@ flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
                    N=34,  # N number of random voctices for SEI
                    )
 
+# export flow physics to file:
+output_file = open(outdir+"/flow_physics_parameters.txt", "a")
+output_file.write('\n{:30s}'.format("FLOW PHYSICS and units:"))
+output_file.write('\n')
+output_file.write('\n{:30s} {:30s}'.format("Ma", str(ma)))
+output_file.write('\n{:30s} {:30s}'.format("Re", str(re)))
+output_file.write('\n')
+output_file.write('\n{:30s} {:30s}'.format("Relaxation Parameter LU", str(flow.units.relaxation_parameter_lu)))
+output_file.write('\n{:30s} {:30s}'.format("l_char_LU", str(flow.units.characteristic_length_lu)))
+output_file.write('\n{:30s} {:30s}'.format("u_char_LU", str(flow.units.characteristic_velocity_lu)))
+output_file.write('\n{:30s} {:30s}'.format("viscosity_LU", str(flow.units.viscosity_lu)))
+output_file.write('\n{:30s} {:30s}'.format("p_char_LU", str(flow.units.characteristic_pressure_lu)))
+output_file.write('\n')
+output_file.write('\n{:30s} {:30s}'.format("l_char_PU", str(flow.units.characteristic_length_pu)))
+output_file.write('\n{:30s} {:30s}'.format("u_char_PU", str(flow.units.characteristic_velocity_pu)))
+output_file.write('\n{:30s} {:30s}'.format("viscosity_PU", str(flow.units.viscosity_pu)))
+output_file.write('\n{:30s} {:30s}'.format("p_char_PU", str(flow.units.characteristic_pressure_pu)))
+output_file.write('\n')
+output_file.write('\n{:30s} {:30s}'.format("grid reynolds number Re_g", str(flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5)))))
+output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_pu/char_velocity_pu)))
+output_file.write('\n{:30s} {:30s}'.format("flow through time LU", str(flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu)))
+output_file.write('\n')
+output_file.close()
+
+
 # COLLISION
 print("Initializing collision operator...")
 collision_obj = None
@@ -567,7 +644,10 @@ simulation = lt.Simulation(flow, lattice, collision_obj, streaming)
 
 ## CHECK INITIALISATION AND 2D DOMAIN
 print(f"Initializing Show2D instances for 2d plots...")
-observable_2D_plots_path = outdir + "/observable_2D_plots"
+if args["save_animations"]:
+    observable_2D_plots_path = outdir_vtk + "/observable_2D_plots"
+else:
+    observable_2D_plots_path = outdir + "/observable_2D_plots"
 if args["plot_sbd_2d"]:
     boundary_masks_2D_plots_path = outdir + "/boundary_data_2D_plots"
 
@@ -717,8 +797,11 @@ if args["watchdog"]:
 
 # NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow,lattice,n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
+
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=10, simulation=simulation, outdir=outdir+"/HighMa_reporter.txt")
+    simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
 if args["save_animations"]:
@@ -740,6 +823,11 @@ if args["save_animations"]:
 
 ## LOAD CHECKPOINT FILE
 # TODO: load checkpoint file and adjust sim.i
+
+# (TEMP) FLOW THROUGH TIME
+print(f"flow through time (time a particle takes to travel from input to output unobstructed at u_char): T_ft_PU = {domain_length_pu/char_velocity_pu} s")
+print(f"(debug) flow through time (calc. as grid.shape[0]/u_char_lu) T_ft_LU = {flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu} steps")
+print(f"(debug) flow through time (calc. as convert_PU_to_LU(T_ft_PU) T_ft_LU = {flow.units.convert_time_to_lu(domain_length_pu/char_velocity_pu)} steps")
 
 
 ### RUN SIMULATION
@@ -882,20 +970,20 @@ output_file.close()
 if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     t0 = time()
     print(f"(INFO) creating animations from slice2dRepoter Data...")
-    os.makedirs(outdir+"/animations")
+    os.makedirs(outdir_vtk+"/animations")
 
     if args["animations_fps_gif"] > 0:
         fps = int(args["animations_fps_gif"])
     else:
         fps = 3
 
-    save_gif(outdir+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=fps)
-    save_gif(outdir+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=fps)
-    save_gif(outdir+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=fps)
 
-    save_gif(outdir+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=fps)
-    save_gif(outdir+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=fps)
-    save_gif(outdir+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
     t1 = time()
     print(f"Creating animations from slice2dRepoter Data took {floor((t1 - t0) / 60):02d}:{floor((t1- t0) % 60):02d} [mm:ss]")
 else:  # plots final u_mag and p fields
@@ -975,6 +1063,8 @@ ax.legend()
 plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()
+
+print("\nmaximum total (CPU) RAM usage ('MaxRSS') (including optional PNG and GIF post-processing [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 
 ## END OF SCRIPT
 print(f"\n♬ THE END ♬")

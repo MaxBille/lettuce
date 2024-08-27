@@ -274,7 +274,7 @@ class SyntheticEddyInlet(object):
         self.reynolds_stress_tensor = R
         self.u_0 = u_0
         self.K = K
-        self.N = N  # TODO mal N pro Fläche bei denen und bei mir ausrechnen, ob das passt
+        self.N = N  # TODO mal N pro Fläche bei denen und bei mir ausrechnen, ob das passt (MK)
         self.direction = direction
         self.velocityProfile = velocityProfile
         # velocity Profile can be Eurocode profile from flow. Buffa2021 describes an ln()-profile with h_min and h_max
@@ -315,7 +315,7 @@ class SyntheticEddyInlet(object):
         # - U_inf free flow wind speed
 
         self.vorteces[:, 0] += self.velocityProfile(self.vorteces[:, 2], self.u_0) * self.units.convert_time_to_pu(
-            1)  # TODO freeflow windspeed einsetzen (was ist das?)? EXPERIMENTELL: u(z) statt 0.8 * self.u_0
+            1)  # TODO freeflow windspeed einsetzen (was ist das?)? EXPERIMENTELL: u(z) statt 0.8 * self.u_0 (MK)
         replace = torch.where((self.vorteces[:, 0] > self.L))[0].tolist()
         if len(replace) > 0:
             self.vorteces[[replace] + [0]] = -self.L
@@ -337,7 +337,7 @@ class SyntheticEddyInlet(object):
             # 3. Velocity gradients (FINITE DIFFERENZEN)
             # 4. f_eq aus U und rho nach Buffa_Eq.15
             #    - cs
-            #    - omage_i (Gewichte von D3Q19 (!)
+            #    - omega_i (Gewichte von D3Q19 (!)
             #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (kronneker delta? -> nur diagonal?)
             # 4.2. f_neq über Dichte und Geschwindigkeitsgradienten (und der Relaxationskonstante
             # 5. f_i = f_eq + f_neq ( (!) unten ist das Minus in die Endrechnung verschoben, sollte aber stimmen?)
@@ -391,7 +391,7 @@ class SyntheticEddyInlet(object):
         # - u'(x,t) fluktuierendes Geschwindigkeitsfeld, welches zum RST korrespondiert ist (s.o. Eq.3)
         u[0] += self.velocityProfile(self.grid_extended[2][0:4, :, :], self.u_0)
         u = torch.cat((self.units.convert_velocity_to_lu(u), self.lattice.u(f[:, 1:4, ...])), dim=1)
-        rho = torch.ones_like(u[0]) * self.rho  # TODO ersetzt anderes rho, weil ja p addiert werden sollte und nicht rho?
+        rho = torch.ones_like(u[0]) * self.rho  # TODO ersetzt anderes rho, weil ja p addiert werden sollte und nicht rho? (MK)
         # rho = self.units.convert_density_to_pu(self.units.convert_pressure_pu_to_density_lu(0.5 * self.rho * torch.norm(u, dim=0) ** 2))
 
         # calculate feq and fneq from u and rho

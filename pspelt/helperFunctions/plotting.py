@@ -144,6 +144,13 @@ class Show2D:
             data = data.transpose()
 
         # NEW ADAPTIVE FIG-scaling for 1:1 pixel-to-node ratio on a 4 x (~4) figrue
+
+        # dpi_min = 100
+        # dpi_max = 1200
+        # data_height, data_width = data.shape
+        #
+        # # 1/5 of data_width as padding on left and bottom and between, 2/5 on right, top and bottom
+
         # print(f"data.shape: {data.shape}")
         # pixel_height, pixel_width = data.shape
         # axis_padding = 50  #Pixel
