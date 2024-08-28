@@ -62,6 +62,7 @@ parser.add_argument("--vtk_start", default=0, type=float, help="at which percent
 
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
 parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
+parser.add_argument("--high_ma_reporter", action='store_true', help="stop simulation if Ma > 0.3 is detected in u field")
 parser.add_argument("--watchdog", action='store_true', help="report progress, ETA and warn, if Sim is estimated to run longer than t_max (~72 h)")
 parser.add_argument("--from_cpt", action='store_true', help="start from checkpoint. (!) provide --cpt_file path")
 parser.add_argument("--cpt_file", default=None, help="path and name of cpt_file to use if --from_cpt=True")
@@ -169,11 +170,11 @@ sim_id = str(timestamp) + "-" + name
 os.makedirs(outdir+"/"+sim_id)
 if outdir_vtk is None:
     outdir_vtk = outdir
+outdir = outdir+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
 outdir_vtk = outdir_vtk+"/"+sim_id
-if vtk or args["save_animations"] and not os.path.exists(outdir_vtk):
+if (vtk or args["save_animations"]) and not os.path.exists(outdir_vtk):
     os.makedirs(outdir_vtk)
 print(f"Outdir/simID = {outdir}/{sim_id}")
-outdir = outdir+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
 print(f"Input arguments: {args}")
 
 # save input parameters to file
@@ -748,41 +749,49 @@ if vtk:
     simulation.reporters.append(vtk_reporter)
 
     # export solid_mask
-    mask_dict = dict()
-    mask_dict["mask"] = flow.solid_mask.astype(int) if len(flow.shape) == 3 else flow.solid_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
-    imageToVTK(
-        path=outdir_vtk + "/solid_mask_point",
-        pointData=mask_dict
-    )
-    imageToVTK(
-        path=outdir_vtk + "/solid_mask_cell",
-        cellData=mask_dict
-    )
+    # mask_dict = dict()
+    # mask_dict["mask"] = flow.solid_mask.astype(int) if len(flow.shape) == 3 else flow.solid_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+    # imageToVTK(
+    #     path=outdir_vtk + "/solid_mask_point",
+    #     pointData=mask_dict
+    # )
+    # imageToVTK(
+    #     path=outdir_vtk + "/solid_mask_cell",
+    #     cellData=mask_dict
+    # )
+
+    # NEW
+    vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
+
     if not combine_solids:
         # export house_mask
-        mask_dict["mask"] = flow.house_mask.astype(int) if len(flow.shape) == 3 else flow.house_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
-        imageToVTK(
-            path=outdir_vtk + "/house_mask_point",
-            pointData=mask_dict
-        )
-        imageToVTK(
-            path=outdir_vtk + "/house_mask_cell",
-            cellData=mask_dict
-        )
-        # export ground_mask
-        mask_dict["mask"] = flow.ground_mask.astype(int) if len(flow.shape) == 3 else flow.ground_mask[..., None].astype(
-            int)  # extension to pseudo-3D is needed for vtk-export to work
-        imageToVTK(
-            path=outdir_vtk + "/ground_mask_point",
-            pointData=mask_dict
-        )
-        imageToVTK(
-            path=outdir_vtk + "/ground_mask_cell",
-            cellData=mask_dict
-        )
+        # mask_dict["mask"] = flow.house_mask.astype(int) if len(flow.shape) == 3 else flow.house_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+        # imageToVTK(
+        #     path=outdir_vtk + "/house_mask_point",
+        #     pointData=mask_dict
+        # )
+        # imageToVTK(
+        #     path=outdir_vtk + "/house_mask_cell",
+        #     cellData=mask_dict
+        # )
 
-# TODO: passe transform-filter im vtk an, um entsprechend die cell-Maske für das solid korrekt auszugeben
-#  MK hat da auch den "ouput_mask" zum vtk_reporter hinzugefügt und kann das nach der Initialisierung aufrufen
+        #NEW
+        vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
+
+        # export ground_mask
+        # mask_dict["mask"] = flow.ground_mask.astype(int) if len(flow.shape) == 3 else flow.ground_mask[..., None].astype(
+        #     int)  # extension to pseudo-3D is needed for vtk-export to work
+        # imageToVTK(
+        #     path=outdir_vtk + "/ground_mask_point",
+        #     pointData=mask_dict
+        # )
+        # imageToVTK(
+        #     path=outdir_vtk + "/ground_mask_cell",
+        #     cellData=mask_dict
+        # )
+
+        # NEW
+        vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
 
 # PROGRESS REPORTER
 # progress_reporter = lt.ProgressReporter(flow, n_stop_target)
@@ -793,14 +802,13 @@ if args["watchdog"]:
     watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=int(n_steps/100), i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
     simulation.reporters.append(watchdog_reporter)
 
-# TODO: aktualisiere watchdog-reporter (Name?) mit abort-messages etc. und lasse den mitlaufen, mit "show=True/False", dass er dann printed, oder nur ins watchdog_log-file schreibt.
-
 # NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk, vtk=True)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=10, simulation=simulation, outdir=outdir+"/HighMa_reporter.txt")
+if args["high_ma_reporter"]:
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=outdir, vtk_dir=outdir_vtk, vtk=True)
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
@@ -999,14 +1007,18 @@ else:  # plots final u_mag and p fields
     u = lattice.convert_to_numpy(u_PU)
     p = lattice.convert_to_numpy(p_PU)
     u_magnitude = np.linalg.norm(u, axis=0)
+
+    u_lim = (0, 2 * simulation.flow.units.characteristic_velocity_pu)
+    p_lim = (-1e-5, +1e-5)
+
     show2d_observables(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) noLIM",
                                f"nolim_u_mag_i{simulation.i:08}_t{int(t)}")
     show2d_observables(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM99",
                                f"lim99_u_mag_i{simulation.i:08}_t{int(t)}",
                                vlim=(np.percentile(u_magnitude.flatten(), 1), np.percentile(u_magnitude.flatten(), 99)))
-    show2d_observables(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM95",
-                               f"lim95_u_mag_i{simulation.i:08}_t{int(t)}",
-                               vlim=(np.percentile(u_magnitude.flatten(), 1), np.percentile(u_magnitude.flatten(), 95)))
+    show2d_observables(u_magnitude, f"u_mag(t = {t:.3f} s, step = {simulation.i}) LIM2CHAR",
+                               f"lim2uchar_u_mag_i{simulation.i:08}_t{int(t)}",
+                               vlim=u_lim)
     t1 = time()
     if not cluster:
         print("(INFO) Waiting for 6.5 seconds to avoid 'HTTP Error 429: Too Many Requests'...")
@@ -1016,9 +1028,9 @@ else:  # plots final u_mag and p fields
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM99",
                                f"lim99_p_i{simulation.i:08}_t{int(t)}",
                                vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 99)))
-    show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIM95",
-                               f"lim95_p_i{simulation.i:08}_t{int(t)}",
-                               vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 95)))
+    show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIMFIX",
+                               f"limfix_p_i{simulation.i:08}_t{int(t)}",
+                               vlim=p_lim)
 
 
 # PLOT max. Ma in domain over time...

@@ -56,7 +56,7 @@ class VTKReporter:
     "EDIT (M.Bille: can insert solid-mask to pin osb. to zero, inside solid obstacle, " \
     "...useful for boundaries that store populations inside the boundary-region (FWBB, HWBBc3,...), making obs(f) deviate from 0"
 
-    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0):
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0, imax=None):
         self.lattice = lattice
         self.flow = flow
         self.interval = interval
@@ -106,19 +106,57 @@ class VTKReporter:
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
             write_vtk(self.point_dict, i, self.filename_base)
 
-    def output_mask(self, no_collision_mask):
-        """Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
-        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)"""
-        point_dict = dict()
-        if self.lattice.D == 2:
-            point_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+    def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
+        """
+        Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
+        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)
+        UPDATE 28.08.2024 (MBille: outputs mask as cell data. cell data represents the approx.
+        location of solid boundaries, assuming Fullway or Halfway Bounce Back implementation,
+        if translated by (-0.5,-0.5,-0.5) LU.
+        Attention: point data is misleading, looking at masks rendered as solid objects or point-clouds!
+
+        USE: in Paraview use Filter:Threshold -> Above Upper Threshold (Upper Threshold 0.9) -> Solid Color -> Volume/Wireframe,...
+        """
+
+        if outdir is None:
+            filename_base = self.filename_base
         else:
-            point_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
-        vtk.gridToVTK(self.filename_base + "_mask",
-                      np.arange(0, point_dict["mask"].shape[0]),
-                      np.arange(0, point_dict["mask"].shape[1]),
-                      np.arange(0, point_dict["mask"].shape[2]),
-                      pointData=point_dict)
+            filename_base = outdir+"/"+str(name)
+
+        mask_dict = dict()
+
+        mask_dict["mask"] = mask.astype(int) if len(mask.shape) == 3 else mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+
+        if point:
+            vtk.imageToVTK(
+                path=filename_base +"_point",
+                pointData=mask_dict
+            )
+        if no_offset:
+            vtk.imageToVTK(
+                path=filename_base +"_cell_noOffset",
+                cellData=mask_dict
+            )
+        vtk.imageToVTK(
+            path=filename_base + "_cell",
+            cellData=mask_dict,
+            origin=(-0.5, -0.5, -0.5),
+            spacing=(1.0, 1.0, 1.0)
+        )
+
+        # OLD Martin Kliemank: >>>
+        # if self.lattice.D == 2:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+        # else:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
+        # vtk.gridToVTK(self.filename_base + "_mask",
+        #               np.arange(0, mask_dict["mask"].shape[0]),
+        #               np.arange(0, mask_dict["mask"].shape[1]),
+        #               np.arange(0, mask_dict["mask"].shape[2]),
+        #               pointData=mask_dict)
+        # <<<
+
+
 
 
 class ErrorReporter:
@@ -270,7 +308,7 @@ class NaNReporter:
     # WARNING: too many NaNs in very large simulations can confuse torch and trigger an error, when trying to create and store the nan_location tensor.
     # ...to avoid this, leave outdir=None to omit creation and file-output of nan_location. This will not impact the abortion of sim. by NaN_Reporter
 
-    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None):
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None):
         self.flow = flow
         self.old = False
         if simulation is None:
@@ -283,11 +321,18 @@ class NaNReporter:
         self.interval = interval
         self.t_target = t_target
         self.outdir = outdir
-
+        self.vtk = vtk
+        if vtk_dir is None:
+            self.vtk_dir = self.outdir
+        else:
+            self.vtk_dir = vtk_dir
+        #TMP vtk_dir = os.path.dirname(vtk_dir)
+        #TMP if not os.path.isdir(directory):
+        #TMP     os.mkdir(directory)
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
-            if torch.isnan(f).any() == True:
+            if torch.isnan(f).any():
                 if self.lattice.D == 2 and self.outdir is not None:
                     q, x, y = torch.where(torch.isnan(f))
                     q = self.lattice.convert_to_numpy(q)
@@ -310,13 +355,29 @@ class NaNReporter:
                         #print("(!) NaN detected at (q,x,y,z):", nan_location)
 
                 if self.old:
+                    # backwards compatibility for simulation class w/o abort-message-functionality
                     print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
                     sys.exit()
                 else:
                     self.simulation.abort_condition = 2  # telling simulation to abort simulation
                     self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f (NaNReporter.interval = {self.interval}). See NaNReporter log for details!'
-                    #print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
-                    #print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
+                    # print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
+                    # print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
+
+                # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
+                if self.vtk_dir is not None and self.vtk:
+                    point_dict = dict()
+                    u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+                    p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+                    if self.lattice.D == 2:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    write_vtk(point_dict, i, self.vtk_dir+"/nan_frame")
 
 
 def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tensor:
@@ -346,7 +407,7 @@ def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tens
 class HighMaReporter:
     """reports any Ma>0.3 and aborts the simulation"""
 
-    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None):
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None):
         self.flow = flow
         self.old = False
         if simulation is None:
@@ -359,6 +420,11 @@ class HighMaReporter:
         self.interval = interval
         self.t_target = t_target
         self.outdir = outdir
+        self.vtk = vtk
+        if vtk_dir is None:
+            self.vtk_dir = self.outdir
+        else:
+            self.vtk_dir = vtk_dir
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
@@ -389,7 +455,7 @@ class HighMaReporter:
                     else:
                         more_than_100 = True
                 if self.outdir is not None:
-                    my_file = open(self.outdir, "w")
+                    my_file = open(self.outdir+"/HighMa_reporter.txt", "w")
 
                     my_file.write(f"(!) Ma > 0.3 detected , Maximum at (x,y,[z]):\n")
                     index_max = torch.argmax(ma)
@@ -397,6 +463,7 @@ class HighMaReporter:
                     ma = self.lattice.convert_to_numpy(ma)
                     index_max = self.lattice.convert_to_numpy(index_max)
                     my_file.write(f" Ma {str(list(index_max))} = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
+                    #TODO: write PU coordinates as well. a) in seperate file, b) same file below, c) same file new column "table style"
                     if not more_than_100:
                         my_file.write(f"(!) Ma > 0.3 detected at (x,y,[z]):\n")
                         for _ in high_ma_locations:
@@ -424,6 +491,21 @@ class HighMaReporter:
                     self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). See HighMaReporter log for details!'
                     #print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
                     #print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
+
+                # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
+                if self.vtk_dir is not None and self.vtk:
+                    point_dict = dict()
+                    u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+                    p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+                    if self.lattice.D == 2:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    write_vtk(point_dict, i, self.vtk_dir + "/highMa_frame")
 
 class AverageVelocityReporter:
     """Reports the streamwise velocity averaged in span direction (z) at defined position in x.
