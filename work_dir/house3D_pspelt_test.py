@@ -745,7 +745,7 @@ if vtk:
     print(f"(INFO) This will create approx. {n_steps/(int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval))+1} .vti or .vtk files!")
     vtk_reporter = lt.VTKReporter(lattice, flow,
                                   interval=int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval),
-                                  filename_base=outdir_vtk+"/vtk/out")
+                                  filename_base=outdir_vtk+"/vtk/out", imin=vtk_start)
     simulation.reporters.append(vtk_reporter)
 
     # export solid_mask
