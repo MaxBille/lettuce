@@ -48,6 +48,7 @@ parser.add_argument("--domain_width_pu", default=40, type=float, help="cross-flo
 parser.add_argument("--domain_height_pu", default=30, type=float, help="cross-flow domain height in PU")
 
 parser.add_argument("--combine_solids", action='store_true', help="combine all solids (house and ground) into one object for easier prototyping")
+parser.add_argument("--no_house", action='store_true', help="if TRUE, removes house from simulation, for debugging of house-independent aspects")
 parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
 parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
 parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
@@ -179,7 +180,7 @@ ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
 
 
 # create unique ID of geometry parameters:
-geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
 house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
@@ -187,6 +188,7 @@ ground_bc_name = "ground_BC_" + str(geometry_hash)
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
 output_file.write(f"\ncombine_solids = {combine_solids}")
+output_file.write(f"\nno_house = {args['no_house']}")
 output_file.write(f"\ndx_pu [m] = {(house_length_pu/house_length_lu):.4f}")
 output_file.write(f"\ndomain_constraints PU = {domain_constraints}")
 output_file.write(f"\ndomain shape LU = {shape}")
@@ -223,15 +225,17 @@ time1 = time()
 # (opt.) combine house and ground solid objects to single object
 
 # TODO: passe no_store_coll und solid_boundary_data_path und recalc und parallel an...
-print("Calculating house_solid_boundary_data...")
-house_solid_boundary_data = getIBBdata(house_prism_shape, makeGrid(domain_constraints, shape), periodicity=(False, False, True), # TODO: clean the tensor(array() stuff with stack/cat etc.
-                                       lattice=lattice, no_store_solid_boundary_data=False, res=res, dim=dim, name=house_bc_name,
-                                       solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],  # TODO: redo_calc as parameter of house3D script
-                                       parallel=False,  # TODO: eliminate parallelism
-                                       device=default_device,
-                                       cluster=cluster,
-                                       verbose=verbose
-                                       )
+house_solid_boundary_data = None
+if not args["no_house"]:
+    print("(INFO) Calculating house_solid_boundary_data...")
+    house_solid_boundary_data = getIBBdata(house_prism_shape, makeGrid(domain_constraints, shape), periodicity=(False, False, True), # TODO: clean the tensor(array() stuff with stack/cat etc.
+                                           lattice=lattice, no_store_solid_boundary_data=False, res=res, dim=dim, name=house_bc_name,
+                                           solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],  # TODO: redo_calc as parameter of house3D script
+                                           parallel=False,  # TODO: eliminate parallelism
+                                           device=default_device,
+                                           cluster=cluster,
+                                           verbose=verbose
+                                           )
 ground_solid_boundary_data = None
 if not combine_solids:
     print("(INFO) Calculating ground_solid_boundary_data...")
@@ -248,10 +252,11 @@ time2 = time()
 
 # inspect solid_boundary/IBB-data
 if args["plot_intersection_info"]:
-    print("(INFO) plotting intersection info...")
-    plot_intersection_info(house_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, house_solid_boundary_data.solid_mask, outdir, name=house_bc_name, show=not cluster)
-    if not combine_solids:
-        plot_intersection_info(ground_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, ground_solid_boundary_data.solid_mask, outdir, name=ground_bc_name, show=not cluster)
+    if not args["no_house"]:
+        print("(INFO) plotting intersection info...")
+        plot_intersection_info(house_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, house_solid_boundary_data.solid_mask, outdir, name=house_bc_name, show=not cluster)
+        if not combine_solids:
+            plot_intersection_info(ground_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, ground_solid_boundary_data.solid_mask, outdir, name=ground_bc_name, show=not cluster)
 
 time_end = time()
 

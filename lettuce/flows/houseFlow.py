@@ -73,8 +73,8 @@ class HouseFlow3D(object):
         self.in_mask[0, 1:, :] = True  # inlet in positive x-direction, exklusive "Boden"
         self.ground_mask = np.zeros(shape=self.shape, dtype=bool)  # marks ground on base layer (xy-plane)
         #self.ground_mask[:, 0, :] = True  # mark ground/bottom floor (for standard FWBB/HWBB object-boundary)
-
         self.house_mask = np.zeros(shape=self.shape, dtype=bool)
+
         if self.house_solid_boundary_data is not None:
             self.house_mask = self.house_solid_boundary_data.solid_mask
         if self.ground_solid_boundary_data is not None:
@@ -240,15 +240,19 @@ class HouseFlow3D(object):
 
         # HOUSE
         print("initializing house boundary condition...")
-        if self.house_bc.casefold() == 'fwbb':
-            house_boundary_condition = FullwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
-        elif self.house_bc.casefold() == 'hwbb':
-            house_boundary_condition = HalfwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, periodicity=(False, False, True))
-            pass
-        elif self.house_bc.casefold() == 'ibb' or 'ibb1':
-            house_boundary_condition = InterpolatedBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data)
+        house_boundary_condition = None
+        if self.house_solid_boundary_data is not None:
+            if self.house_bc.casefold() == 'fwbb':
+                house_boundary_condition = FullwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
+            elif self.house_bc.casefold() == 'hwbb':
+                house_boundary_condition = HalfwayBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data, periodicity=(False, False, True))
+                pass
+            elif self.house_bc.casefold() == 'ibb' or 'ibb1':
+                house_boundary_condition = InterpolatedBounceBackBoundary_occ(self.house_solid_boundary_data.solid_mask, self.lattice, self.house_solid_boundary_data)
+            else:
+                house_boundary_condition = BounceBackBoundary(self.house_solid_boundary_data.solid_mask, self.lattice)
         else:
-            house_boundary_condition = BounceBackBoundary(self.house_solid_boundary_data.solid_mask, self.lattice)
+            print("(!) flow.boundary(): house_solid_boundary_data is None! no house boundary created!")
 
         # (2/2) overlap solid masks
         self.overlap_all_solid_masks()
@@ -267,7 +271,7 @@ class HouseFlow3D(object):
         #<<<
 
         # LIST OF BOUNDARIES
-        if ground_boundary_condition is not None:
+        if (ground_boundary_condition is not None) and (house_boundary_condition is not None):
             print("INFO: flow.boundaries contains SEPERATE house and ground solid boundaries")
             boundaries = [
                 inlet_boundary_condition,
@@ -276,7 +280,7 @@ class HouseFlow3D(object):
                 ground_boundary_condition,
                 house_boundary_condition
             ]
-        else:  # if there is no ground_boundary_condition use only one solid_boundary, which is in house_BC
+        elif house_boundary_condition is not None:  # if there is no ground_boundary_condition use only one solid_boundary, which is in house_BC
             print("INFO: flow.boundaries contains COMBINED house and ground solid boundaries")
             boundaries = [
                 inlet_boundary_condition,
@@ -284,6 +288,22 @@ class HouseFlow3D(object):
                 top_boundary_condition,
                 house_boundary_condition
             ]
+        elif ground_boundary_condition is not None:  # if there is no house_boundary_condition use only one solid_boundary, which is in ground_BC
+            print("INFO: flow.boundaries contains ONLY ground solid boundary")
+            boundaries = [
+                inlet_boundary_condition,
+                outlet_boundary_condition,
+                top_boundary_condition,
+                ground_boundary_condition
+            ]
+        else:
+            print("(!) No solid boundary condition given... will produce only bullshit")
+            boundaries = [
+                inlet_boundary_condition,
+                outlet_boundary_condition,
+                top_boundary_condition
+            ]
+
         i = 0
         for boundary in boundaries:
             print(f"boundaries[{i}]: {str(boundary)}")

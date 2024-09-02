@@ -311,7 +311,7 @@ class SyntheticEddyInlet(object):
     def __call__(self, f):
         # move vorteces passively at each time step by Uĉ until they pass the inlet... each time a vortex passes the inlet a new one is produced at x - L
 
-        # Buffa: eigentlich sollten die vortices mit U^c bewegt werden mit U^c = 0.8 * U_inf (= 8.8 m/s)
+        # Buffa: eigentlich sollten die vortices mit U^c bewegt werden mit U^c = 0.8 * U_inf (U^c = 8.8 m/s)
         # - U_inf free flow wind speed
 
         self.vorteces[:, 0] += self.velocityProfile(self.vorteces[:, 2], self.u_0) * self.units.convert_time_to_pu(
@@ -325,7 +325,7 @@ class SyntheticEddyInlet(object):
 
         def shape_fun(x, sigma=0.225):
             # Buffa Eq.6 - "isotropic Gaussian shape function"
-            # - x is x~ the normalized coordinate (s.u.)
+            # - x is x~, the normalized coordinate (s.u.)
             return 2 * torch.exp(-1 / (2 * sigma ** 2) * x ** 2)
 
         def calculate_f(u, rho):

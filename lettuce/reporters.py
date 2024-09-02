@@ -563,6 +563,8 @@ class Watchdog:
 
     def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=(72 * 3600 - 10 * 60), filebase="./watchdog", show=False):
         self.interval = interval
+        if self.interval < 1:
+            self.interval = 1
         self.lattice = lattice
         self.flow = flow
         self.sim = sim
