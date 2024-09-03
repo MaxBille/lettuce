@@ -58,7 +58,11 @@ parser.add_argument("--outdir_vtk", default=None, type=str, help="")
 parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdor_vtk, if set True (1)")
 parser.add_argument("--vtk_fps", default=10, help="frames per second_PU for VTK output; overwritten if vtk_interval is specified")
 parser.add_argument("--vtk_interval", default=0, type=int, help="how many steps between vtk-output-files; overwrites vtk_fps")
-parser.add_argument("--vtk_start", default=0, type=float, help="at which percentage of t_target or n_steps the vtk-reporter starts, default is 0 (from the beginning); values from 0.0 to 1.0")
+parser.add_argument("--vtk_t_interval", default=0, type=float, help="how many seconds between vtk-output-files; overwrites vtk_fps and vtk_interval; for low frequency output")
+parser.add_argument("--vtk_step_start", default=0, type=float, help="at which step to start vtk export")
+parser.add_argument("--vtk_step_end", default=0, type=float, help="at which step to end vtk export")
+parser.add_argument("--vtk_t_start", default=0, type=float, help="at which time (PU) to start vtk export")
+parser.add_argument("--vtk_t_end", default=0, type=float, help="at which time (PU) to stop vtk export")
 
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
 parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
@@ -104,8 +108,8 @@ parser.add_argument("--no_house", action='store_true', help="if TRUE, removes ho
 
 # boundary algorithms
 parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI")
-parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP")
-parser.add_argument("--ground_bc", default="fwbb", help="ground boundary condition: fwbb, hwbb")
+parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP, EQoutU")
+parser.add_argument("--ground_bc", default="fwbb", help="ground boundary condition: fwbb, hwbb, ibb")
 parser.add_argument("--house_bc", default="fwbb", help="house boundary condition: fwbb, hwbb, ibb")
 parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo, eq")
 
@@ -152,13 +156,13 @@ parser.add_argument("--recalc", action='store_true', help="recalculate solid_bou
 args = vars(parser.parse_args())
 
 # get parameters from args[] dict:
-name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_vtk, vtk, vtk_fps, vtk_interval, vtk_start, \
+name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_vtk, vtk, vtk_fps, vtk_interval, vtk_step_start, \
     nan_reporter, from_cpt, sim_i, write_cpt, re, ma, viscosity_pu, char_density_pu, u_init, n_steps, t_target, \
     step_start, collision, dim, stencil, eqlm, house_length_lu, house_length_pu, house_width_pu, roof_angle, \
     eg_height_pu, roof_height_pu, overhang_pu, domain_length_pu, domain_width_pu, domain_height_pu, inlet_bc, outlet_bc, \
     ground_bc, house_bc, top_bc, combine_solids, verbose = \
     [args[_] for _ in ["name", "default_device", "float_dtype", "t_sim_max", "cluster", "outdir", "outdir_vtk",
-                       "vtk", "vtk_fps", "vtk_interval", "vtk_start", "nan_reporter", "from_cpt", "sim_i",
+                       "vtk", "vtk_fps", "vtk_interval", "vtk_step_start", "nan_reporter", "from_cpt", "sim_i",
                        "write_cpt", "re", "ma", "viscosity_pu", "char_density_pu", "u_init", "n_steps", "t_target",
                        "step_start", "collision", "dim", "stencil", "eqlm", "house_length_lu", "house_length_pu",
                        "house_width_pu", "roof_angle", "eg_height_pu", "roof_height_pu", "overhang_pu", "domain_length_pu",
@@ -475,7 +479,7 @@ else:
     print(f"(INFO) Setting reference_height = roof_height")
 
 
-
+# TODO: auslagern von "CreateSBD...", damit ich das nicht an zwei verschiedenen Stellen anpassen muss...
 
 # DOMAIN constraints in PU
 print("Defining domain constraints...")
@@ -593,7 +597,7 @@ flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
                    char_length_lu=house_length_lu,
                    char_length_pu=house_length_pu,
                    char_velocity_pu=char_velocity_pu,
-                   u_init=0,
+                   u_init=u_init,
                    reference_height_pu=reference_height_pu, ground_height_pu=ground_height_pu,
                    inlet_bc=inlet_bc, outlet_bc=outlet_bc,
                    ground_bc=ground_bc if not combine_solids else None,
@@ -650,6 +654,24 @@ simulation = lt.Simulation(flow, lattice, collision_obj, streaming)
 
 # OPTIONAL
 #simulation.initialize_f_neq()
+
+# OPTIONAL initialization process with reynolds *1/100
+initialize_low_re = False
+if initialize_low_re:
+    # adjust re and tau for initialization of simulation with lower Re -> influences more dissipative tau
+    re_original = re
+    re_init = 1/100*re
+    flow.units.reynolds_number = re_init
+    collision_obj.tau = flow.units.relaxation_parameter_lu
+
+    #TODO: export checkpoint after initialization that can be imported...
+    #TODO: "from_init_cpt" Option mit Pfad..., dann wird die Initialisierung übersprungen
+
+    # reinitialize simulation with correct Re
+    simulation.i = n_start
+    flow.units.reynolds_number = re_original
+    collision_obj.tau = flow.units.relaxation_parameter_lu
+
 
 ## CHECK INITIALISATION AND 2D DOMAIN
 print(f"Initializing Show2D instances for 2d plots...")
@@ -749,11 +771,48 @@ simulation.reporters.append(min_max_p_pu_reporter)
 
 # VTK REPORTER
 if vtk:
-    print(f"(INFO) Appending vtk reporter with vtk_interval = {int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval)} and vtk_dir: {outdir_vtk}/vtk/out")
-    print(f"(INFO) This will create approx. {n_steps/(int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval))+1} .vti or .vtk files!")
+
+    print(args["vtk_t_start"])
+    print(args["vtk_t_end"])
+    print(args["vtk_step_start"])
+    print(args["vtk_step_end"])
+    print(args["vtk_interval"])
+    print(args["vtk_t_interval"])
+
+    if args["vtk_t_start"] > 0:
+        print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
+        vtk_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_t_start"])))
+    else:
+        vtk_i_start = int(args["vtk_step_start"])
+
+    if args["vtk_t_end"] > 0:
+        print("(vtk) overwriting vtk_step_end with {}, because vtk_t_end = {}")
+        vtk_i_end = int(flow.units.convert_time_to_lu(args["vtk_t_end"]))
+    elif args["vtk_step_end"] > 0:
+        vtk_i_end = args["vtk_step_end"]
+    else:
+        vtk_i_end = n_steps
+
+    if args["vtk_t_interval"] > 0:
+        vtk_interval = int(flow.units.convert_time_to_lu(args["vtk_t_interval"]))
+    elif args["vtk_interval"] > 0:
+        vtk_interval = args["vtk_interval"]
+    else:
+        vtk_interval = int(flow.units.convert_time_to_lu(1/vtk_fps))
+
+    if vtk_interval < 1:
+        vtk_interval = 1
+
+    print(vtk_i_start)
+    print(vtk_i_end)
+    print(vtk_interval)
+    print(vtk_fps)
+
+    print(f"(INFO) Appending vtk reporter with vtk_interval = {int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval)}, vtk_start = <>, vtk_end = <> and vtk_dir: {outdir_vtk}/vtk/out")
+    print(f"(INFO) This will create approx. {(vtk_i_end-vtk_i_start)/vtk_interval+1} .vti or .vtk files!")
     vtk_reporter = lt.VTKReporter(lattice, flow,
-                                  interval=int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval),
-                                  filename_base=outdir_vtk+"/vtk/out", imin=vtk_start)
+                                  interval=int(vtk_interval),
+                                  filename_base=outdir_vtk+"/vtk/out", imin=vtk_i_start, imax=vtk_i_end)
     simulation.reporters.append(vtk_reporter)
 
     # export solid_mask

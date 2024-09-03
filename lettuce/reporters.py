@@ -62,6 +62,12 @@ class VTKReporter:
         self.interval = interval
         self.filename_base = filename_base
         self.imin=imin
+        if imax is None:
+            self.imax = 1e15
+        elif imax <= 0:
+            self.imax = 1
+        else:
+            self.imax = imax
         if solid_mask is not None and lattice.D == 2:
             self.solid_mask = solid_mask[..., None]
         else:
@@ -72,7 +78,7 @@ class VTKReporter:
         self.point_dict = dict()
 
     def __call__(self, i, t, f):
-        if i % self.interval == 0 and i >= self.imin:
+        if i % self.interval == 0 and i >= self.imin and i <= self.imax:
             u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
             p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
             #rho = self.flow.units.convert_density_to_pu(self.lattice.rho(f))
@@ -476,8 +482,8 @@ class HighMaReporter:
                         sorted_indices = indices[np.argsort(-top_values)]
                         sorted_values = flat_ma[sorted_indices]
                         original_indices = np.array(np.unravel_index(sorted_indices, ma.shape))
-                        print(original_indices)
-                        print(original_indices.shape[0], original_indices.shape[1])
+                        # print(original_indices)
+                        # print(original_indices.shape[0], original_indices.shape[1])
                         my_file.write(f"(!) Ma > 0.3 detected for more than 100 values. Showing top 100 values:\n")
                         for _ in range(original_indices.shape[1]):
                             my_file.write(f"Ma {original_indices[:,_]} = {ma[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")

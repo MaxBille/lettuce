@@ -28,7 +28,7 @@ class HouseFlow3D(object):
                  ground_solid_boundary_data = None,
                  K_Factor=10,  # K_factor for SEI boundary inlet
                  L=3,  # L for SEI
-                 N=34,  # N number of random voctices for SEI
+                 N=34,  # N number of random vortices for SEI
                  ):
         # flow and boundary settings
         self.u_init = u_init  # toggle: initial solution velocity profile type
@@ -98,12 +98,12 @@ class HouseFlow3D(object):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u = np.zeros((len(x),) + x[0].shape)
 
-        if self.u_init == 0:  # 0: uniform u=0
+        if self.u_init == 0:  # 0: uniform u=0 # "zero"
             print("(INFO) initializing with u_init=zero throughout domain")
             # print(f"u.shape = {u.shape}")
             # print(f"p.shape = {p.shape}")
             pass
-        elif self.u_init == 1:  # 1: simple velocity profile everywhere, where there is no other BC
+        elif self.u_init == 1:  # 1: simple velocity profile everywhere, where there is no other BC  # "profile"
             u[0] = self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
                                            y_0=self.ground_height_pu,
@@ -117,9 +117,24 @@ class HouseFlow3D(object):
             #                         # characteristic velocity at reference height (EG or ROOF)
             #                         alpha=0.25)
             # TODO: implement simple global velocity profile by broadcasting simple WSP-inlet-profile
-        elif self.u_init == 2:  # 2: u-profile adjusted to obstacle-geometry
+        elif self.u_init == 2:  # 2: u-profile adjusted to obstacle-geometry  # "profile that is attenuated up to 1/5 of domain length
             # PHILIPPS version with height-shift
             # TODO: implement semi-simple global velocity profile by broadcasting simple WSP-inlet-profile and adjusting height to max. Solid-Height at each XZ-position
+
+            y_fifth_index = int(round(self.shape[2]/5))
+            k_factor = np.zeros_like(x[0], dtype=float)
+            k_factor[0,:,:] = 1
+            for x_i in range(y_fifth_index):
+                k_factor[x_i,:,:] = (y_fifth_index-x_i)/y_fifth_index
+
+            u[0] = k_factor * self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
+                                           y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
+                                           y_0=self.ground_height_pu,
+                                           u_ref=self.units.characteristic_velocity_pu,
+                                           # characteristic velocity at reference height (EG or ROOF)
+                                           alpha=0.25)
+
+
             pass
         else:
             raise NotImplementedError("Specify u_init = 0, 1, or 2")
@@ -200,9 +215,17 @@ class HouseFlow3D(object):
 
         # OUTLET (BACK)
         print("initializing outlet boundary condition...")
-        out_mask = np.zeros_like(self.solid_mask)
-        out_mask[-1, 1:, :] = True  # not needed for directional boundaries...
-        outlet_boundary_condition = EquilibriumOutletP(self.units.lattice, [1, 0, 0], rho0=self.units.convert_pressure_pu_to_density_lu(0))
+        outlet_boundary_condition = None
+        if self.outlet_bc.casefold() == 'eqoutp':
+            outlet_boundary_condition = EquilibriumOutletP(self.units.lattice, [1, 0, 0], rho0=self.units.convert_pressure_pu_to_density_lu(0))
+        elif self.outlet_bc.casefold() == 'eqoutu':
+            print("(INFO) Equilibrium Outlet U (!) was selected.")
+            out_mask = np.zeros_like(self.solid_mask)
+            out_mask[-1, 1:, :] = True
+            outlet_boundary_condition = EquilibriumBoundaryPU(out_mask, self.lattice, self.units, u_inlet)
+        else:  # default to EQ_outlet_P
+            print("(INFO) outlet_bc was not recognized or specified. Defaulting to EQ_outlet_P")
+            outlet_boundary_condition = EquilibriumOutletP(self.units.lattice, [1, 0, 0], rho0=self.units.convert_pressure_pu_to_density_lu(0))
 
         # TOP
         print("initializing top boundary condition...")
