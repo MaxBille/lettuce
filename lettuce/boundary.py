@@ -922,7 +922,6 @@ class InterpolatedBounceBackBoundary_compact_v2:
                                                               self.f_index_gt[:, 2],  # y
                                                               self.f_index_gt[:, 3]])  # z
 
-
 class InterpolatedBounceBackBoundary_occ:
     """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.
         (2017)
@@ -1056,20 +1055,56 @@ class InterpolatedBounceBackBoundary_occ:
                                                 self.f_index_gt[:, 3]],
                                             self.lattice.e[self.f_index_gt[:, 0]].float())
 
+    # def store_f_collided(self, f_collided):
+    #     for f_index_lgt, f_collided_lgt in zip([self.f_index_lt, self.f_index_gt],
+    #                                            [self.f_collided_lt, self.f_collided_gt]):
+    #         if len(f_index_lgt) != 0:
+    #             for d in range(self.lattice.D):
+    #                 indices = [f_index_lgt[:, 0],  # q
+    #                            f_index_lgt[:, 1],  # x
+    #                            f_index_lgt[:, 2]]  # y
+    #                 if self.lattice.D == 3:
+    #                     indices.append(f_index_lgt[:, 3])
+    #                 f_collided_lgt[:, 0] = torch.clone(f_collided[indices])
+    #                 indices[0] = self.opposite_tensor[f_index_lgt[:, 0]]
+    #                 f_collided_lgt[:, 1] = torch.clone(f_collided[indices])
+    #     # TODO: compare performance of THIS to original hardcoded "store_f_collided()" of IBB1
+
     def store_f_collided(self, f_collided):
-        for f_index_lgt, f_collided_lgt in zip([self.f_index_lt, self.f_index_gt],
-                                               [self.f_collided_lt, self.f_collided_gt]):
-            if len(f_index_lgt) != 0:
-                for d in range(self.lattice.D):
-                    indices = [f_index_lgt[:, 0],  # q
-                               f_index_lgt[:, 1],  # x
-                               f_index_lgt[:, 2]]  # y
-                    if self.lattice.D == 3:
-                        indices.append(f_index_lgt[:, 3])
-                    f_collided_lgt[:, 0] = torch.clone(f_collided[indices])
-                    indices[0] = self.opposite_tensor[f_index_lgt[:, 0]]
-                    f_collided_lgt[:, 1] = torch.clone(f_collided[indices])
-        # TODO: compare performance of THIS to original hardcoded "store_f_collided()" of IBB1
+        if self.lattice.D == 2:
+            if len(self.f_collided_lt) != 0:
+                self.f_collided_lt[:, 0] = torch.clone(f_collided[self.f_index_lt[:, 0],  # q
+                                                              self.f_index_lt[:, 1],  # x
+                                                              self.f_index_lt[:, 2]])  # y
+                self.f_collided_lt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_lt[:,0]],  # q
+                                                              self.f_index_lt[:, 1],  # x
+                                                              self.f_index_lt[:, 2]])  # y
+            if len(self.f_collided_gt) != 0:
+                self.f_collided_gt[:, 0] = torch.clone(f_collided[self.f_index_gt[:, 0],  # q
+                                                              self.f_index_gt[:, 1],  # x
+                                                              self.f_index_gt[:, 2]])  # y
+                self.f_collided_gt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_gt[:,0]],  # q
+                                                              self.f_index_gt[:, 1],  # x
+                                                              self.f_index_gt[:, 2]])  # y
+        if self.lattice.D == 3:
+            if len(self.f_collided_lt) != 0:
+                self.f_collided_lt[:, 0] = torch.clone(f_collided[self.f_index_lt[:, 0],  # q
+                                                              self.f_index_lt[:, 1],  # x
+                                                              self.f_index_lt[:, 2],  # y
+                                                              self.f_index_lt[:, 3]])  # z
+                self.f_collided_lt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_lt[:,0]],  # q
+                                                              self.f_index_lt[:, 1],  # x
+                                                              self.f_index_lt[:, 2],  # y
+                                                              self.f_index_lt[:, 3]])  # z
+            if len(self.f_collided_gt) != 0:
+                self.f_collided_gt[:, 0] = torch.clone(f_collided[self.f_index_gt[:, 0],  # q
+                                                                  self.f_index_gt[:, 1],  # x
+                                                                  self.f_index_gt[:, 2],  # y
+                                                                  self.f_index_gt[:, 3]])  # z
+                self.f_collided_gt[:, 1] = torch.clone(f_collided[self.opposite_tensor[self.f_index_gt[:, 0]],  # q
+                                                                  self.f_index_gt[:, 1],  # x
+                                                                  self.f_index_gt[:, 2],  # y
+                                                                  self.f_index_gt[:, 3]])  # z
 
     def initialize_f_collided(self):
         f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
