@@ -468,12 +468,12 @@ class HighMaReporter:
                     index_max = unravel_index(index_max, ma.shape)
                     ma = self.lattice.convert_to_numpy(ma)
                     index_max = self.lattice.convert_to_numpy(index_max)
-                    my_file.write(f" Ma {str(list(index_max))} = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
+                    my_file.write(f" Ma {str(list(index_max))}lu = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
                     #TODO: write PU coordinates as well. a) in seperate file, b) same file below, c) same file new column "table style"
                     if not more_than_100:
                         my_file.write(f"(!) Ma > 0.3 detected at (x,y,[z]):\n")
                         for _ in high_ma_locations:
-                            my_file.write(f"Ma {_} = {ma[_[0], _[1], _[2] if self.lattice.D == 3 else None]}\n")
+                            my_file.write(f"Ma {_}lu = {ma[_[0], _[1], _[2] if self.lattice.D == 3 else None]}\n")
                     else:
                         flat_ma = ma.ravel()
                         k=100
@@ -486,7 +486,7 @@ class HighMaReporter:
                         # print(original_indices.shape[0], original_indices.shape[1])
                         my_file.write(f"(!) Ma > 0.3 detected for more than 100 values. Showing top 100 values:\n")
                         for _ in range(original_indices.shape[1]):
-                            my_file.write(f"Ma {original_indices[:,_]} = {ma[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
+                            my_file.write(f"Ma {original_indices[:,_]}lu = {ma[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
                     my_file.close()
 
                 if self.old:
@@ -494,7 +494,10 @@ class HighMaReporter:
                     sys.exit()
                 else:
                     self.simulation.abort_condition = 3  # telling simulation to abort simulation
-                    self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). See HighMaReporter log for details!'
+                    if self.outdir is not None:
+                        self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). Ma {str(list(index_max))}lu = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]:.5f}. See HighMaReporter log for details!'
+                    else:
+                        self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). See HighMaReporter log for details!'
                     #print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
                     #print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
 
