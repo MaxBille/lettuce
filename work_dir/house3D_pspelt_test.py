@@ -75,7 +75,7 @@ parser.add_argument("--write_cpt", action='store_true', help="write checkpoint a
 
 # flow physics
 parser.add_argument("--re", default=200, type=float, help="Reynolds number")
-parser.add_argument("--ma", default=0.05, type=float, help="Mach number")
+parser.add_argument("--ma", default=0.05, type=float, help="Mach number (should stay < 0.3, and < 0.1 for highest accuracy. low Ma can lead to instability because of round of errors ")
 parser.add_argument("--viscosity_pu", default=14.852989758837 * 10**(-6), type=float, help="kinematic fluid viscosity in PU. Default is air at ~14.853e-6 (at 15°C, 1atm)")
 parser.add_argument("--char_density_pu", default=1.2250, type=float, help="density, default is air at ~1.2250 at 15°C, 1atm")  # ist das so korrekt? - von Martin Kiemank übernommen
 parser.add_argument("--u_init", default=0, type=int, choices=[0, 1, 2], help="0: initial velocity zero, 1: velocity one uniform, 2: velocity profile") # könnte ich noch auf Philipp und mich anpassen...und uniform durch komplett WSP ersetzen
@@ -885,11 +885,14 @@ if args["watchdog"]:
 
 # NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk, vtk=True)  #, outdir=outdir+"/nan_reporter.txt")  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk, vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
 if args["high_ma_reporter"]:
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=outdir, vtk_dir=outdir_vtk, vtk=True)
+    high_ma_reporter_path = outdir+"/HighMaReporter"
+    if not os.path.exists(high_ma_reporter_path):
+        os.makedirs(high_ma_reporter_path)
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk, stop_simulation=False)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:

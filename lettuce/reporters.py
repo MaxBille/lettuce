@@ -339,26 +339,38 @@ class NaNReporter:
     def __call__(self, i, t, f):
         if i % self.interval == 0:
             if torch.isnan(f).any():
-                if self.lattice.D == 2 and self.outdir is not None:
-                    q, x, y = torch.where(torch.isnan(f))
-                    q = self.lattice.convert_to_numpy(q)
-                    x = self.lattice.convert_to_numpy(x)
-                    y = self.lattice.convert_to_numpy(y)
-                    nan_location = np.stack((q, x, y), axis=-1)
-                if self.lattice.D == 3 and self.outdir is not None:
-                    q, x, y, z = torch.where(torch.isnan(f))
-                    q = self.lattice.convert_to_numpy(q)
-                    x = self.lattice.convert_to_numpy(x)
-                    y = self.lattice.convert_to_numpy(y)
-                    z = self.lattice.convert_to_numpy(z)
-                    nan_location = np.stack((q, x, y, z), axis=-1)
-                    if self.outdir is not None:
-                        my_file = open(self.outdir, "w")
-                        my_file.write(f"(!) NaN detected at (q,x,y,z):\n")
+                try:
+                    if self.lattice.D == 2 and self.outdir is not None:
+                        q, x, y = torch.where(torch.isnan(f))
+                        more_than_100 = False
+                        if x.shape[0] < 100:
+                            q = self.lattice.convert_to_numpy(q)
+                            x = self.lattice.convert_to_numpy(x)
+                            y = self.lattice.convert_to_numpy(y)
+                            nan_location = np.stack((q, x, y), axis=-1)
+                        else:
+                            more_than_100 = True
+                    if self.lattice.D == 3 and self.outdir is not None:
+                        q, x, y, z = torch.where(torch.isnan(f))
+                        print(f"NaNReporter: x.shape, number of NaNs = {x.shape}")
+                        more_than_100 = False
+                        if x.shape[0] < 100:
+                            q = self.lattice.convert_to_numpy(q)
+                            x = self.lattice.convert_to_numpy(x)
+                            y = self.lattice.convert_to_numpy(y)
+                            z = self.lattice.convert_to_numpy(z)
+                            nan_location = np.stack((q, x, y, z), axis=-1)
+                        else:
+                            more_than_100 = True
+                    if self.outdir is not None and not more_than_100:
+                        my_file = open(self.outdir+"/NaNReporter.txt", "w")
+                        my_file.write(f"(!) NaN detected in step {i} at (q,x,y,z):\n")
                         for _ in nan_location:
                             my_file.write(f"{_}\n")
                         my_file.close()
                         #print("(!) NaN detected at (q,x,y,z):", nan_location)
+                except:
+                    print("NaNReporter: Error in writing nan_reporter.txt, probably because torch got confused because of too big tensors...")
 
                 if self.old:
                     # backwards compatibility for simulation class w/o abort-message-functionality
@@ -366,7 +378,7 @@ class NaNReporter:
                     sys.exit()
                 else:
                     self.simulation.abort_condition = 2  # telling simulation to abort simulation
-                    self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f (NaNReporter.interval = {self.interval}). See NaNReporter log for details!'
+                    self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f in step {i} (NaNReporter.interval = {self.interval}). See NaNReporter.txt log for details!'
                     # print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
                     # print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
 
@@ -411,9 +423,9 @@ def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tens
 
 
 class HighMaReporter:
-    """reports any Ma>0.3 and aborts the simulation"""
+    """reports any Ma>0.3 and aborts the simulation if wanted"""
 
-    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None):
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None, stop_simulation=False):
         self.flow = flow
         self.old = False
         if simulation is None:
@@ -431,6 +443,10 @@ class HighMaReporter:
             self.vtk_dir = self.outdir
         else:
             self.vtk_dir = vtk_dir
+        self.stop_simulation = stop_simulation
+        if not self.stop_simulation:
+            self.vtk = False
+            print("(HighMaReporter) because stop_simulation == False, setting vtk = False, otherwise too many vtk files could be created! Use NaNReporter to write 'last' vtk file on crash.")
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
@@ -461,9 +477,9 @@ class HighMaReporter:
                     else:
                         more_than_100 = True
                 if self.outdir is not None:
-                    my_file = open(self.outdir+"/HighMa_reporter.txt", "w")
+                    my_file = open(self.outdir+f"/HighMa_reporter_step{i:08d}.txt", "w")
 
-                    my_file.write(f"(!) Ma > 0.3 detected , Maximum at (x,y,[z]):\n")
+                    my_file.write(f"(!) Ma > 0.3 detected in step {i:8d}, Maximum at (x,y,[z]):\n")
                     index_max = torch.argmax(ma)
                     index_max = unravel_index(index_max, ma.shape)
                     ma = self.lattice.convert_to_numpy(ma)
@@ -489,10 +505,10 @@ class HighMaReporter:
                             my_file.write(f"Ma {original_indices[:,_]}lu = {ma[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
                     my_file.close()
 
-                if self.old:
+                if self.old and self.stop_simulation:
                     print("(!) Ma > 0.3 detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
                     sys.exit()
-                else:
+                elif self.stop_simulation:
                     self.simulation.abort_condition = 3  # telling simulation to abort simulation
                     if self.outdir is not None:
                         self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). Ma {str(list(index_max))}lu = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]:.5f}. See HighMaReporter log for details!'
