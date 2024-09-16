@@ -880,7 +880,7 @@ if vtk:
 
 # WATCHDOG-REPORTER
 if args["watchdog"]:
-    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=int(n_steps/100), i_start=n_start, i_target=n_stop_target, filebase=outdir+"/watchdog", show=not cluster)
+    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=int(n_steps/100), i_start=n_start, i_target=n_stop_target, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not cluster)
     simulation.reporters.append(watchdog_reporter)
 
 # NAN REPORTER
