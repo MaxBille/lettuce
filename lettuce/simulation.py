@@ -49,7 +49,7 @@ class Simulation:
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
         # TRUE/FALSE per boundary in the _boundaries list
 
-        self.t_max = 72 * 3600 - 10 * 60  # max. runtime 71:50:00 h / to stop and store sim-data for later continuation,
+        self.t_max = 72 * 3600 - 60 * 60  # max. runtime 71:00:00 h / to stop and store sim-data for later continuation,
         # ...because the cluster only allows 72h long jobs.
         # <<<
 
