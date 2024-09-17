@@ -342,6 +342,8 @@ class Slice2dReporter:
         self.lattice = lattice
         self.simulation = simulation
         self.interval = interval
+        if self.interval < 1:
+            self.interval = 1
         if start is None:
             self.start = 0
         else:
@@ -354,7 +356,7 @@ class Slice2dReporter:
         self.show = show
 
         self.u_lim = (0, 2 * self.simulation.flow.units.characteristic_velocity_pu)
-        self.p_lim = (-1e-5, +1e-5)
+        self.p_lim = (-simulation.flow.units.characteristic_pressure_pu, simulation.flow.units.characteristic_pressure_pu)# (-1e-5, +1e-5)
         self.cmap = cmap
 
         if outdir is None and show is None:
@@ -1159,6 +1161,8 @@ ax.legend()
 plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()
+
+# TODO: export min/max p, Ma_max and u_max as obs-timeseries. (i,t,Val) - watch storage consumption
 
 print("\nmaximum total (CPU) RAM usage ('MaxRSS') (including optional PNG and GIF post-processing [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 
