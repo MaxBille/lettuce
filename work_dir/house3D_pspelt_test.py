@@ -892,8 +892,8 @@ if args["nan_reporter"]:
 
 if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
-    if not os.path.exists(high_ma_reporter_path):
-        os.makedirs(high_ma_reporter_path)
+    # if not os.path.exists(high_ma_reporter_path):
+    #     os.makedirs(high_ma_reporter_path)
     high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk, stop_simulation=False)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
@@ -965,7 +965,7 @@ print("\n")
 output_file = open(outdir+"/stats.txt", "a")
 output_file.write("DATA for "+timestamp)
 output_file.write("\n\n###   SIM-STATS  ###")
-output_file.write("\nruntime = "+str(runtime)+ " seconds (="+str(runtime/60)+" minutes)")
+output_file.write(f"\nruntime: {runtime:.3f} seconds (= {round(runtime/60, 2)} min = {round(runtime/3600, 2)} h)")
 output_file.write("\nMLUPS = "+str(mlups))
 output_file.write("\n")
 output_file.write("\nVRAM_current [MB] = " + str(torch.cuda.memory_allocated(lattice.device)/1024/1024))
@@ -1128,6 +1128,7 @@ ax.set_ylabel("maximum Ma")
 ax.set_ylim([0,0.3])
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
+fig.suptitle(str(timestamp) + "\n" + name)
 plt.savefig(outdir+"/max_Ma.png")
 if not cluster:
     plt.show()
@@ -1141,6 +1142,7 @@ y_lim_50 = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3
 ax.set_ylim([0, y_lim_50*1.1])  # show 10% more than u_mag_max
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
+fig.suptitle(str(timestamp) + "\n" + name)
 plt.savefig(outdir+"/max_u_mag.png")
 if not cluster:
     plt.show()
@@ -1158,6 +1160,7 @@ ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_m
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
 ax.legend()
+fig.suptitle(str(timestamp) + "\n" + name)
 plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()

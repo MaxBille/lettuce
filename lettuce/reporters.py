@@ -369,6 +369,8 @@ class NaNReporter:
                             my_file.write(f"{_}\n")
                         my_file.close()
                         #print("(!) NaN detected at (q,x,y,z):", nan_location)
+                    elif self.outdir is not None and more_than_100:
+                        print(f"(!) NaNReporter detected more than 100 NaNs in step {i}. No outputfile created. See HighMaReporter output of previous steps or open vtk/vti-file")
                 except:
                     print("NaNReporter: Error in writing nan_reporter.txt, probably because torch got confused because of too big tensors...")
 
@@ -448,6 +450,13 @@ class HighMaReporter:
             self.vtk = False
             print("(HighMaReporter) because stop_simulation == False, setting vtk = False, otherwise too many vtk files could be created! Use NaNReporter to write 'last' vtk file on crash.")
 
+        self.outdir_exists = False
+        if os.path.exists(self.outdir):
+            self.outdir_exists = True
+        self.vtk_dir_exists = False
+        if os.path.exists(self.vtk_dir):
+            self.vtk_dir_exists = True
+
     def __call__(self, i, t, f):
         if i % self.interval == 0:
             u = self.lattice.u(f)
@@ -477,6 +486,9 @@ class HighMaReporter:
                     else:
                         more_than_100 = True
                 if self.outdir is not None:
+                    if not self.outdir_exists:
+                        os.makedirs(self.outdir)
+                        self.outdir_exists = True
                     my_file = open(self.outdir+f"/HighMa_reporter_step{i:08d}.txt", "w")
 
                     my_file.write(f"(!) Ma > 0.3 detected in step {i:8d}, Maximum at (x,y,[z]):\n")
