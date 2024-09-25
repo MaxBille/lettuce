@@ -427,7 +427,7 @@ def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tens
 class HighMaReporter:
     """reports any Ma>0.3 and aborts the simulation if wanted"""
 
-    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None, stop_simulation=False):
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk_full=False, vtk_highma_points=False, vtk_dir=None, stop_simulation=False):
         self.flow = flow
         self.old = False
         if simulation is None:
@@ -440,14 +440,15 @@ class HighMaReporter:
         self.interval = interval
         self.t_target = t_target
         self.outdir = outdir
-        self.vtk = vtk
+        self.vtk_full = vtk_full
+        self.vtk_highma_points = vtk_highma_points
         if vtk_dir is None:
             self.vtk_dir = self.outdir
         else:
             self.vtk_dir = vtk_dir
         self.stop_simulation = stop_simulation
         if not self.stop_simulation:
-            self.vtk = False
+            self.vtk_full = False
             print("(HighMaReporter) because stop_simulation == False, setting vtk = False, otherwise too many vtk files could be created! Use NaNReporter to write 'last' vtk file on crash.")
 
         self.outdir_exists = False
@@ -468,23 +469,23 @@ class HighMaReporter:
             if high_ma_locations.any():
                 if self.lattice.D == 2 and self.outdir is not None:
                     x, y = torch.where(high_ma_locations)
-                    more_than_100 = False
-                    if x.shape[0] < 100:
-                        x = self.lattice.convert_to_numpy(x)
-                        y = self.lattice.convert_to_numpy(y)
-                        high_ma_locations = np.stack((x, y), axis=-1)
+                    more_than_10000 = False
+                    if x.shape[0] < 1000000:
+                        x_np = self.lattice.convert_to_numpy(x)
+                        y_np = self.lattice.convert_to_numpy(y)
+                        high_ma_locations = np.stack((x_np, y_np), axis=-1)
                     else:
-                        more_than_100 = True
+                        more_than_1000000 = True
                 if self.lattice.D == 3 and self.outdir is not None:
                     x, y, z = torch.where(high_ma_locations)
-                    more_than_100 = False
-                    if x.shape[0] < 100:
-                        x = self.lattice.convert_to_numpy(x)
-                        y = self.lattice.convert_to_numpy(y)
-                        z = self.lattice.convert_to_numpy(z)
-                        high_ma_locations = np.stack((x, y, z), axis=-1)
+                    more_than_1000000 = False
+                    if x.shape[0] < 1000000:
+                        x_np = self.lattice.convert_to_numpy(x)
+                        y_np = self.lattice.convert_to_numpy(y)
+                        z_np = self.lattice.convert_to_numpy(z)
+                        high_ma_locations = np.stack((x_np, y_np, z_np), axis=-1)
                     else:
-                        more_than_100 = True
+                        more_than_1000000 = True
                 if self.outdir is not None:
                     if not self.outdir_exists:
                         os.makedirs(self.outdir)
@@ -494,27 +495,27 @@ class HighMaReporter:
                     my_file.write(f"(!) Ma > 0.3 detected in step {i:8d}, Maximum at (x,y,[z]):\n")
                     index_max = torch.argmax(ma)
                     index_max = unravel_index(index_max, ma.shape)
-                    ma = self.lattice.convert_to_numpy(ma)
+                    ma_np = self.lattice.convert_to_numpy(ma)
                     index_max = self.lattice.convert_to_numpy(index_max)
-                    my_file.write(f" Ma {str(list(index_max))}lu = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
+                    my_file.write(f" Ma {str(list(index_max))}lu = {ma_np[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
                     #TODO: write PU coordinates as well. a) in seperate file, b) same file below, c) same file new column "table style"
-                    if not more_than_100:
+                    if not more_than_1000000:
                         my_file.write(f"(!) Ma > 0.3 detected at (x,y,[z]):\n")
                         for _ in high_ma_locations:
-                            my_file.write(f"Ma {_}lu = {ma[_[0], _[1], _[2] if self.lattice.D == 3 else None]}\n")
+                            my_file.write(f"Ma {_}lu = {ma_np[_[0], _[1], _[2] if self.lattice.D == 3 else None]}\n")
                     else:
-                        flat_ma = ma.ravel()
-                        k=100
+                        flat_ma = ma_np.ravel()
+                        k=1000000
                         indices = np.argpartition(-flat_ma, k)[:k]
                         top_values = flat_ma[indices]
                         sorted_indices = indices[np.argsort(-top_values)]
                         sorted_values = flat_ma[sorted_indices]
-                        original_indices = np.array(np.unravel_index(sorted_indices, ma.shape))
+                        original_indices = np.array(np.unravel_index(sorted_indices, ma_np.shape))
                         # print(original_indices)
                         # print(original_indices.shape[0], original_indices.shape[1])
-                        my_file.write(f"(!) Ma > 0.3 detected for more than 100 values. Showing top 100 values:\n")
+                        my_file.write(f"(!) Ma > 0.3 detected for more than 100 values. Showing top 1000000 values:\n")
                         for _ in range(original_indices.shape[1]):
-                            my_file.write(f"Ma {original_indices[:,_]}lu = {ma[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
+                            my_file.write(f"Ma {original_indices[:,_]}lu = {ma_np[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
                     my_file.close()
 
                 if self.old and self.stop_simulation:
@@ -530,7 +531,10 @@ class HighMaReporter:
                     #print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
 
                 # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
-                if self.vtk_dir is not None and self.vtk:
+                if self.vtk_dir is not None and self.vtk_full:
+                    if not self.vtk_dir_exists:
+                        os.makedirs(self.vtk_dir)
+                        self.vtk_dir_exists = True
                     point_dict = dict()
                     u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
                     p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
@@ -543,6 +547,19 @@ class HighMaReporter:
                         for d in range(self.lattice.D):
                             point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
                     write_vtk(point_dict, i, self.vtk_dir + "/highMa_frame")
+
+                # write point-vtk with Ma, ux, uy, uz, p at coordinates where Ma>0.3, if number is <100
+                if self.vtk_dir is not None and self.vtk_highma_points and not more_than_1000000:
+                    print(f"more_than_1000000: {more_than_1000000}")
+                    if not self.vtk_dir_exists:
+                        os.makedirs(self.vtk_dir)
+                        self.vtk_dir_exists = True
+                    ux_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[0, x, y, z]))
+                    uy_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[1, x, y, z]))
+                    uz_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[2, x, y, z]))
+                    p_list = self.lattice.convert_to_numpy(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))[0,x, y, z])
+                    ma_list = self.lattice.convert_to_numpy(ma[x,y,z])
+                    vtk.pointsToVTK(self.vtk_dir + f"/highMa_Points_{i:08d}", x_np, y_np, z_np, data = {"ma": ma_list, "p": p_list, "ux": ux_list, "uy": uy_list, "uz": uz_list})
 
 class AverageVelocityReporter:
     """Reports the streamwise velocity averaged in span direction (z) at defined position in x.

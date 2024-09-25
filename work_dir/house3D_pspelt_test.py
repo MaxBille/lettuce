@@ -92,6 +92,7 @@ parser.add_argument("--eqlm", action="store_true", help="use Equilibium LessMemo
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to coordinate system")  # characteristic length LU, in flow direction
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
@@ -488,7 +489,7 @@ print("Defining domain constraints...")
 xmin, ymin, zmin = 0, 0, 0 if dim == 3 else None
 xmax, ymax, zmax = domain_length_pu, domain_height_pu, domain_width_pu if dim == 3 else None
 minz_house, maxz_house = (domain_width_pu/2.-house_width_pu/2., domain_width_pu/2.+house_width_pu/2.) if dim == 3 else (-1, 1)
-ground_height_pu = 0.5 * house_length_pu/house_length_lu  # height of ZERO-height or ground level in PU at 0.5 LU
+ground_height_pu = args["ground_height_lu"] * house_length_pu/house_length_lu  # height of ZERO-height or ground level in PU at 0.5 LU
 
 domain_constraints = ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem abh. von der stl und deren ursprung
 lx, ly, lz = xmax-xmin, ymax-ymin, zmax-zmin  # das sind die PU-Domänengrößen
@@ -759,6 +760,14 @@ if args["plot_sbd_2d"]:
                 idx_numpy = np.concatenate([lattice.convert_to_numpy(boundary.f_index_lt), lattice.convert_to_numpy(boundary.f_index_gt)], axis=0)
                 temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
                 temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            elif boundary.f_index_lt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index_lt)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+            elif boundary.f_index_gt.shape[0] > 0:  # vereine alle f_indices in einer node-Maske
+                idx_numpy = lattice.convert_to_numpy(boundary.f_index_gt)
+                temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
+                temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
             show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in XY:\n" + str(boundary), name="f_index_ltgt_" + str(baguette))
             show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in YZ:\n" + str(boundary), name="f_index_ltgt_" + str(baguette) + "YZ", position=int(flow.units.convert_length_to_lu(house_position[0])), normal_dir=0)
 
@@ -887,14 +896,14 @@ if args["watchdog"]:
 
 # NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk, vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk+"/vtk", vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
 if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk, stop_simulation=False)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk+"/vtk", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
