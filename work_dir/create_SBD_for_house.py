@@ -36,6 +36,7 @@ parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory t
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to coordinate system")
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
@@ -148,7 +149,7 @@ print("Defining domain constraints...")
 xmin, ymin, zmin = 0, 0, 0 if dim == 3 else None
 xmax, ymax, zmax = domain_length_pu, domain_height_pu, domain_width_pu if dim == 3 else None
 minz_house, maxz_house = (domain_width_pu/2.-house_width_pu/2., domain_width_pu/2.+house_width_pu/2.) if dim == 3 else (-1, 1)
-ground_height_pu = 0.5 * house_length_pu/house_length_lu  # height of ZERO-height or ground level in PU at 0.5 LU
+ground_height_pu = args["ground_height_lu"] * house_length_pu/house_length_lu  # height of ZERO-height or ground level in PU at 0.5 LU
 
 domain_constraints = ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem abh. von der stl und deren ursprung
 lx, ly, lz = xmax-xmin, ymax-ymin, zmax-zmin  # das sind die PU-Domänengrößen
