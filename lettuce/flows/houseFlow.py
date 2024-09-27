@@ -29,6 +29,7 @@ class HouseFlow3D(object):
                  K_Factor=10,  # K_factor for SEI boundary inlet
                  L=3,  # L for SEI
                  N=34,  # N number of random vortices for SEI
+                 shift_u_in=None  # how many PU to shift the u_inlet profile UP
                  ):
         # flow and boundary settings
         self.u_init = u_init  # toggle: initial solution velocity profile type
@@ -40,6 +41,7 @@ class HouseFlow3D(object):
         self.domain_constraints = domain_constraints  # ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem in PU, abh. von der stl und deren ursprung
         self.reference_height_pu = reference_height_pu
         self.ground_height_pu = ground_height_pu
+        self.shift_u_in = shift_u_in
 
         # bc_types
         self.inlet_bc = inlet_bc
@@ -106,13 +108,13 @@ class HouseFlow3D(object):
         elif self.u_init == 1:  # 1: simple velocity profile everywhere, where there is no other BC  # "profile"
             u[0] = self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
-                                           y_0=self.ground_height_pu,
+                                           y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                            u_ref=self.units.characteristic_velocity_pu,
                                            # characteristic velocity at reference height (EG or ROOF)
                                            alpha=0.25)
             # self.wind_speed_profile(np.where(self.solid_mask, 0, y)[0],
             #                         y_ref=self.reference_height_pu,  # REFERENCE height (roof_height or eg_height)
-            #                         y_0=self.ground_height_pu,
+            #                         y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
             #                         u_ref=self.units.characteristic_velocity_pu,
             #                         # characteristic velocity at reference height (EG or ROOF)
             #                         alpha=0.25)
@@ -129,7 +131,7 @@ class HouseFlow3D(object):
 
             u[0] = k_factor * self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
-                                           y_0=self.ground_height_pu,
+                                           y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                            u_ref=self.units.characteristic_velocity_pu,
                                            # characteristic velocity at reference height (EG or ROOF)
                                            alpha=0.25)
@@ -177,7 +179,7 @@ class HouseFlow3D(object):
         # initialize wind_speed_profile for inlet BC
         u_inlet_x = self.wind_speed_profile(np.where(self.solid_mask, 0, y),
                                      y_ref=self.reference_height_pu, # REFERENCE height (roof_height or eg_height)
-                                     y_0=self.ground_height_pu,
+                                     y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                      u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
                                      alpha=0.25)[0, np.newaxis,...]
         u_inlet_y = np.zeros_like(u_inlet_x)
@@ -413,6 +415,7 @@ class HouseFlow3D(object):
         if y_ref == None:
             y_ref = self.reference_height_pu
 
+        # TODO: y_0 is the ground_height and reference ZERO-height for profile. add u_0_height at which the profile starts and is stretched, u_ref at y_ref stays relative to y_0
         #return torch.where(y < y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
         #print("y_0, y_ref, alpha:", y_0, y_ref, alpha)
         # print("y:", y)

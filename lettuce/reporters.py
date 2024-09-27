@@ -513,7 +513,7 @@ class HighMaReporter:
                         original_indices = np.array(np.unravel_index(sorted_indices, ma_np.shape))
                         # print(original_indices)
                         # print(original_indices.shape[0], original_indices.shape[1])
-                        my_file.write(f"(!) Ma > 0.3 detected for more than 100 values. Showing top 1000000 values:\n")
+                        my_file.write(f"(!) Ma > 0.3 detected for more than 1000000 values. Showing top 1000000 values:\n")
                         for _ in range(original_indices.shape[1]):
                             my_file.write(f"Ma {original_indices[:,_]}lu = {ma_np[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
                     my_file.close()
@@ -550,7 +550,7 @@ class HighMaReporter:
 
                 # write point-vtk with Ma, ux, uy, uz, p at coordinates where Ma>0.3, if number is <100
                 if self.vtk_dir is not None and self.vtk_highma_points and not more_than_1000000:
-                    print(f"more_than_1000000: {more_than_1000000}")
+                    #print(f"more_than_1000000: {more_than_1000000}")
                     if not self.vtk_dir_exists:
                         os.makedirs(self.vtk_dir)
                         self.vtk_dir_exists = True

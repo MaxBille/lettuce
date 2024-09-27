@@ -104,6 +104,8 @@ parser.add_argument("--domain_length_pu", default=60, type=float, help="flow-dir
 parser.add_argument("--domain_width_pu", default=40, type=float, help="cross-flow-direction domain width in PU")
 parser.add_argument("--domain_height_pu", default=30, type=float, help="cross-flow domain height in PU")
 
+parser.add_argument("--shift_u_inlet_lu", default=0, type=float, help="how many LU to shift the y_0 of u_inlet profile upwards (to mitigate interaction of ground_BC and inlet)" )
+
 parser.add_argument("--combine_solids", action='store_true', help="combine all solids (house and ground) into one object for easier prototyping")
 parser.add_argument("--no_house", action='store_true', help="if TRUE, removes house from simulation, for debugging of house-independent aspects")
 
@@ -624,6 +626,7 @@ flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
                    K_Factor=10,  # K_factor for SEI boundary inlet
                    L=3,  # L for SEI
                    N=34,  # N number of random voctices for SEI
+                   shift_u_in=args["shift_u_inlet_lu"]*1/res,  #how many PU to shift the u_inlet profile upwards, without altering the ground_height
                    )
 
 # export flow physics to file:
