@@ -111,7 +111,7 @@ class HouseFlow3D(object):
                                            y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                            u_ref=self.units.characteristic_velocity_pu,
                                            # characteristic velocity at reference height (EG or ROOF)
-                                           alpha=0.25)
+                                           alpha=0.4)
             # self.wind_speed_profile(np.where(self.solid_mask, 0, y)[0],
             #                         y_ref=self.reference_height_pu,  # REFERENCE height (roof_height or eg_height)
             #                         y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
@@ -134,7 +134,7 @@ class HouseFlow3D(object):
                                            y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                            u_ref=self.units.characteristic_velocity_pu,
                                            # characteristic velocity at reference height (EG or ROOF)
-                                           alpha=0.25)
+                                           alpha=0.4)
 
 
             pass
@@ -181,7 +181,7 @@ class HouseFlow3D(object):
                                      y_ref=self.reference_height_pu, # REFERENCE height (roof_height or eg_height)
                                      y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
                                      u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
-                                     alpha=0.25)[0, np.newaxis,...]
+                                     alpha=0.4)[0, np.newaxis,...]
         u_inlet_y = np.zeros_like(u_inlet_x)
         print(f"u_inlet_x.shape = {u_inlet_x.shape}")
        # print("u_inlet_x:\n", u_inlet_x)
@@ -196,7 +196,7 @@ class HouseFlow3D(object):
                                                              #                         y_ref=self.reference_height_pu, # REFERENCE height (roof_height or eg_height)
                                                              #                         y_0=self.ground_height_pu,
                                                              #                         u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
-                                                             #                         alpha=0.25))
+                                                             #                         alpha=0.4))
             # inlet_boundary_condition = lt.EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units, u[:, 0, ...], p[0, 0, ...])
         elif self.inlet_bc.casefold() == 'nex':
             inlet_boundary_condition = NonEquilibriumExtrapolationInletU(self.units.lattice, self.units, [-1, 0, 0],
