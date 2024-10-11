@@ -506,6 +506,7 @@ print(f"-> Domain LU shape = {shape}")
 # house_polygon = [[15, 0+ground_height_pu], [15, 10+ground_height_pu], [14, 10+ground_height_pu], [20, 15.5+ground_height_pu],
 #                      [26, 10+ground_height_pu], [25, 10+ground_height_pu], [25, 0+ground_height_pu]]
 print("Defining house and ground 2D polygon for OCC solid generation...")
+# INFO: the house_foundation is slightly lowered into the ground, so that solid_combination etc. works well. Ground ist still precise by itself!
 house_polygon = [[house_position[0]-house_length_pu/2, ground_height_pu*0.999],  # bottom left (slightly lowered into ground for easy combination)
                  [house_position[0]-house_length_pu/2, eg_height_pu+ground_height_pu],  # top left eg
                  [house_position[0]-house_length_pu/2-overhang_pu, eg_height_pu+ground_height_pu],  # top left roof

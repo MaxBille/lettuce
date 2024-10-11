@@ -455,8 +455,7 @@ def makeGrid(domain_constraints, shape):
     #             range(dim))  # tuple of lists of x,y,(z)-values/indices
     # grid = torch.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
     # LETTUCE numpy-version:
-    xyz = tuple(np.linspace(domain_constraints[0][_], domain_constraints[1][_], shape[_]) for _ in
-                range(dim))  # tuple of lists of x,y,(z)-values/indices
+    xyz = tuple(np.linspace(domain_constraints[0][_], domain_constraints[1][_], shape[_], endpoint=False) for _ in range(dim))  # tuple of lists of x,y,(z)-values/indices
     grid = np.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
     return grid
 
