@@ -55,7 +55,12 @@ parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. wa
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
 parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory to save output files to; vtk-files will be saved in seperate dir, if outputdir_vtk is specified")
 parser.add_argument("--outdir_vtk", default=None, type=str, help="")
-parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdor_vtk, if set True (1)")
+parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_inlet", action='store_true', help="toggle vtk-output of 2D slice for inlet-interaction analysis to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_outlet", action='store_true', help="toggle vtk-output of 2D slice for outlet-interaction analysis to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_x", default=10, help="x_length of 2D vtk slice")
+parser.add_argument("--vtk_slice_y", default=5, help="y_height of 2D vtk slice")
+parser.add_argument("--vtk_slice_z", default=0, help="z location of 2D slice; NOT IMPLEMENTED")
 parser.add_argument("--vtk_fps", default=10, help="frames per second_PU for VTK output; overwritten if vtk_interval is specified")
 parser.add_argument("--vtk_interval", default=0, type=int, help="how many steps between vtk-output-files; overwrites vtk_fps")
 parser.add_argument("--vtk_t_interval", default=0, type=float, help="how many seconds between vtk-output-files; overwrites vtk_fps and vtk_interval; for low frequency output")
@@ -797,16 +802,21 @@ max_p_pu_observable = lt.MaxMinPressure(lattice, flow)
 min_max_p_pu_reporter = lt.ObservableReporter(max_p_pu_observable, interval=1, out=None)
 simulation.reporters.append(min_max_p_pu_reporter)
 
+# POINT obs reporters
+
+testpoint_reporter = lt.UPpointReporter(lattice,flow, index_lu=(2,2,int(shape[2]/2)), interval=1, out=None)
+simulation.reporters.append(testpoint_reporter)
+
 
 # VTK REPORTER
-if vtk:
+if vtk or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
 
-    print(args["vtk_t_start"])
-    print(args["vtk_t_end"])
-    print(args["vtk_step_start"])
-    print(args["vtk_step_end"])
-    print(args["vtk_interval"])
-    print(args["vtk_t_interval"])
+    # print(args["vtk_t_start"])
+    # print(args["vtk_t_end"])
+    # print(args["vtk_step_start"])
+    # print(args["vtk_step_end"])
+    # print(args["vtk_interval"])
+    # print(args["vtk_t_interval"])
 
     if args["vtk_t_start"] > 0:
         print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
@@ -832,17 +842,53 @@ if vtk:
     if vtk_interval < 1:
         vtk_interval = 1
 
-    print(vtk_i_start)
-    print(vtk_i_end)
-    print(vtk_interval)
-    print(vtk_fps)
+    # print(vtk_i_start)
+    # print(vtk_i_end)
+    # print(vtk_interval)
+    # print(vtk_fps)
+
+    # inlet slice [0 to Xindex] [0 to Yindex]
+    inlet_sliceXY = ([0, args["vtk_slice_x"]], [0, args["vtk_slice_y"]]) #inlet_sliceXY = ([0, 100], [0, 50])
+    inlet_sliceZ = int(shape[2]/2)  #"--vtk_slice_z" not implemented
+
+    # outlet slice [Xmax-len to Xmax] [0 to Yindex]
+    outlet_sliceXY = ([shape[0]-args["vtk_slice_x"],shape[0]], [0, args["vtk_slice_y"]])  #outlet_sliceXY = ([shape[0]-101,shape[0]], [shape[1]-51,shape[1]])
+    outlet_sliceZ = inlet_sliceZ
 
     print(f"(INFO) Appending vtk reporter with vtk_interval = {int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval)}, vtk_start = <>, vtk_end = <> and vtk_dir: {outdir_vtk}/vtk/out")
     print(f"(INFO) This will create approx. {(vtk_i_end-vtk_i_start)/vtk_interval+1} .vti or .vtk files!")
-    vtk_reporter = lt.VTKReporter(lattice, flow,
-                                  interval=int(vtk_interval),
-                                  filename_base=outdir_vtk+"/vtk/out", imin=vtk_i_start, imax=vtk_i_end)
-    simulation.reporters.append(vtk_reporter)
+    # FULL VTK
+    if vtk:
+        vtk_reporter = lt.VTKReporter(lattice, flow,
+                                      interval=int(vtk_interval),
+                                      filename_base=outdir_vtk+"/vtk/out",
+                                      imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_reporter)
+        # NEW
+        vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
+        if not combine_solids:
+            vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
+            vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
+
+    # INLET VTK SLICE 2D
+    if args["vtk_slice_inlet"]:
+        vtk_inletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                      interval=int(vtk_interval),
+                                      filename_base=outdir_vtk + "/vtk/slice_inlet",
+                                      sliceXY=inlet_sliceXY,
+                                      sliceZ=inlet_sliceZ,
+                                      imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_inletSlice_reporter)
+
+    # INLET VTK SLICE 2D
+    if args["vtk_slice_outlet"]:
+        vtk_outletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                  interval=int(vtk_interval),
+                                                  filename_base=outdir_vtk + "/vtk/slice_outlet",
+                                                  sliceXY=outlet_sliceXY,
+                                                  sliceZ=outlet_sliceZ,
+                                                  imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_outletSlice_reporter)
 
     # export solid_mask
     # mask_dict = dict()
@@ -857,9 +903,9 @@ if vtk:
     # )
 
     # NEW
-    vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
+    ## OBEN: vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
 
-    if not combine_solids:
+    # OBEN: if not combine_solids:
         # export house_mask
         # mask_dict["mask"] = flow.house_mask.astype(int) if len(flow.shape) == 3 else flow.house_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
         # imageToVTK(
@@ -872,7 +918,7 @@ if vtk:
         # )
 
         #NEW
-        vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
+        # OBEN: vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
 
         # export ground_mask
         # mask_dict["mask"] = flow.ground_mask.astype(int) if len(flow.shape) == 3 else flow.ground_mask[..., None].astype(
@@ -887,7 +933,7 @@ if vtk:
         # )
 
         # NEW
-        vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
+        # OBEN: vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
 
 # PROGRESS REPORTER
 # progress_reporter = lt.ProgressReporter(flow, n_stop_target)
@@ -1177,6 +1223,38 @@ fig.suptitle(str(timestamp) + "\n" + name)
 plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()
+
+# PLOT testpoint timeline of p
+
+obs_testpoint = np.array(testpoint_reporter.out)
+
+    # PRESSURE
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(obs_testpoint[:, 1], obs_testpoint[:, 2])
+ax.set_xlabel("physical time / s")
+ax.set_ylabel("p_PU")
+#ax.set_ylim([0,0.3])
+secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+secax.set_xlabel("timesteps (simulation time / LU)")
+fig.suptitle(str(timestamp) + "\n" + name)
+plt.savefig(outdir+"/p_testpoint.png")
+if not cluster:
+    plt.show()
+
+    # U_MAGNITUDE
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(obs_testpoint[:, 1], np.sqrt(np.square(obs_testpoint[:, 3]) + np.square(obs_testpoint[:, 4]) + np.square(obs_testpoint[:, 5])))
+ax.set_xlabel("physical time / s")
+ax.set_ylabel("u_mag_PU")
+# ax.set_ylim([0,0.3])
+secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+secax.set_xlabel("timesteps (simulation time / LU)")
+fig.suptitle(str(timestamp) + "\n" + name)
+plt.savefig(outdir + "/u_mag_testpoint.png")
+if not cluster:
+    plt.show()
+# TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
+
 
 # TODO: export min/max p, Ma_max and u_max as obs-timeseries. (i,t,Val) - watch storage consumption
 
