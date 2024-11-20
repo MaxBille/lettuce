@@ -58,9 +58,9 @@ parser.add_argument("--outdir_vtk", default=None, type=str, help="")
 parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_inlet", action='store_true', help="toggle vtk-output of 2D slice for inlet-interaction analysis to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_outlet", action='store_true', help="toggle vtk-output of 2D slice for outlet-interaction analysis to outdir_vtk, if set True (1)")
-parser.add_argument("--vtk_slice_x", default=10, help="x_length of 2D vtk slice")
-parser.add_argument("--vtk_slice_y", default=5, help="y_height of 2D vtk slice")
-parser.add_argument("--vtk_slice_z", default=0, help="z location of 2D slice; NOT IMPLEMENTED")
+parser.add_argument("--vtk_slice_x", default=10, type=int, help="x_length of 2D vtk slice")
+parser.add_argument("--vtk_slice_y", default=5, type=int, help="y_height of 2D vtk slice")
+parser.add_argument("--vtk_slice_z", default=0, type=int, help="z location of 2D slice; NOT IMPLEMENTED")
 parser.add_argument("--vtk_fps", default=10, help="frames per second_PU for VTK output; overwritten if vtk_interval is specified")
 parser.add_argument("--vtk_interval", default=0, type=int, help="how many steps between vtk-output-files; overwrites vtk_fps")
 parser.add_argument("--vtk_t_interval", default=0, type=float, help="how many seconds between vtk-output-files; overwrites vtk_fps and vtk_interval; for low frequency output")
@@ -109,7 +109,9 @@ parser.add_argument("--domain_length_pu", default=60, type=float, help="flow-dir
 parser.add_argument("--domain_width_pu", default=40, type=float, help="cross-flow-direction domain width in PU")
 parser.add_argument("--domain_height_pu", default=30, type=float, help="cross-flow domain height in PU")
 
-parser.add_argument("--shift_u_inlet_lu", default=0, type=float, help="how many LU to shift the y_0 of u_inlet profile upwards (to mitigate interaction of ground_BC and inlet)" )
+parser.add_argument("--wsp_shift_up_lu", default=0, type=float, help="how many LU to shift the y_0 and y_ref of u_inlet profile upwards (to mitigate interaction of ground_BC and inlet)" )
+parser.add_argument("--wsp_y0_lu", default=0, type=float, help="zero-height for wind speed profile below which U(y<y0)=0")
+parser.add_argument("--wsp_alpha", default=0.25, type=float, help="exponent for wind speed profile power law.")
 
 parser.add_argument("--combine_solids", action='store_true', help="combine all solids (house and ground) into one object for easier prototyping")
 parser.add_argument("--no_house", action='store_true', help="if TRUE, removes house from simulation, for debugging of house-independent aspects")
@@ -189,6 +191,9 @@ if (vtk or args["save_animations"]) and not os.path.exists(outdir_vtk):
     os.makedirs(outdir_vtk)
 print(f"Outdir/simID = {outdir}/{sim_id}")
 print(f"Input arguments: {args}")
+
+# ADD options (argument)
+os.makedirs(outdir+"/PU_point_report")
 
 # save input parameters to file
 output_file = open(outdir+"/input_parameters.txt", "a")
@@ -529,28 +534,27 @@ ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
 
 
 # create unique ID of geometry parameters:
-geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_lu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
 house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
-# TODO: reformat to output_file.write('{:30s} {:30s}\n'.format(str(key), str(args[key])))
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
-output_file.write(f"\ncombine_solids = {combine_solids}")
-output_file.write(f"\nno_house = {args['no_house']}")
-output_file.write(f"\ndx_pu [m] = {(house_length_pu/house_length_lu):.4f}")
-output_file.write(f"\ndomain_constraints PU = {domain_constraints}")
-output_file.write(f"\ndomain shape LU = {shape}")
-output_file.write(f"\nhouse_position_PU (on XZ ground plane) = {house_position}")
-output_file.write(f"\nground_height PU = {ground_height_pu:.4f}")
-output_file.write(f"\nhouse_length LU = {house_length_lu}")
-output_file.write(f"\nhouse_length PU = {house_length_pu:.4f}")
-output_file.write(f"\nhouse width PU = {house_width_pu:.4f}")
-output_file.write(f"\neg height PU = {eg_height_pu:.4f}")
-output_file.write(f"\nroof height PU = {roof_height_pu:.4f}")
-output_file.write(f"\nroof angle = {roof_angle:.4f}")
-output_file.write(f"\noverhangs PU = {overhang_pu:.4f}")
+output_file.write("\n{:30s} = {}".format(str("combine_solids"),str(combine_solids)))
+output_file.write("\n{:30s} = {}".format(str("no_house"),args['no_house']))
+output_file.write("\n{:30s} = {}".format(str("dx_pu [m]"),f"{(house_length_pu/house_length_lu):.4f}"))
+output_file.write("\n{:30s} = {}".format(str("domain_constraints PU"),str(domain_constraints)))
+output_file.write("\n{:30s} = {}".format(str("domain shape LU"),str(shape)))
+output_file.write("\n{:30s} = {}".format(str("house_position_PU (on XZ ground plane)"),str(house_position)))
+output_file.write("\n{:30s} = {}".format(str("ground_height PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house_length LU"),str(house_length_lu)))
+output_file.write("\n{:30s} = {}".format(str("house_length PU"),f"{house_length_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house width PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("eg height PU"),f"{eg_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof height PU"),f"{roof_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof angle"),f"{roof_angle:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("overhangs PU"),f"{overhang_pu:.4f}"))
 output_file.write(f"\n")
 output_file.write(f"\ngeometry hash: {geometry_hash}")
 output_file.write(f"\n")
@@ -561,7 +565,7 @@ output_file.write(f"\n")
 output_file.write(f"\nground polygon PU: \n{np.array(ground_polygon)}")
 output_file.write(f"\n")
 output_file.write(f"\nhouse polygon LU: \n{res * np.array(house_polygon)}")
-output_file.write(f"\nmin/max z house PU: {(res*minz_house, res*maxz_house)}")
+output_file.write(f"\nmin/max z house LU: {(res*minz_house, res*maxz_house)}")
 output_file.write(f"\n")
 output_file.write(f"\nground polygon LU: \n{res * np.array(ground_polygon)}")
 output_file.write(f"\n")
@@ -632,7 +636,9 @@ flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
                    K_Factor=10,  # K_factor for SEI boundary inlet
                    L=3,  # L for SEI
                    N=34,  # N number of random voctices for SEI
-                   shift_u_in=args["shift_u_inlet_lu"]*1/res,  #how many PU to shift the u_inlet profile upwards, without altering the ground_height
+                   wsp_shift_up_pu=args["wsp_shift_up_lu"] * 1 / res,  #how many PU to shift the u_inlet profile upwards, without altering the ground_height
+                   wsp_y0=args["wsp_y0_lu"] * 1 / res,
+                   wsp_alpha=args["wsp_alpha"],
                    )
 
 # export flow physics to file:
@@ -803,9 +809,44 @@ min_max_p_pu_reporter = lt.ObservableReporter(max_p_pu_observable, interval=1, o
 simulation.reporters.append(min_max_p_pu_reporter)
 
 # POINT obs reporters
+#   - pro Spalte ein Plot mit pro Punkt (=Höhe) ein Graph)
 
-testpoint_reporter = lt.UPpointReporter(lattice,flow, index_lu=(2,2,int(shape[2]/2)), interval=1, out=None)
-simulation.reporters.append(testpoint_reporter)
+# outdir+"/PU_point_report"
+
+# mit meshgrid:
+x_positions_lu = np.array([1,2,3,int(shape[0]*0.25), int(shape[0]*0.5)])   #TODO: add outlet-checker-points later
+y_positions_lu = np.array([0,1,2,3,int(shape[1]*0.25), int(shape[1]*0.5)])
+z_position_lu = int(shape[2]/2)
+
+# OPT: make 2D list of the reporters...
+up_point_reporters = [None] * x_positions_lu.shape[0]
+laufvariable_x = 0
+for x_position_lu in x_positions_lu:
+    up_point_reporters[laufvariable_x] = [None] * y_positions_lu.shape[0]
+    laufvariable_y = 0
+    for y_position_lu in y_positions_lu:
+        up_point_reporters[laufvariable_x][laufvariable_y] = lt.UPpointReporter(lattice, flow, index_lu=(x_position_lu,y_position_lu,z_position_lu), interval=1, out=None)
+        simulation.reporters.append(up_point_reporters[laufvariable_x][laufvariable_y])
+        laufvariable_y += 1
+    laufvariable_x += 1
+
+# measurement_points_LU = [[1,0,int(shape[2]/2)],  # on ground-boundary nodes
+#                          [2,0,int(shape[2]/2)],
+#                          [3,0,int(shape[2]/2)],
+#                          [int(shape[0]*0.25),0,int(shape[2]/2)],
+#                          [1,1,int(shape[2]/2)],  # first fluid layer above ground
+#                          [2,1,int(shape[2]/2)],
+#                          [3,1,int(shape[2]/2)],
+#                          [1,2,int(shape[2]/2)],  # second fluid layer above ground
+#                          [2,2,int(shape[2]/2)],
+#                          [3,2,int(shape[2]/2)],
+#                          [1,3,int(shape[2]/2)],  # third fluid layer above ground
+#                          [2,3,int(shape[2]/2)],
+#                          [3,3,int(shape[2]/2)],
+#                          []]
+
+# testpoint_reporter = lt.UPpointReporter(lattice,flow, index_lu=(2,2,int(shape[2]/2)), interval=1, out=None)
+# simulation.reporters.append(testpoint_reporter)
 
 
 # VTK REPORTER
@@ -1181,6 +1222,7 @@ else:  # plots final u_mag and p fields
 # PLOT max. Ma in domain over time...
 fig, ax = plt.subplots(constrained_layout=True)
 max_u_lu = np.array(max_u_lu_reporter.out)
+np.savetxt(outdir + f"/max_u_lu_timeseries.txt", max_u_lu, header="stepLU  |  timePU  |  u_mag_max_LU")
 ax.plot(max_u_lu[:, 1], max_u_lu[:, 2]/lattice.convert_to_numpy(lattice.cs))
 ax.set_xlabel("physical time / s")
 ax.set_ylabel("maximum Ma")
@@ -1209,6 +1251,7 @@ if not cluster:
 # PLOT max/min p for abs. analysis
 fig, ax = plt.subplots(constrained_layout=True)
 min_max_p_pu = np.array(min_max_p_pu_reporter.out)
+np.savetxt(outdir + f"/min_max_p_pu_timeseries.txt", min_max_p_pu, header="stepLU  |  timePU  |  p_min_PU  |  p_max_PU")
 ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
 ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
 ax.set_xlabel("physical time / s")
@@ -1225,35 +1268,86 @@ if not cluster:
     plt.show()
 
 # PLOT testpoint timeline of p
+#
+# obs_testpoint = np.array(testpoint_reporter.out)
+#
+#     # PRESSURE
+# fig, ax = plt.subplots(constrained_layout=True)
+# ax.plot(obs_testpoint[:, 1], obs_testpoint[:, 2])
+# ax.set_xlabel("physical time / s")
+# ax.set_ylabel("p_PU")
+# y_lim_50_min = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 2].min()
+# y_lim_50_max = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 3].max()
+# ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_max)])  # show 10% more above and below
+# secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+# secax.set_xlabel("timesteps (simulation time / LU)")
+# fig.suptitle(str(timestamp) + "\n" + name + " TESTPOINT")
+# plt.savefig(outdir+"/p_testpoint.png")
+# if not cluster:
+#     plt.show()
+#
+#     # U_MAGNITUDE
+# fig, ax = plt.subplots(constrained_layout=True)
+# ax.plot(obs_testpoint[:, 1], np.sqrt(np.square(obs_testpoint[:, 3]) + np.square(obs_testpoint[:, 4]) + np.square(obs_testpoint[:, 5])), label="u_mag_pu")
+# ax.set_xlabel("physical time / s")
+# ax.set_ylabel("u_mag_PU")
+# y_lim_50 = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+# ax.set_ylim([0, y_lim_50*1.1])  # show 10% more than u_mag_max
+# ax.axhline(y=flow.units.characteristic_velocity_pu, color='tab:green', ls=":", label="characteristic velocity")
+# ax.axhline(y=flow.units.convert_velocity_to_pu(lattice.convert_to_numpy(lattice.cs)*0.3), color='tab:red', ls=":", label="Ma = 0.3")
+# secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+# secax.set_xlabel("timesteps (simulation time / LU)")
+# fig.suptitle(str(timestamp) + "\n" + name + " TESTPOINT")
+# ax.legend()
+# plt.savefig(outdir + "/u_mag_testpoint.png")
+# if not cluster:
+#     plt.show()
+# # TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
 
-obs_testpoint = np.array(testpoint_reporter.out)
+# PRESSURE and VELOCITY at points
+for i in range(len(x_positions_lu)):
+    fig_pressure, ax_pressure = plt.subplots(constrained_layout=True)
+    fig_velocity, ax_velocity = plt.subplots(constrained_layout=True)
+    for j in range(len(y_positions_lu)):
+        data = np.array(up_point_reporters[i][j].out)
+        np.savetxt(outdir + f"/PU_point_report/p_xyz{up_point_reporters[i][j].index_lu}.txt", data, header="stepLU  |  timePU  |  p  |  ux  | uy  |  uz  (obs. in PU)")
+        ax_pressure.plot(data[:,1], data[:,2], label=f"p at {up_point_reporters[i][j].index_lu}")
+        ax_velocity.plot(data[:, 1], np.sqrt(np.square(data[:, 3]) + np.square(data[:, 4]) + np.square(data[:, 5])), label=f"u_mag at {up_point_reporters[i][j].index_lu}")
+    ax_pressure.set_xlabel("physical time / s")
+    ax_velocity.set_xlabel("physical time / s")
+    ax_pressure.set_ylabel("p_PU")
+    ax_velocity.set_ylabel("u_mag_PU")
 
-    # PRESSURE
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(obs_testpoint[:, 1], obs_testpoint[:, 2])
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("p_PU")
-#ax.set_ylim([0,0.3])
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + name)
-plt.savefig(outdir+"/p_testpoint.png")
-if not cluster:
-    plt.show()
+    y_max_velocity = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0] / 1.3),2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+    ax_velocity.set_ylim([0, y_max_velocity * 1.1])  # show 10% more than u_mag_max
+    y_min_pressure = min_max_p_pu[:int(min_max_p_pu.shape[0] / 1.3), 2].min()
+    y_max_pressure = min_max_p_pu[:int(min_max_p_pu.shape[0] / 1.3), 3].max()
+    ax_pressure.set_ylim([y_min_pressure - 0.1 * abs(y_min_pressure),
+                 y_max_pressure + 0.1 * abs(y_max_pressure)])  # show 10% more above and below
 
-    # U_MAGNITUDE
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(obs_testpoint[:, 1], np.sqrt(np.square(obs_testpoint[:, 3]) + np.square(obs_testpoint[:, 4]) + np.square(obs_testpoint[:, 5])))
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("u_mag_PU")
-# ax.set_ylim([0,0.3])
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + name)
-plt.savefig(outdir + "/u_mag_testpoint.png")
-if not cluster:
-    plt.show()
-# TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
+    ax_velocity.axhline(y=flow.units.characteristic_velocity_pu, color='tab:green', ls=":", label="characteristic velocity")
+    ax_velocity.axhline(y=flow.units.convert_velocity_to_pu(lattice.convert_to_numpy(lattice.cs) * 0.3), color='tab:red', ls=":",
+               label="Ma = 0.3")
+
+    secax_u = ax_velocity.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax_u.set_xlabel("timesteps (simulation time / LU)")
+    secax_p = ax_pressure.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax_p.set_xlabel("timesteps (simulation time / LU)")
+
+    fig_pressure.suptitle(str(timestamp) + "\n" + name + " \n" + f"p(y,t) at x = {up_point_reporters[i][j].index_lu[0]}")
+    ax_pressure.legend()
+    fig_pressure.savefig(outdir + f"/PU_point_report/p_xlu{up_point_reporters[i][j].index_lu[0]:03d}.png")
+    if not cluster:
+        fig_pressure.show()
+
+    fig_velocity.suptitle(
+        str(timestamp) + "\n" + name + " \n" + f"u_mag(y,t) at x = {up_point_reporters[i][j].index_lu[0]}")
+    ax_velocity.legend()
+    fig_velocity.savefig(outdir + f"/PU_point_report/u_mag_xlu{up_point_reporters[i][j].index_lu[0]:03d}.png")
+    if not cluster:
+        fig_velocity.show()
+
+
 
 
 # TODO: export min/max p, Ma_max and u_max as obs-timeseries. (i,t,Val) - watch storage consumption

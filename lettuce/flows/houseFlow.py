@@ -21,7 +21,8 @@ class HouseFlow3D(object):
     def __init__(self, shape: tuple, reynolds_number: float, mach_number: float, lattice: Lattice,
                  domain_constraints: tuple, char_length_lu: float,
                  char_length_pu: float = 1, char_velocity_pu=1, u_init: 0 or 1 or 2 = 0,
-                 reference_height_pu = 0, ground_height_pu = 0,
+                 reference_height_pu = 0,  # with respect to ground_height_PU!, PU-height, at which char_velocity_pu is in inflow-profile (relevant for WSP, see below)
+                 ground_height_pu = 0,  # PU-height of groundlevel from which the building hight and WSP height is calculated against; basically the offset between PU-GRID-coordinates and PU-house-coordinates
                  inlet_bc: str = "eqin", outlet_bc: str = "eqoutp", ground_bc: str = "fwbb", house_bc: str = "fwbb",
                  top_bc: str = "zgo",
                  house_solid_boundary_data = None,
@@ -29,7 +30,9 @@ class HouseFlow3D(object):
                  K_Factor=10,  # K_factor for SEI boundary inlet
                  L=3,  # L for SEI
                  N=34,  # N number of random vortices for SEI
-                 shift_u_in=None  # how many PU to shift the u_inlet profile UP
+                 wsp_shift_up_pu=0,  # how many PU to shift the u_inlet profile UP
+                 wsp_y0=None,  # y0 up until which u=0 for wind speed profile (not a shift, but set of zero-height -> compresses profile)
+                 wsp_alpha=0.25
                  ):
         # flow and boundary settings
         self.u_init = u_init  # toggle: initial solution velocity profile type
@@ -41,7 +44,14 @@ class HouseFlow3D(object):
         self.domain_constraints = domain_constraints  # ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem in PU, abh. von der stl und deren ursprung
         self.reference_height_pu = reference_height_pu
         self.ground_height_pu = ground_height_pu
-        self.shift_u_in = shift_u_in
+
+        # wind speed profile parameters
+        if wsp_y0 is None:
+            self.wsp_y0 = ground_height_pu
+        else:
+            self.wsp_y0 = wsp_y0
+        self.wsp_shift_up_pu = wsp_shift_up_pu
+        self.wsp_alpha = wsp_alpha
 
         # bc_types
         self.inlet_bc = inlet_bc
@@ -106,19 +116,11 @@ class HouseFlow3D(object):
             # print(f"p.shape = {p.shape}")
             pass
         elif self.u_init == 1:  # 1: simple velocity profile everywhere, where there is no other BC  # "profile"
-            u[0] = self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
+            u[0] = self.wind_speed_profile_power_law(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
-                                           y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
-                                           u_ref=self.units.characteristic_velocity_pu,
-                                           # characteristic velocity at reference height (EG or ROOF)
-                                           alpha=0.4)
-            # self.wind_speed_profile(np.where(self.solid_mask, 0, y)[0],
-            #                         y_ref=self.reference_height_pu,  # REFERENCE height (roof_height or eg_height)
-            #                         y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
-            #                         u_ref=self.units.characteristic_velocity_pu,
-            #                         # characteristic velocity at reference height (EG or ROOF)
-            #                         alpha=0.25)
-            # TODO: implement simple global velocity profile by broadcasting simple WSP-inlet-profile
+                                           y_0=self.wsp_y0,
+                                           u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
+                                           alpha=self.wsp_alpha)
         elif self.u_init == 2:  # 2: u-profile adjusted to obstacle-geometry  # "profile that is attenuated up to 1/5 of domain length
             # PHILIPPS version with height-shift
             # TODO: implement semi-simple global velocity profile by broadcasting simple WSP-inlet-profile and adjusting height to max. Solid-Height at each XZ-position
@@ -129,12 +131,11 @@ class HouseFlow3D(object):
             for x_i in range(y_fifth_index):
                 k_factor[x_i,:,:] = (y_fifth_index-x_i)/y_fifth_index
 
-            u[0] = k_factor * self.wind_speed_profile(np.where(self.solid_mask, 0, x[1]),
+            u[0] = k_factor * self.wind_speed_profile_power_law(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
-                                           y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
-                                           u_ref=self.units.characteristic_velocity_pu,
-                                           # characteristic velocity at reference height (EG or ROOF)
-                                           alpha=0.4)
+                                           y_0=self.wsp_y0,
+                                           u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
+                                           alpha=self.wsp_alpha)
 
 
             pass
@@ -177,11 +178,13 @@ class HouseFlow3D(object):
         # TODO: pass periodicity to Solid BCs (FWBB, HWBB, IBB).
 
         # initialize wind_speed_profile for inlet BC
-        u_inlet_x = self.wind_speed_profile(np.where(self.solid_mask, 0, y),
-                                     y_ref=self.reference_height_pu, # REFERENCE height (roof_height or eg_height)
-                                     y_0=self.ground_height_pu if (self.shift_u_in is None) else self.ground_height_pu + self.shift_u_in,
-                                     u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
-                                     alpha=0.4)[0, np.newaxis,...]
+        u_inlet_x = self.wind_speed_profile_power_law(np.where(self.solid_mask, 0, y),
+                                                      y_ref=self.reference_height_pu,
+                                                      # REFERENCE height (roof or eg_height)
+                                                      y_0=self.wsp_y0,
+                                                      u_ref=self.units.characteristic_velocity_pu,
+                                                      # characteristic velocity at reference height (EG or ROOF)
+                                                      alpha=self.wsp_alpha)[0, np.newaxis,...]
         u_inlet_y = np.zeros_like(u_inlet_x)
         print(f"u_inlet_x.shape = {u_inlet_x.shape}")
        # print("u_inlet_x:\n", u_inlet_x)
@@ -196,7 +199,7 @@ class HouseFlow3D(object):
                                                              #                         y_ref=self.reference_height_pu, # REFERENCE height (roof_height or eg_height)
                                                              #                         y_0=self.ground_height_pu,
                                                              #                         u_ref=self.units.characteristic_velocity_pu, # characteristic velocity at reference height (EG or ROOF)
-                                                             #                         alpha=0.4))
+                                                             #                         alpha=0.25))
             # inlet_boundary_condition = lt.EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units, u[:, 0, ...], p[0, 0, ...])
         elif self.inlet_bc.casefold() == 'nex':
             inlet_boundary_condition = NonEquilibriumExtrapolationInletU(self.units.lattice, self.units, [-1, 0, 0],
@@ -210,7 +213,7 @@ class HouseFlow3D(object):
                                                           u_0=self.units.characteristic_velocity_pu,
                                                           K=self.K_Factor * 10,
                                                           L=L, N=N, R=self.reyolds_stress_tensor,
-                                                          velocityProfile=self.wind_speed_profile)
+                                                          velocityProfile=self.wind_speed_profile_power_law)
         else:
             print("(!) flow-class encountered illegal inlet_bc-parameter! Using EquilibriumBoundaryPU")
             inlet_boundary_condition = EquilibriumBoundaryPU(self.in_mask, self.units.lattice, self.units, u_inlet)
@@ -407,7 +410,7 @@ class HouseFlow3D(object):
         print(f"calculate_non_free_flow_mask took {floor(time1/ 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return
 
-    def wind_speed_profile(self, y, y_ref=None, y_0=0, u_ref=None, alpha=0.25):
+    def wind_speed_profile(self, y, y_ref=None, y_0=None, u_ref=None, alpha=0.25):
         # exponential wind speed profile from QUELLE, with ZERO velocity at y_0 and u_ref at y_ref+y_0
         # alle Angaben in PU, y in absolute PU relative to (0,0,0)
         # FRAGE: soll y_ref die Höhe vom Boden oder die Absoluthöhe sein?
@@ -415,12 +418,46 @@ class HouseFlow3D(object):
         if y_ref == None:
             y_ref = self.reference_height_pu
 
+        if y_0 == None:
+            y_0 = self.ground_height_pu
+
         # TODO: y_0 is the ground_height and reference ZERO-height for profile. add u_0_height at which the profile starts and is stretched, u_ref at y_ref stays relative to y_0
         #return torch.where(y < y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
         #print("y_0, y_ref, alpha:", y_0, y_ref, alpha)
         # print("y:", y)
        # print("WSP is:\n", np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha))
         return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / y_ref) ** alpha)
+
+    def wind_speed_profile_power_law(self, y, y_ref=None, y_0=None, u_ref=None, alpha=0.25):
+        # WIND SPEED Power law: u(height)/u_ref = (height/height_ref)^alpha
+        # known reference speed u_ref at height y_ref. Extrapolates wind speed u at y (in m)
+        # alpha: empirically derived coefficient, depends on atmospheric stability (wikipedia 1/7~1.43; Tominaga/MLK: 0.25)
+        # TODO. research correct alpha-value in EUROCODE reference
+        # (!) all units in PU
+
+        # y is absolute PU-coordinates relative to grid
+
+        if self.wsp_shift_up_pu != 0:
+            print(f"(WSP_powerLaw): wsp_shift_up_pu is not 0! WSP is shifted up by {self.wsp_shift_up_pu} meters!")
+
+        if u_ref is None:
+            print(f"(WSP_powerLaw): u_ref for WSP_powerLaw is not set, taking U_char as u-ref")
+            u_ref = self.units.characteristic_velocity_pu
+
+        if y_ref == None:
+            # absolute reference height in PU-grid-coordinates; height at which u_ref is present
+            y_ref = self.reference_height_pu+self.ground_height_pu+self.wsp_shift_up_pu
+
+        if y_0 == None:
+            # absolute zero-height of WSP in PU-grid-coordinates; height at and below which u(y<=y_0)=0
+            y_0 = self.ground_height_pu+self.wsp_shift_up_pu
+
+        # Q: reference y_0 to PU=LU=0 or to ground_height? -> reference to PU=0
+        # Q: reference y_ref to PU=LU=0 or to ground height, or to y_0? -> reference to PU=0
+
+        # POWER LAW: from u(y<=y_0)=0 to u(y=y_ref)=u_ref with exponent alpha
+        return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / (y_ref-y_0)) ** alpha)
+
 
     def wind_speed_profile_turb(self, y, u_0):
         ## entspricht 3D_literature_neue_Boundary "wsp" und TestSEMBoundary/Empty/...
@@ -451,6 +488,7 @@ class HouseFlow3D(object):
         stress = torch.ones(z.shape + (3, 3), device=self.units.lattice.device)
         z_0 = 0.02
         z_min = 1.2
+        #TODO: which WSP to take: originally this was done with "wind speed profile" -> what does MLK take?
         stress[..., 0, 0] = torch.where(z > z_min, (
                     (1 - 2e-4 * (np.log10(z_0) + 3) ** 6) / torch.log(z / z_0)) ** 2 * self.wind_speed_profile(z,
                                                                                                                u_0) ** 2,
