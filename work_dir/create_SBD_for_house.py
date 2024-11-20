@@ -164,6 +164,7 @@ print(f"-> Domain LU shape = {shape}")
 # house_polygon = [[15, 0+ground_height_pu], [15, 10+ground_height_pu], [14, 10+ground_height_pu], [20, 15.5+ground_height_pu],
 #                      [26, 10+ground_height_pu], [25, 10+ground_height_pu], [25, 0+ground_height_pu]]
 print("Defining house and ground 2D polygon for OCC solid generation...")
+# INFO: the house_foundation is slightly lowered into the ground, so that solid_combination etc. works well. Ground ist still precise by itself!
 house_polygon = [[house_position[0]-house_length_pu/2, ground_height_pu*0.999],  # bottom left (slightly lowered into ground for easy combination)
                  [house_position[0]-house_length_pu/2, eg_height_pu+ground_height_pu],  # top left eg
                  [house_position[0]-house_length_pu/2-overhang_pu, eg_height_pu+ground_height_pu],  # top left roof
@@ -181,28 +182,42 @@ ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
 
 
 # create unique ID of geometry parameters:
-geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_pu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_lu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
 house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
-output_file.write(f"\ncombine_solids = {combine_solids}")
-output_file.write(f"\nno_house = {args['no_house']}")
-output_file.write(f"\ndx_pu [m] = {(house_length_pu/house_length_lu):.4f}")
-output_file.write(f"\ndomain_constraints PU = {domain_constraints}")
-output_file.write(f"\ndomain shape LU = {shape}")
-output_file.write(f"\nhouse_position_PU (on XZ ground plane) = {house_position}")
-output_file.write(f"\nground_height PU = {ground_height_pu:.4f}")
-output_file.write(f"\nhouse_length LU = {house_length_lu}")
-output_file.write(f"\nhouse_length PU = {house_length_pu:.4f}")
-output_file.write(f"\nhouse width PU = {house_width_pu:.4f}")
-output_file.write(f"\neg height PU = {eg_height_pu:.4f}")
-output_file.write(f"\nroof height PU = {roof_height_pu:.4f}")
-output_file.write(f"\nroof angle = {roof_angle:.4f}")
-output_file.write(f"\noverhangs PU = {overhang_pu:.4f}")
-output_file.write(f"\n\ngeometry hash: {geometry_hash}")
+output_file.write("\n{:30s} = {}".format(str("combine_solids"),str(combine_solids)))
+output_file.write("\n{:30s} = {}".format(str("no_house"),args['no_house']))
+output_file.write("\n{:30s} = {}".format(str("dx_pu [m]"),f"{(house_length_pu/house_length_lu):.4f}"))
+output_file.write("\n{:30s} = {}".format(str("domain_constraints PU"),str(domain_constraints)))
+output_file.write("\n{:30s} = {}".format(str("domain shape LU"),str(shape)))
+output_file.write("\n{:30s} = {}".format(str("house_position_PU (on XZ ground plane)"),str(house_position)))
+output_file.write("\n{:30s} = {}".format(str("ground_height PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house_length LU"),str(house_length_lu)))
+output_file.write("\n{:30s} = {}".format(str("house_length PU"),f"{house_length_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house width PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("eg height PU"),f"{eg_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof height PU"),f"{roof_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof angle"),f"{roof_angle:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("overhangs PU"),f"{overhang_pu:.4f}"))
+output_file.write(f"\n")
+output_file.write(f"\ngeometry hash: {geometry_hash}")
+output_file.write(f"\n")
+output_file.write(f"\nHOUSE & GROUND corner coordinates (2D):")
+output_file.write(f"\nhouse polygon PU: \n{np.array(house_polygon)}")
+output_file.write(f"\nmin/max z house PU: {(minz_house, maxz_house)}")
+output_file.write(f"\n")
+output_file.write(f"\nground polygon PU: \n{np.array(ground_polygon)}")
+output_file.write(f"\n")
+output_file.write(f"\nhouse polygon LU: \n{res * np.array(house_polygon)}")
+output_file.write(f"\nmin/max z house LU: {(res*minz_house, res*maxz_house)}")
+output_file.write(f"\n")
+output_file.write(f"\nground polygon LU: \n{res * np.array(ground_polygon)}")
+output_file.write(f"\n")
+# res = LU/m
 output_file.close()
 
 ## CALCULATE SOLID BOUNDARY DATA
@@ -218,8 +233,7 @@ if combine_solids:
     print("(INFO) combine_solids==True -> Combining Shapes of house and ground...")
     house_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(house_prism_shape, ground_prism_shape).Shape())
     time11 = time()
-    print(
-        f"(TIME) Combining TopoDS_Shapes took {floor((time11 - time1) / 60):02d}:{floor((time11 - time1) % 60):02d} [mm:ss]")
+    print(f"(TIME) Combining TopoDS_Shapes took {floor((time11 - time1) / 60):02d}:{floor((time11 - time1) % 60):02d} [mm:ss]")
 
 time1 = time()
 
@@ -237,6 +251,9 @@ if not args["no_house"]:
                                            cluster=cluster,
                                            verbose=verbose
                                            )
+else:
+    print("(!) (INFO) no_house == True, no house geometry will be included in the simulation")
+
 ground_solid_boundary_data = None
 if not combine_solids:
     print("(INFO) Calculating ground_solid_boundary_data...")

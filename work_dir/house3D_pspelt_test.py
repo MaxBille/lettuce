@@ -495,6 +495,7 @@ else:
 
 
 # TODO: auslagern von "CreateSBD...", damit ich das nicht an zwei verschiedenen Stellen anpassen muss...
+#   an sich wäre es gut diesen code "einfach" zu haben und dann von hier nur extern aufzurufen, damit ich nicht copy-paste und versions-fehler bekomme
 
 # DOMAIN constraints in PU
 print("Defining domain constraints...")
@@ -814,9 +815,12 @@ simulation.reporters.append(min_max_p_pu_reporter)
 # outdir+"/PU_point_report"
 
 # mit meshgrid:
-x_positions_lu = np.array([1,2,3,int(shape[0]*0.25), int(shape[0]*0.5)])   #TODO: add outlet-checker-points later
-y_positions_lu = np.array([0,1,2,3,int(shape[1]*0.25), int(shape[1]*0.5)])
-z_position_lu = int(shape[2]/2)
+x_positions_lu = np.array([1,2,3,  # inlet
+                           int(shape[0]*0.25), int(shape[0]*0.5), int(shape[0]*0.75),  # domain
+                           shape[0]-3, shape[0]-2, shape[0]-1])  # outlet
+y_positions_lu = np.array([0,1,2,3,  # ground and above
+                           int(shape[1]*0.25), int(shape[1]*0.5)])  # 25% and 50% height of domain
+z_position_lu = int(shape[2]/2)  # center plane in z-direction (cross stream)
 
 # OPT: make 2D list of the reporters...
 up_point_reporters = [None] * x_positions_lu.shape[0]
