@@ -1,5 +1,5 @@
 ### IMPORT
-import os
+import os, shutil
 import hashlib
 import resource
 import sys
@@ -36,7 +36,7 @@ parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory t
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
-parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to coordinate system")
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute LU coordinates relative to coordinate system")
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
@@ -76,6 +76,12 @@ os.makedirs(outdir+"/"+dir_id)
 print(f"Outdir/simID = {outdir}/{dir_id}")
 outdir = outdir+"/"+dir_id # adding individal sim-ID to outdir path to get individual DIR per simulation
 print(f"Input arguments: {args}")
+
+### SAVE SCRIPT: save this script to outdir
+print(f"\nSaving simulation script to outdir...")
+temp_script_name = dir_id + "_" + os.path.basename(__file__)
+shutil.copy(__file__, outdir+"/"+temp_script_name)
+print(f"Saved simulation script to '{str(outdir+'/'+temp_script_name)}'")
 
 # START LOGGER -> get all terminal output into file
 old_stdout = sys.stdout
@@ -198,7 +204,7 @@ output_file.write("\n{:30s} = {}".format(str("house_position_PU (on XZ ground pl
 output_file.write("\n{:30s} = {}".format(str("ground_height PU"),f"{ground_height_pu:.4f}"))
 output_file.write("\n{:30s} = {}".format(str("house_length LU"),str(house_length_lu)))
 output_file.write("\n{:30s} = {}".format(str("house_length PU"),f"{house_length_pu:.4f}"))
-output_file.write("\n{:30s} = {}".format(str("house width PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house width PU"),f"{house_width_pu:.4f}"))
 output_file.write("\n{:30s} = {}".format(str("eg height PU"),f"{eg_height_pu:.4f}"))
 output_file.write("\n{:30s} = {}".format(str("roof height PU"),f"{roof_height_pu:.4f}"))
 output_file.write("\n{:30s} = {}".format(str("roof angle"),f"{roof_angle:.4f}"))
