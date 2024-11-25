@@ -97,7 +97,7 @@ parser.add_argument("--eqlm", action="store_true", help="use Equilibium LessMemo
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
-parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to coordinate system")  # characteristic length LU, in flow direction
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to (?) coordinate system")  # characteristic length LU, in flow direction
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
@@ -998,7 +998,7 @@ if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk+"/vtk", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
