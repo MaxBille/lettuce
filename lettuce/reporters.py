@@ -59,7 +59,10 @@ class VTKReporter:
     def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0, imax=None):
         self.lattice = lattice
         self.flow = flow
-        self.interval = interval
+        if interval < 0:
+            self.interval = 1
+        else:
+            self.interval = interval
         self.filename_base = filename_base
         self.imin=imin
         if imax is None:
@@ -74,7 +77,7 @@ class VTKReporter:
             self.solid_mask = solid_mask
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
-            os.mkdir(directory)
+            os.makedirs(directory)
         self.point_dict = dict()
 
     def __call__(self, i, t, f):
@@ -186,7 +189,7 @@ class VTKsliceReporter:
 
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
-            os.mkdir(directory)
+            os.makedirs(directory)
 
         self.point_dict = dict()
 
@@ -404,7 +407,7 @@ class VRAMreporter:
         self.filename_base = filename_base
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
-            os.mkdir(directory)
+            os.makedirs(directory)
     def __call__(self, i, t, f):
         if i % self.interval == 0:
             # export CUDA-VRAM-summary + index
@@ -746,6 +749,8 @@ class AverageVelocityReporter:
             self.x_pos2 = int(np.ceil(position))
             self.w1 = position - self.x_pos1
             self.w2 = 1 - self.w1
+        else:
+            self.interpol = False
 
     def __call__(self, i, t, f):
         if i % self.interval == 0 and i >= self.start:

@@ -203,7 +203,7 @@ class HouseFlow3D(object):
             # inlet_boundary_condition = lt.EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units, u[:, 0, ...], p[0, 0, ...])
         elif self.inlet_bc.casefold() == 'nex':
             inlet_boundary_condition = NonEquilibriumExtrapolationInletU(self.units.lattice, self.units, [-1, 0, 0],
-                                                                         np.array(self.initial_solution(self.grid)[1]))  # original aus der Arbeit
+                                                                         np.array(self.initial_solution(self.grid)[1]))  # original aus der Arbeit, Übergibt die y-Koordinaten aller grid-Punkte und erzeugt so die von y abhängige initial solution für das komplette Feld. Wird für MLKs Rechnung in Feld-Größe benötigt
         elif self.inlet_bc.casefold() == 'sei':
             inlet_boundary_condition = SyntheticEddyInlet(self.units.lattice,
                                                           self.units,

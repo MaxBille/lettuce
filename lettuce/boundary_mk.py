@@ -74,12 +74,14 @@ class ZeroGradientOutlet(object):
         return no_stream_mask
 
 
-## STAND 29.05.24 läuft die NEX-Boundary MIT no_sreaming (alle pops. besser als > nur velocity_in),OHNE no_collision und OHNE Filter am stabilsten (Re2000 test, s.ohneNote MK Code 13./14./15.5.24)
+## STAND 29.05.24 läuft die NEX-Boundary MIT no_sreaming (alle pops. besser als > nur velocity_in),OHNE no_collision und OHNE Filter am stabilsten (Re2000 test, s.oneNote MK Code 13./14./15.5.24)
 class NonEquilibriumExtrapolationInletU(object):
     """ Guo's boundary condition
         https://www.researchgate.net/publication/230963379_Non-equilibrium_extrapolation_method_for_velocity_and_boundary_conditions_in_the_lattice_Boltzmann_method
         and LBM book page 189
         """
+    # (!) MLK hatte KEINE NSM und KEINE NCM in seiner MPInew Implementierung. Jedoch war eine NSM geschrieben und auskommentiert, mit der Frage, ob sie nicht "sein müsste".
+    #   Da herrschte offenbar Unklarheit.
 
     def __init__(self, lattice, units, direction, u_w):
         # assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \

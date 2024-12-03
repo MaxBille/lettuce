@@ -276,6 +276,9 @@ class InterpolatedBounceBackBoundary:
     def store_f_collided(self, f_collided):
         self.f_collided = torch.clone(f_collided)
 
+    def initialize_f_collided(self):
+        self.f_collided = torch.zeros_like(self.f_mask, device=self.lattice.device, dtype=self.lattice.dtype)
+
 
 class InterpolatedBounceBackBoundary_compact_v1:
 
@@ -921,6 +924,15 @@ class InterpolatedBounceBackBoundary_compact_v2:
                                                               self.f_index_gt[:, 1],  # x
                                                               self.f_index_gt[:, 2],  # y
                                                               self.f_index_gt[:, 3]])  # z
+
+    def initialize_f_collided(self):
+        f_collided_lt = torch.zeros_like(self.d_lt)  # float-tensor with number of (x_b nodes with d<=0.5) values
+        f_collided_gt = torch.zeros_like(self.d_gt)  # float-tensor with number of (x_b nodes with d>0.5) values
+        f_collided_lt_opposite = torch.zeros_like(self.d_lt)
+        f_collided_gt_opposite = torch.zeros_like(self.d_gt)
+        self.f_collided_lt = torch.stack((f_collided_lt, f_collided_lt_opposite), dim=1)
+        self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
+        # TODO: this is copy-paste from IBBc2.init. IBBc2 and the BBBC in general should be cleaned up and adjusted to new OCC-stuff...
 
 class InterpolatedBounceBackBoundary_occ:
     """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.

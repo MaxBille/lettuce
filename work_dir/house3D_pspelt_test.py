@@ -58,6 +58,7 @@ parser.add_argument("--outdir_vtk", default=None, type=str, help="")
 parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_inlet", action='store_true', help="toggle vtk-output of 2D slice for inlet-interaction analysis to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_outlet", action='store_true', help="toggle vtk-output of 2D slice for outlet-interaction analysis to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_2D", action='store_true', help="toggle vtk-output of 2D slice for WHOLE DOMAIN (!) to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_x", default=10, type=int, help="x_length of 2D vtk slice")
 parser.add_argument("--vtk_slice_y", default=5, type=int, help="y_height of 2D vtk slice")
 parser.add_argument("--vtk_slice_z", default=0, type=int, help="z location of 2D slice; NOT IMPLEMENTED")
@@ -919,7 +920,7 @@ if vtk or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
     if args["vtk_slice_inlet"]:
         vtk_inletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
                                       interval=int(vtk_interval),
-                                      filename_base=outdir_vtk + "/vtk/slice_inlet",
+                                      filename_base=outdir_vtk + "/vtk/slice_inlet/slice_inlet",
                                       sliceXY=inlet_sliceXY,
                                       sliceZ=inlet_sliceZ,
                                       imin=vtk_i_start, imax=vtk_i_end)
@@ -929,12 +930,40 @@ if vtk or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
     if args["vtk_slice_outlet"]:
         vtk_outletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
                                                   interval=int(vtk_interval),
-                                                  filename_base=outdir_vtk + "/vtk/slice_outlet",
+                                                  filename_base=outdir_vtk + "/vtk/slice_outlet/slice_outlet",
                                                   sliceXY=outlet_sliceXY,
                                                   sliceZ=outlet_sliceZ,
                                                   imin=vtk_i_start, imax=vtk_i_end)
         simulation.reporters.append(vtk_outletSlice_reporter)
 
+    # WHOLE DOMAIN SLICE 2D
+    if args["vtk_slice_2D"]:
+        vtk_domainSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                       interval=int(vtk_interval),
+                                                       filename_base=outdir_vtk + "/vtk/slice_domain/slice_domain",
+                                                       sliceXY=([0,shape[0]-1],[0,shape[1]-1]),
+                                                       sliceZ=outlet_sliceZ,
+                                                       imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_domainSlice_reporter)
+
+    # vtk_slices for specific intervals
+    i_intervals_vtk_domain_slice = np.array([[0,1000],
+                                             [5000,5050],
+                                             [20000,20050],
+                                             [40000,40050],
+                                             [60000,60050],
+                                             [80000,80050],
+                                             [99950,100000]])
+    vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
+    for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
+        print(f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max,0]}, {i_intervals_vtk_domain_slice[interval_min_max,1]}]")
+        vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
+                                                       interval=1,
+                                                       filename_base=outdir_vtk + "/vtk/slice_domain_intervals/slice_domain_intervals",
+                                                       sliceXY=([0,flow.shape[0]-1], [0,flow.shape[1]-1]),
+                                                       sliceZ=outlet_sliceZ,
+                                                       imin=i_intervals_vtk_domain_slice[interval_min_max,0], imax=i_intervals_vtk_domain_slice[interval_min_max,1])
+        simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
     # export solid_mask
     # mask_dict = dict()
     # mask_dict["mask"] = flow.solid_mask.astype(int) if len(flow.shape) == 3 else flow.solid_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
@@ -1314,7 +1343,7 @@ for i in range(len(x_positions_lu)):
     fig_velocity, ax_velocity = plt.subplots(constrained_layout=True)
     for j in range(len(y_positions_lu)):
         data = np.array(up_point_reporters[i][j].out)
-        np.savetxt(outdir + f"/PU_point_report/p_xyz{up_point_reporters[i][j].index_lu}.txt", data, header="stepLU  |  timePU  |  p  |  ux  | uy  |  uz  (obs. in PU)")
+        np.savetxt(outdir + f"/PU_point_report/up_xyz{up_point_reporters[i][j].index_lu}.txt", data, header="stepLU  |  timePU  |  p  |  ux  | uy  |  uz  (obs. in PU)")
         ax_pressure.plot(data[:,1], data[:,2], label=f"p at {up_point_reporters[i][j].index_lu}")
         ax_velocity.plot(data[:, 1], np.sqrt(np.square(data[:, 3]) + np.square(data[:, 4]) + np.square(data[:, 5])), label=f"u_mag at {up_point_reporters[i][j].index_lu}")
     ax_pressure.set_xlabel("physical time / s")

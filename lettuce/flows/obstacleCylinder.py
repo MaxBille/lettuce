@@ -252,6 +252,7 @@ class ObstacleCylinder:
             obstacle_boundary = HalfwayBounceBackBoundary_compact_v3(self.obstacle_mask, self.units.lattice)
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
+            print("(!) WARNING: obstacle boundary name was not recognized, USING FWBB!")
 
         if lateral_boundary is None:  # if lateral boundary is periodic...don't include the lateral_boundary object in the boundaries-list
             return [
