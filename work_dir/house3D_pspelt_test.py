@@ -50,7 +50,7 @@ parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
 parser.add_argument("--float_dtype", default="float32", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
-parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime to simulate, default is 72 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
+parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime [s] to simulate, default is 72 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
 
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
 parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory to save output files to; vtk-files will be saved in seperate dir, if outputdir_vtk is specified")
@@ -685,6 +685,8 @@ print("Initializing streaming object...")
 streaming = lt.StandardStreaming(lattice)
 print("Initializing simulation object...")
 simulation = lt.Simulation(flow, lattice, collision_obj, streaming)
+if t_sim_max > 0:
+    simulation.t_max = t_sim_max
 
 # OPTIONAL
 #simulation.initialize_f_neq()

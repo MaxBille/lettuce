@@ -429,13 +429,51 @@ class HouseFlow3D(object):
         return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / y_ref) ** alpha)
 
     def wind_speed_profile_power_law(self, y, y_ref=None, y_0=None, u_ref=None, alpha=0.25):
+        # INPUTS REF: z_0, z_min, z_max, c_0, v_b, kat.,
         # WIND SPEED Power law: u(height)/u_ref = (height/height_ref)^alpha
         # known reference speed u_ref at height y_ref. Extrapolates wind speed u at y (in m)
         # alpha: empirically derived coefficient, depends on atmospheric stability (wikipedia 1/7~1.43; Tominaga/MLK: 0.25)
-        # TODO. research correct alpha-value in EUROCODE reference
-        # (!) all units in PU
 
+        # REF: DIN EN 1991-1-4 NA.B (Nationaler Anhang, gültig für Deutschland. Abseits von DE ist auf das log-Profil aus DIN EN 1991-1-4 zu verweisen!
+        #
+        # Mittlere Windgeschwindigkeit v_m(z) = c_f(z) * c_0(z) * v_b
+        #   c_r Rauigkeitsfaktor/-beiwert abh. von Geländekategorien (s.u.)
+        #   c_0 Topographiebeiwert (bei Höhenunterschieden vor/hinter Gebäude, die die mittlere Windgeschwindigkeit um min. 5% erhöhen)
+        #   v_b Basisgeschwindigkeit in m/s = Mittelwert über 10 min in 10 m Höhe (0.02% Überschreiwuntswahrscheinlichkeit).
+        #           - v_b0 unabhängig von Windrichtugn und Jahreszeit -> v_b = c_dir * c_season * v_b,0 /beides aber für DE 1.0 (!)
+        #           - 10m über Grund bei ebenem, offenen Gelände mit niedriger Vegetation (gras oder Hindernisse die 20mal so weit auseinander wie hoch sind)
+        #           -  Entspricht Gelände-Kat. II, z.B. auf Flughäfen
+        #           Windzonen: 1: 22.5 m/s, Kat. 2: 25 m/s, Kat. 3: 27.5 m/s, Kat. 4: 30 m/s
+        #   Bei Einfluss von Höhe (>800 ü NN) siehe Quelle LASTANNAHMEN Kap. 6.8 Widngeschwindigkei und Geschwindigkeitsdruck...
+        # * darf bis z=300m angenommen werden
+        #
+        # Rauigkeitsbeiwert c_r(z) = v_m(z)/v_m(10) = 0.19*(z_0/0.05)^0.07 * ln(10/z_0) * (z/10)^alpha
+        #   alpha   Profilexponent abh. von Geländekat. I: 0.12, II: 0.16, III: 0.22, IV: 0.3
+        #   z_0     Rauigkeitslänge:                    I: 0.01. II: 0.05, III: 0.30, IV: 1.05
+        #   z       Höhe über Grund
+        #   z_min   Mindesthöhe:                        I: 2m,   II: 4m,   III: 8m,   IV: 16m
+        #   (!) laut DIN EN... ist c_r(z) für z<z_min konstant, d.h. unterhalb einer Mindeshöhe ist gleichförmige Rauigkeit über die Höhe anzunehmen, d.h. es gibt einen "Sockelbetrag" der Geschwindigkeit am Boden
+        #       => also c_r(z<z_min) = const. = c_r(z_min)
+        #          (!) z_min wird zwar in der Formel 6.17 nicht explizit erwähnt, in folgenden Bespielen aber als Sockelbetrag wie im LOG-profil verwendet...
+
+        # entsprechend ergeben sich für die Kat. I-IV in DE:
+        #   I: v_m=1.18*v_b*(z/10)^0.12
+        #  II: v_m=1.00*v_b*(z/10)^0.16
+        # III: v_m=0.77*v_b*(z/10)^0.22  (DRUCKFEHLER IN Tab. 6.16 anzunehmen! für die alpha-Werte)
+        #  IV: v_m=0.56*v_b*(z/10)^0.3
+        # für vm(z<z_min) sind es: I: 0.97*v_b, II: 0.86*v_b, III: 0.73*v_b, IV: 0.64*v_b
+        # (Mischgelände siehe Tab- 6.16)
+        #   v_b Basisgeschwindigkeit in Abh. der Windzone in m/s:
+        #       Windzone 1: 22.5 m/s, Kat. 2: 25 m/s, Kat. 3: 27.5 m/s, Kat. 4: 30 m/s
+
+
+        # (!) all units in PU
         # y is absolute PU-coordinates relative to grid
+
+        ### c_r_min = 0.19*(y_0/0.05)^0.07 * np.log(10/y_0) * (y_min/10)^alpha
+        ### c_r = 0.19*(y_0/0.05)^0.07 * np.log(10/y_0) * (y/10)^alpha       # SOLLTE übereinstimmen mit: v_m... oben für DE
+        # TODO: plot Kat 1, Kat2, Kat3 against MLK Parameters...
+        #       for Kat-Formulas, use formula and condensed formula respectively and compare.
 
         if self.wsp_shift_up_pu != 0:
             print(f"(WSP_powerLaw): wsp_shift_up_pu is not 0! WSP is shifted up by {self.wsp_shift_up_pu} meters!")
@@ -473,6 +511,54 @@ class HouseFlow3D(object):
         return np.where(y < y_min,
                            u_0 * k_r * np.log(y_min / y_0) * 1,
                            u_0 * k_r * np.log(y / y_0) * 1)
+
+    def wind_speed_profile_log_law(self, y, u_0, y_min=1.2, y_0=0.02, kat=2):
+        # INPUTS Literatur: v_b, c_0=1, z_0, z_min, z_max, Kat.
+        # INPUTS hier:      u_0, -    , y_0, y_min, -    , kat
+
+        ## entspricht 3D_literature_neue_Boundary "wsp" und TestSEMBoundary/Empty/...
+        ## hält den Minimalwert auf z_min fest und lässt ihn nicht für z=0 auf 0 abfallen!
+
+        # REF DIN 1991-1-4 nach QUELLE lastannahmen, QQuelle WIndlasten (Kap.6)
+        # Mittlere Windgeschwindigkeit v_m(z) = c_f(z) * c_0(z) * v_b
+        #   c_r Rauigkeitsfaktor/-beiwert abh. von Geländekategorien
+        #   c_0 Topographiebeiwert (bei Höhenunterschieden vor/hinter Gebäude, die die mittlere Windgeschwindigkeit um min. 5% erhöhen)
+        #   v_b Basisgeschwindigkeit in m/s = Mittelwert über 10 min in 10 m Höhe (0.02% Überschreiwuntswahrscheinlichkeit).
+        #           - v_b0 unabhängig von Windrichtugn und Jahreszeit -> v_b = c_dir * c_season * v_b,0 /beides aber für DE 1.0 (!)
+        #           - 10m über Grund bei ebenem, offenen Gelände mit niedriger Vegetation (gras oder Hindernisse die 20mal so weit auseinander wie hoch sind)
+        #           -  Entspricht Gelände-Kat. II, z.B. auf Flughäfen
+        #           v_b nach Windzonen: 1: 22.5 m/s, Kat. 2: 25 m/s, Kat. 3: 27.5 m/s, Kat. 4: 30 m/s
+
+        # Rauigkeitsbeiwert c_r(z) = k_r*ln(z/z_0)  für  z_min < z < z_max
+        #                   c_r(z) = c_r(z_min)     für  z < z_min
+        #   z_0 Rauigkeitslänge (m):  (siehe auch unten z_0,Kat)
+        #   z Bezugshöhe (m)
+        #   z_min Mindesthöhe (m):    0: 1.0,    I: 1.0,  II: 2.0,  III: 5.0, IV: 10.0
+        #   z_max = 200 m (darüber verleirt das Profil seine Gültigkeit)
+        #   k_r Rauigkeitsfaktor abh. von Rauigkeitslänge nach:
+        #       k_r = 0.19*(z_0/z_0,KAT)^0.07  für eine bestimmte z_0 einer KAT.
+        #       z_0, KAT Rauigkeitslänge (m):  0: 0.0003, I: 0.01, II: 0.05, III: 0.3, IV: 1.0
+        #       LAUT Tab. 6.11 in Quelle Windlasten:
+        #           kr: 0: 0.1560, I: 0.1698, II: 0,1900, III: 0.2154, IV: 0.2343
+
+        # all inputs in PU
+
+        # Zuordnung Quelle, "meine Parameter"
+        #           z = y
+        #         v_b = u_0
+
+        # MLK Parameter:
+        y_0 = 0.02  # meter, roughness_length
+        y_min = 1.2
+        y_max = 200
+        z_0_kat2 = 0.05
+        k_r = 0.19 * (y_0 / z_0_kat2) ** 0.07  # hier k_r ~ 0.1782, das ist zw. Kapt. I und II // 0.05 ist z_0,II für Kat.2
+
+        ##(MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
+        return np.where(y < y_min,
+                           u_0 * k_r * np.log(y_min / y_0),  # const. unterhalb der Mindeshöhe
+                           u_0 * k_r * np.log(y / y_0)       # log-Profil oberhalb der Mindeshöhe (streng genommen bis zur max-Höhe)
+                        )
 
     def reyolds_stress_tensor(self, z, u_0):
         # z is y is height, depending on your coordinate system
