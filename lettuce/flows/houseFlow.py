@@ -8,7 +8,7 @@ from lettuce.boundary import EquilibriumBoundaryPU, \
     BounceBackBoundary, HalfwayBounceBackBoundary, FullwayBounceBackBoundary, EquilibriumOutletP, AntiBounceBackOutlet, \
     InterpolatedBounceBackBoundary, InterpolatedBounceBackBoundary_compact_v1, InterpolatedBounceBackBoundary_compact_v2, InterpolatedBounceBackBoundary_occ, \
     SlipBoundary, FullwayBounceBackBoundary_compact, FullwayBounceBackBoundary_occ, HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, HalfwayBounceBackBoundary_occ, \
-    HalfwayBounceBackBoundary_compact_v3, PartiallySaturatedBoundary
+    HalfwayBounceBackBoundary_compact_v3, PartiallySaturatedBoundary, RampedEquilibriumBoundaryPU
 from lettuce.boundary_mk import NonEquilibriumExtrapolationInletU, SyntheticEddyInlet, ZeroGradientOutlet
 from pspelt.obstacleFunctions import makeGrid
 import time
@@ -25,6 +25,7 @@ class HouseFlow3D(object):
                  ground_height_pu = 0,  # PU-height of groundlevel from which the building hight and WSP height is calculated against; basically the offset between PU-GRID-coordinates and PU-house-coordinates
                  inlet_bc: str = "eqin", outlet_bc: str = "eqoutp", ground_bc: str = "fwbb", house_bc: str = "fwbb",
                  top_bc: str = "zgo",
+                 inlet_ramp_steps = 0,
                  house_solid_boundary_data = None,
                  ground_solid_boundary_data = None,
                  K_Factor=10,  # K_factor for SEI boundary inlet
@@ -59,6 +60,8 @@ class HouseFlow3D(object):
         self.ground_bc = ground_bc
         self.house_bc = house_bc
         self.top_bc = top_bc
+
+        self.inlet_ramp_steps = inlet_ramp_steps
 
         # SEI data
         self.K_Factor = K_Factor
@@ -105,7 +108,7 @@ class HouseFlow3D(object):
         return self._non_free_flow_mask
 
     def initial_solution(self, x: torch.Tensor):
-        # initial velocity field: "u_init"-parameter
+        # initial velocity field: "u_init"-parameter [in PU]
 
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u = np.zeros((len(x),) + x[0].shape)
@@ -125,11 +128,11 @@ class HouseFlow3D(object):
             # PHILIPPS version with height-shift
             # TODO: implement semi-simple global velocity profile by broadcasting simple WSP-inlet-profile and adjusting height to max. Solid-Height at each XZ-position
 
-            y_fifth_index = int(round(self.shape[2]/5))
+            one_fifth_length_index = int(round(self.shape[0]/5))
             k_factor = np.zeros_like(x[0], dtype=float)
             k_factor[0,:,:] = 1
-            for x_i in range(y_fifth_index):
-                k_factor[x_i,:,:] = (y_fifth_index-x_i)/y_fifth_index
+            for x_i in range(one_fifth_length_index):
+                k_factor[x_i,:,:] = (one_fifth_length_index-x_i)/one_fifth_length_index
 
             u[0] = k_factor * self.wind_speed_profile_power_law(np.where(self.solid_mask, 0, x[1]),
                                            y_ref=self.reference_height_pu,  # REFERENCE height (roof or eg_height)
@@ -186,7 +189,7 @@ class HouseFlow3D(object):
                                                       # characteristic velocity at reference height (EG or ROOF)
                                                       alpha=self.wsp_alpha)[0, np.newaxis,...]
         u_inlet_y = np.zeros_like(u_inlet_x)
-        print(f"u_inlet_x.shape = {u_inlet_x.shape}")
+        #print(f"u_inlet_x.shape = {u_inlet_x.shape}")
        # print("u_inlet_x:\n", u_inlet_x)
         u_inlet = np.stack([u_inlet_x, u_inlet_y, u_inlet_y], axis=0)
         #print("u_inlet:\n", u_inlet[0,0,:,0])
@@ -214,6 +217,8 @@ class HouseFlow3D(object):
                                                           K=self.K_Factor * 10,
                                                           L=L, N=N, R=self.reyolds_stress_tensor,
                                                           velocityProfile=self.wind_speed_profile_power_law)
+        if self.inlet_bc.casefold() == 'rampeqin':
+            inlet_boundary_condition = RampedEquilibriumBoundaryPU(self.in_mask, self.units.lattice, self.units, u_inlet, ramp_steps=self.inlet_ramp_steps)
         else:
             print("(!) flow-class encountered illegal inlet_bc-parameter! Using EquilibriumBoundaryPU")
             inlet_boundary_condition = EquilibriumBoundaryPU(self.in_mask, self.units.lattice, self.units, u_inlet)
@@ -477,6 +482,7 @@ class HouseFlow3D(object):
 
         if self.wsp_shift_up_pu != 0:
             print(f"(WSP_powerLaw): wsp_shift_up_pu is not 0! WSP is shifted up by {self.wsp_shift_up_pu} meters!")
+            # (!) WSP_SHIFT only works, if y_0 is not set...
 
         if u_ref is None:
             print(f"(WSP_powerLaw): u_ref for WSP_powerLaw is not set, taking U_char as u-ref")
@@ -493,8 +499,17 @@ class HouseFlow3D(object):
         # Q: reference y_0 to PU=LU=0 or to ground_height? -> reference to PU=0
         # Q: reference y_ref to PU=LU=0 or to ground height, or to y_0? -> reference to PU=0
 
+        u_profile = np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / (y_ref-y_0)) ** alpha)
+        # if len(u_profile.shape) == 1:
+        #     u_profile_deltas = u_profile[1:] - u_profile[:-1]
+        # elif len(u_profile.shape) == 2:
+        #     u_profile_deltas = u_profile[0, :][1:] - u_profile[0, :][:-1]
+        # elif len(u_profile.shape) == 3:
+        #     u_profile_deltas = u_profile[0, :, 0][1:] - u_profile[0, :, 0][:-1]
+
+        #print("(!) (WSP_powerLaw): max. dux/dy gradient in inflow-profile is:", max(abs(u_profile_deltas)))
         # POWER LAW: from u(y<=y_0)=0 to u(y=y_ref)=u_ref with exponent alpha
-        return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / (y_ref-y_0)) ** alpha)
+        return u_profile #np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / (y_ref-y_0)) ** alpha)
 
 
     def wind_speed_profile_turb(self, y, u_0):

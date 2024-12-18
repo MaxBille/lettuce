@@ -54,42 +54,26 @@ parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. wa
 
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
 parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory to save output files to; vtk-files will be saved in seperate dir, if outputdir_vtk is specified")
-parser.add_argument("--outdir_data", default=None, type=str, help="")
-
-parser.add_argument("--vtk_3D", action='store_true')
-parser.add_argument("--vtk_3D_fps", type=float)
-parser.add_argument("--vtk_3D_step_interval", type=float)
-parser.add_argument("--vtk_3D_t_interval", type=float)
-parser.add_argument("--vtk_3D_step_start", type=int)
-parser.add_argument("--vtk_3D_step_end", type=int)
-parser.add_argument("--vtk_3D_t_start", type=float)
-parser.add_argument("--vtk_3D_t_end", type=float)
-
-
-parser.add_argument("--vtk_slice2D", action='store_true', help="toggle vtk-output of 2D slice for WHOLE DOMAIN (!) to outdir_data, if set True (1)")
-parser.add_argument("--vtk_slice2D_fps", type=float)
-parser.add_argument("--vtk_slice2D_step_interval", type=float)
-parser.add_argument("--vtk_slice2D_t_interval", type=float)
-parser.add_argument("--vtk_slice2D_step_start", type=int)
-parser.add_argument("--vtk_slice2D_step_end", type=int)
-parser.add_argument("--vtk_slice2D_t_start", type=float)
-parser.add_argument("--vtk_slice2D_t_end", type=float)
-
-parser.add_argument("--vtk_slice_inlet", action='store_true', help="toggle vtk-output of 2D slice for inlet-interaction analysis to outdir_data, if set True (1)")
-parser.add_argument("--vtk_slice_outlet", action='store_true', help="toggle vtk-output of 2D slice for outlet-interaction analysis to outdir_data, if set True (1)")
+parser.add_argument("--outdir_vtk", default=None, type=str, help="")
+parser.add_argument("--vtk", action='store_true', help="toggle vtk-output to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_inlet", action='store_true', help="toggle vtk-output of 2D slice for inlet-interaction analysis to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_outlet", action='store_true', help="toggle vtk-output of 2D slice for outlet-interaction analysis to outdir_vtk, if set True (1)")
+parser.add_argument("--vtk_slice_2D", action='store_true', help="toggle vtk-output of 2D slice for WHOLE DOMAIN (!) to outdir_vtk, if set True (1)")
 parser.add_argument("--vtk_slice_x", default=10, type=int, help="x_length of 2D vtk slice")
 parser.add_argument("--vtk_slice_y", default=5, type=int, help="y_height of 2D vtk slice")
 parser.add_argument("--vtk_slice_z", default=0, type=int, help="z location of 2D slice; NOT IMPLEMENTED")
-parser.add_argument("--vtk_slice_intervals", action='store_true', help="toggle vtk-output of 2D slice for specific intervals (hardcoded, see below)")
+parser.add_argument("--vtk_fps", default=10, help="frames per second_PU for VTK output; overwritten if vtk_interval is specified")
+parser.add_argument("--vtk_interval", default=0, type=int, help="how many steps between vtk-output-files; overwrites vtk_fps")
+parser.add_argument("--vtk_t_interval", default=0, type=float, help="how many seconds between vtk-output-files; overwrites vtk_fps and vtk_interval; for low frequency output")
+parser.add_argument("--vtk_step_start", default=0, type=float, help="at which step to start vtk export")
+parser.add_argument("--vtk_step_end", default=0, type=float, help="at which step to end vtk export")
+parser.add_argument("--vtk_t_start", default=0, type=float, help="at which time (PU) to start vtk export")
+parser.add_argument("--vtk_t_end", default=0, type=float, help="at which time (PU) to stop vtk export")
 
-# SURVEILANCE reporters
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
 parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
 parser.add_argument("--high_ma_reporter", action='store_true', help="stop simulation if Ma > 0.3 is detected in u field")
-parser.add_argument("--high_ma_reporter_interval", default=100, type=int, help="interval in which the HighMa reporter checks for Ma>0.3")
 parser.add_argument("--watchdog", action='store_true', help="report progress, ETA and warn, if Sim is estimated to run longer than t_max (~72 h)")
-parser.add_argument("--watchdog_interval", default=0, type=int, help="interval in which the watchdog reporter reports. 0 sets 100 reports per simulation")
-
 parser.add_argument("--from_cpt", action='store_true', help="start from checkpoint. (!) provide --cpt_file path")
 parser.add_argument("--cpt_file", default=None, help="path and name of cpt_file to use if --from_cpt=True")
 parser.add_argument("--sim_i", default=0, type=int, help="step index of last checkpoints-step to start from for time-indexing of observables etc.")
@@ -134,8 +118,7 @@ parser.add_argument("--combine_solids", action='store_true', help="combine all s
 parser.add_argument("--no_house", action='store_true', help="if TRUE, removes house from simulation, for debugging of house-independent aspects")
 
 # boundary algorithms
-parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI, rampEQin")
-parser.add_argument("--inlet_ramp_steps", default=1, type=int, help="step number over which the velocity of ramped EquilibriumInlet is ramped to 100%")
+parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI")
 parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP, EQoutU")
 parser.add_argument("--ground_bc", default="fwbb", help="ground boundary condition: fwbb, hwbb, ibb")
 parser.add_argument("--house_bc", default="fwbb", help="house boundary condition: fwbb, hwbb, ibb")
@@ -147,7 +130,7 @@ parser.add_argument("--verbose", action='store_true', help="display more informa
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
 parser.add_argument("--animations_number_of_frames", default=0, type=int, help="number of frames to take over the course of the simulation every t_target/#frames time units, overwrites animations_fps!")
 parser.add_argument("--animations_fps_pu", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Not the fps for the GIF, but the rate at which frames are taken from simulation (relative to it's simulated PU-time)")
-parser.add_argument("--animations_fps_mp4", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Actual fps of the resulting GIF. (Not the fps at which frames are taken from simulation!")
+parser.add_argument("--animation_fps_mp4", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Actual fps of the resulting GIF. (Not the fps at which frames are taken from simulation!")
 parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
 
 
@@ -184,29 +167,29 @@ parser.add_argument("--recalc", action='store_true', help="recalculate solid_bou
 args = vars(parser.parse_args())
 
 # get parameters from args[] dict:
-name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_data, vtk, vtk_fps, vtk_interval, vtk_step_start, \
+name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_vtk, vtk, vtk_fps, vtk_interval, vtk_step_start, \
     nan_reporter, from_cpt, sim_i, write_cpt, re, ma, viscosity_pu, char_density_pu, u_init, n_steps, t_target, \
     step_start, collision, dim, stencil, eqlm, house_length_lu, house_length_pu, house_width_pu, roof_angle, \
     eg_height_pu, roof_height_pu, overhang_pu, domain_length_pu, domain_width_pu, domain_height_pu, inlet_bc, outlet_bc, \
     ground_bc, house_bc, top_bc, combine_solids, verbose = \
-    [args[_] for _ in ["name", "default_device", "float_dtype", "t_sim_max", "cluster", "outdir", "outdir_data",
-                       "vtk_3D", "vtk_3D_fps", "vtk_3D_step_interval", "vtk_3D_step_start", "nan_reporter", "from_cpt", "sim_i",
+    [args[_] for _ in ["name", "default_device", "float_dtype", "t_sim_max", "cluster", "outdir", "outdir_vtk",
+                       "vtk", "vtk_fps", "vtk_interval", "vtk_step_start", "nan_reporter", "from_cpt", "sim_i",
                        "write_cpt", "re", "ma", "viscosity_pu", "char_density_pu", "u_init", "n_steps", "t_target",
                        "step_start", "collision", "dim", "stencil", "eqlm", "house_length_lu", "house_length_pu",
                        "house_width_pu", "roof_angle", "eg_height_pu", "roof_height_pu", "overhang_pu", "domain_length_pu",
                        "domain_width_pu", "domain_height_pu", "inlet_bc", "outlet_bc", "ground_bc", "house_bc",
                        "top_bc", "combine_solids", "verbose"]]
 
-# CREATE timestamp, sim-ID, outdir and outdir_data
+# CREATE timestamp, sim-ID, outdir and outdir_vtk
 timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
 sim_id = str(timestamp) + "-" + name
 os.makedirs(outdir+"/"+sim_id)
-if outdir_data is None:
-    outdir_data = outdir
+if outdir_vtk is None:
+    outdir_vtk = outdir
 outdir = outdir+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
-outdir_data = outdir_data+"/"+sim_id
-if (vtk or args["save_animations"]) and not os.path.exists(outdir_data):
-    os.makedirs(outdir_data)
+outdir_vtk = outdir_vtk+"/"+sim_id
+if (vtk or args["save_animations"]) and not os.path.exists(outdir_vtk):
+    os.makedirs(outdir_vtk)
 print(f"Outdir/simID = {outdir}/{sim_id}")
 print(f"Input arguments: {args}")
 
@@ -650,7 +633,6 @@ flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
                    inlet_bc=inlet_bc, outlet_bc=outlet_bc,
                    ground_bc=ground_bc if not combine_solids else None,
                    house_bc=house_bc, top_bc=top_bc,
-                   inlet_ramp_steps=args["inlet_ramp_steps"],
                    house_solid_boundary_data=house_solid_boundary_data,
                    ground_solid_boundary_data=ground_solid_boundary_data,  # will be None for combine_solids == True
                    K_Factor=10,  # K_factor for SEI boundary inlet
@@ -728,14 +710,7 @@ if initialize_low_re:
 
 ## PLOT VELOCITY PROFILE over central slice in XY-plane at z=int(Z/2)
 fig, ax = plt.subplots(constrained_layout=True)
-ux_profile_lu = flow.units.convert_velocity_to_lu(flow.wind_speed_profile_power_law(np.where(flow.solid_mask, 0, flow.grid[1]),
-                                                      y_ref=flow.reference_height_pu,
-                                                      # REFERENCE height (roof or eg_height)
-                                                      y_0=flow.wsp_y0,
-                                                      u_ref=flow.units.characteristic_velocity_pu,
-                                                      # characteristic velocity at reference height (EG or ROOF)
-                                                      alpha=flow.wsp_alpha)[0, np.newaxis,...][0, :, int(shape[2] / 2)])
-                                          #lattice.convert_to_numpy(lattice.u(simulation.f)[0, 0, :, int(shape[2] / 2)])  # (!) lattice.u gibt LU, flow.initial_solution gibt PU
+ux_profile_lu = lattice.convert_to_numpy(lattice.u(simulation.f)[0, 0, :, int(shape[2] / 2)])  # (!) lattice.u gibt LU, flow.initial_solution gibt PU
 y_values = np.arange(len(ux_profile_lu))
 ux_profile_table = np.stack([y_values, ux_profile_lu])
 np.savetxt(outdir + f"/velocity_profile_ux_inlet.txt", ux_profile_table, header="y_value (LU) |  ux (LU)")
@@ -777,7 +752,7 @@ print(f"(!) maximum velocity gradient on inlet is dux/dy = {max(ux_profile_lu_de
 ## CHECK INITIALISATION AND 2D DOMAIN
 print(f"Initializing Show2D instances for 2d plots...")
 if args["save_animations"]:
-    observable_2D_plots_path = outdir_data + "/observable_2D_plots"
+    observable_2D_plots_path = outdir_vtk + "/observable_2D_plots"
 else:
     observable_2D_plots_path = outdir + "/observable_2D_plots"
 if args["plot_sbd_2d"]:
@@ -902,166 +877,199 @@ for x_position_lu in x_positions_lu:
         laufvariable_y += 1
     laufvariable_x += 1
 
+# measurement_points_LU = [[1,0,int(shape[2]/2)],  # on ground-boundary nodes
+#                          [2,0,int(shape[2]/2)],
+#                          [3,0,int(shape[2]/2)],
+#                          [int(shape[0]*0.25),0,int(shape[2]/2)],
+#                          [1,1,int(shape[2]/2)],  # first fluid layer above ground
+#                          [2,1,int(shape[2]/2)],
+#                          [3,1,int(shape[2]/2)],
+#                          [1,2,int(shape[2]/2)],  # second fluid layer above ground
+#                          [2,2,int(shape[2]/2)],
+#                          [3,2,int(shape[2]/2)],
+#                          [1,3,int(shape[2]/2)],  # third fluid layer above ground
+#                          [2,3,int(shape[2]/2)],
+#                          [3,3,int(shape[2]/2)],
+#                          []]
+
+# testpoint_reporter = lt.UPpointReporter(lattice,flow, index_lu=(2,2,int(shape[2]/2)), interval=1, out=None)
+# simulation.reporters.append(testpoint_reporter)
+
 
 # VTK REPORTER
-# 3D
-if args["vtk_3D"]:
-    if args["vtk_3D_t_start"] is not None:
-        #print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
-        vtk_3d_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_3D_t_start"])))
-    elif args["vtk_3D_step_start"] is not None:
-        vtk_3d_i_start = int(args["vtk_3D_step_start"])
+if vtk or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
+
+    # print(args["vtk_t_start"])
+    # print(args["vtk_t_end"])
+    # print(args["vtk_step_start"])
+    # print(args["vtk_step_end"])
+    # print(args["vtk_interval"])
+    # print(args["vtk_t_interval"])
+
+    if args["vtk_t_start"] > 0:
+        print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
+        vtk_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_t_start"])))
     else:
-        vtk_3d_i_start = 0
+        vtk_i_start = int(args["vtk_step_start"])
 
-    if args["vtk_3D_t_end"] is not None:
-        #print("(vtk) overwriting vtk_step_end with {}, because vtk_t_end = {}")
-        vtk_3d_i_end = int(flow.units.convert_time_to_lu(args["vtk_3D_t_end"]))
-    elif args["vtk_3D_step_end"] is not None:
-        vtk_3d_i_end = args["vtk_3D_step_end"]
+    if args["vtk_t_end"] > 0:
+        print("(vtk) overwriting vtk_step_end with {}, because vtk_t_end = {}")
+        vtk_i_end = int(flow.units.convert_time_to_lu(args["vtk_t_end"]))
+    elif args["vtk_step_end"] > 0:
+        vtk_i_end = args["vtk_step_end"]
     else:
-        vtk_3d_i_end = n_steps  # must this be target?
+        vtk_i_end = n_steps
 
-    if args["vtk_3D_t_interval"] is not None and args["vtk_3D_t_interval"] > 0:
-        vtk_3d_interval = int(flow.units.convert_time_to_lu(args["vtk_3D_t_interval"]))
-    elif args["vtk_3D_step_interval"] is not None and args["vtk_3D_step_interval"] > 0:
-        vtk_3d_interval = args["vtk_3D_step_interval"]
-    elif args["vtk_3D_fps"] is not None and args["vtk_3D_fps"] > 0:
-        vtk_3d_interval = int(flow.units.convert_time_to_lu(1 / args["vtk_3D_fps"]))
+    if args["vtk_t_interval"] > 0:
+        vtk_interval = int(flow.units.convert_time_to_lu(args["vtk_t_interval"]))
+    elif args["vtk_interval"] > 0:
+        vtk_interval = args["vtk_interval"]
     else:
-        vtk_3d_interval = 1
+        vtk_interval = int(flow.units.convert_time_to_lu(1/vtk_fps))
 
-    if vtk_3d_interval < 1:
-        vtk_3d_interval = 1
+    if vtk_interval < 1:
+        vtk_interval = 1
 
-    vtk_3d_reporter = lt.VTKReporter(lattice, flow,
-                                  interval=int(vtk_3d_interval),
-                                  filename_base=outdir_data + "/vtk/out",
-                                  imin=vtk_3d_i_start, imax=vtk_3d_i_end)
-    simulation.reporters.append(vtk_3d_reporter)
-    vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask")
-    if not combine_solids:
-        vtk_3d_reporter.output_mask(flow.house_mask, outdir_data + "/vtk", "house_mask")
-        vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask")
+    # print(vtk_i_start)
+    # print(vtk_i_end)
+    # print(vtk_interval)
+    # print(vtk_fps)
 
-# slice2D
-if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
-    if args["vtk_slice2D_t_start"] is not None and args["vtk_slice2D_t_start"] > 0:
-        #print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
-        vtk_slice2d_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_slice2D_t_start"])))
-    elif args["vtk_slice2D_step_start"] is not None and args["vtk_slice2D_step_start"] > 0:
-        vtk_slice2d_i_start = int(args["vtk_slice2D_step_start"])
-    else:
-        vtk_slice2d_i_start = 0
+    # inlet slice [0 to Xindex] [0 to Yindex]
+    inlet_sliceXY = ([0, args["vtk_slice_x"]], [0, args["vtk_slice_y"]]) #inlet_sliceXY = ([0, 100], [0, 50])
+    inlet_sliceZ = int(shape[2]/2)  #"--vtk_slice_z" not implemented
 
-    if args["vtk_slice2D_t_end"] is not None and args["vtk_slice2D_t_end"] > 0:
-        #print("(vtk) overwriting vtk_step_end with {}, because vtk_t_end = {}")
-        vtk_slice2d_i_end = int(flow.units.convert_time_to_lu(args["vtk_slice2D_t_end"]))
-    elif args["vtk_slice2D_step_end"] is not None and args["vtk_slice2D_step_end"] > 0:
-        vtk_slice2d_i_end = int(args["vtk_slice2D_step_end"])
-    else:
-        vtk_slice2d_i_end = n_steps  # Q: must this be target?
+    # outlet slice [Xmax-len to Xmax] [0 to Yindex]
+    outlet_sliceXY = ([shape[0]-args["vtk_slice_x"],shape[0]], [0, args["vtk_slice_y"]])  #outlet_sliceXY = ([shape[0]-101,shape[0]], [shape[1]-51,shape[1]])
+    outlet_sliceZ = inlet_sliceZ
 
-    if args["vtk_slice2D_t_interval"] is not None and args["vtk_slice2D_t_interval"] > 0:
-        vtk_slice2d_interval = int(flow.units.convert_time_to_lu(args["vtk_slice2D_t_interval"]))
-    elif args["vtk_slice2D_step_interval"] is not None and args["vtk_slice2D_step_interval"] > 0:
-        vtk_slice2d_interval = int(args["vtk_slice2D_step_interval"])
-    elif args["vtk_slice2D_fps"] is not None and args["vtk_slice2D_fps"] > 0:
-        vtk_slice2d_interval = int(flow.units.convert_time_to_lu(1 / args["vtk_slice2D_fps"]))
-    else:
-        vtk_slice2d_interval = 1
+    print(f"(INFO) Appending vtk reporter with vtk_interval = {int(flow.units.convert_time_to_lu(1/vtk_fps)) if vtk_interval == 0 else int(vtk_interval)}, vtk_start = <>, vtk_end = <> and vtk_dir: {outdir_vtk}/vtk/out")
+    print(f"(INFO) This will create approx. {(vtk_i_end-vtk_i_start)/vtk_interval+1} .vti or .vtk files!")
+    # FULL VTK
+    if vtk:
+        vtk_reporter = lt.VTKReporter(lattice, flow,
+                                      interval=int(vtk_interval),
+                                      filename_base=outdir_vtk+"/vtk/out",
+                                      imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_reporter)
+        # NEW
+        vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
+        if not combine_solids:
+            vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
+            vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
 
-    if vtk_slice2d_interval < 1:
-        vtk_slice2d_interval = 1
+    # INLET VTK SLICE 2D
+    if args["vtk_slice_inlet"]:
+        vtk_inletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                      interval=int(vtk_interval),
+                                      filename_base=outdir_vtk + "/vtk/slice_inlet/slice_inlet",
+                                      sliceXY=inlet_sliceXY,
+                                      sliceZ=inlet_sliceZ,
+                                      imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_inletSlice_reporter)
 
-    if args["vtk_slice2D"]:
+    # INLET VTK SLICE 2D
+    if args["vtk_slice_outlet"]:
+        vtk_outletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                  interval=int(vtk_interval),
+                                                  filename_base=outdir_vtk + "/vtk/slice_outlet/slice_outlet",
+                                                  sliceXY=outlet_sliceXY,
+                                                  sliceZ=outlet_sliceZ,
+                                                  imin=vtk_i_start, imax=vtk_i_end)
+        simulation.reporters.append(vtk_outletSlice_reporter)
+
+    # WHOLE DOMAIN SLICE 2D
+    if args["vtk_slice_2D"]:
         vtk_domainSlice_reporter = lt.VTKsliceReporter(lattice, flow,
-                                                       interval=int(vtk_slice2d_interval),
-                                                       filename_base=outdir_data + "/vtk/slice_domain/slice_domain",
+                                                       interval=int(vtk_interval),
+                                                       filename_base=outdir_vtk + "/vtk/slice_domain/slice_domain",
                                                        sliceXY=([0,shape[0]-1],[0,shape[1]-1]),
-                                                       sliceZ=int(shape[2]/2),
-                                                       imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
+                                                       sliceZ=outlet_sliceZ,
+                                                       imin=vtk_i_start, imax=vtk_i_end)
         simulation.reporters.append(vtk_domainSlice_reporter)
 
-    if args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
-        # inlet slice [0 to Xindex] [0 to Yindex]
-        inlet_sliceXY = ([0, args["vtk_slice_x"]], [0, args["vtk_slice_y"]])  # inlet_sliceXY = ([0, 100], [0, 50])
-        inlet_sliceZ = int(shape[2] / 2)  # "--vtk_slice_z" not implemented
+    # vtk_slices for specific intervals
+    i_intervals_vtk_domain_slice = np.array([[0,1000],
+                                             [5000,5050],
+                                             [20000,20050],
+                                             [40000,40050],
+                                             [60000,60050],
+                                             [80000,80050],
+                                             [99950,100000]])
+    vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
+    for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
+        print(f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max,0]}, {i_intervals_vtk_domain_slice[interval_min_max,1]}]")
+        vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
+                                                       interval=1,
+                                                       filename_base=outdir_vtk + "/vtk/slice_domain_intervals/slice_domain_intervals",
+                                                       sliceXY=([0,flow.shape[0]-1], [0,flow.shape[1]-1]),
+                                                       sliceZ=outlet_sliceZ,
+                                                       imin=i_intervals_vtk_domain_slice[interval_min_max,0], imax=i_intervals_vtk_domain_slice[interval_min_max,1])
+        simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
+    # export solid_mask
+    # mask_dict = dict()
+    # mask_dict["mask"] = flow.solid_mask.astype(int) if len(flow.shape) == 3 else flow.solid_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+    # imageToVTK(
+    #     path=outdir_vtk + "/solid_mask_point",
+    #     pointData=mask_dict
+    # )
+    # imageToVTK(
+    #     path=outdir_vtk + "/solid_mask_cell",
+    #     cellData=mask_dict
+    # )
 
-        # outlet slice [Xmax-len to Xmax] [0 to Yindex]
-        outlet_sliceXY = ([shape[0] - args["vtk_slice_x"], shape[0]], [0, args[
-            "vtk_slice_y"]])  # outlet_sliceXY = ([shape[0]-101,shape[0]], [shape[1]-51,shape[1]])
-        outlet_sliceZ = inlet_sliceZ
+    # NEW
+    ## OBEN: vtk_reporter.output_mask(flow.solid_mask, outdir_vtk, "solid_mask")
 
-        # INLET VTK SLICE 2D
-        if args["vtk_slice_inlet"]:
-            vtk_inletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
-                                                          interval=int(vtk_interval),
-                                                          filename_base=outdir_data + "/vtk/slice_inlet/slice_inlet",
-                                                          sliceXY=inlet_sliceXY,
-                                                          sliceZ=inlet_sliceZ,
-                                                          imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-            simulation.reporters.append(vtk_inletSlice_reporter)
+    # OBEN: if not combine_solids:
+        # export house_mask
+        # mask_dict["mask"] = flow.house_mask.astype(int) if len(flow.shape) == 3 else flow.house_mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+        # imageToVTK(
+        #     path=outdir_vtk + "/house_mask_point",
+        #     pointData=mask_dict
+        # )
+        # imageToVTK(
+        #     path=outdir_vtk + "/house_mask_cell",
+        #     cellData=mask_dict
+        # )
 
-        # OUTLET VTK SLICE 2D
-        if args["vtk_slice_outlet"]:
-            vtk_outletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
-                                                           interval=int(vtk_interval),
-                                                           filename_base=outdir_data + "/vtk/slice_outlet/slice_outlet",
-                                                           sliceXY=outlet_sliceXY,
-                                                           sliceZ=outlet_sliceZ,
-                                                           imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-            simulation.reporters.append(vtk_outletSlice_reporter)
+        #NEW
+        # OBEN: vtk_reporter.output_mask(flow.house_mask, outdir_vtk, "house_mask")
 
-        # vtk_slices for specific intervals
-        if args["vtk_slice_intervals"]:
-            i_intervals_vtk_domain_slice = np.array([[0, 1000],
-                                                     [5000, 5050],
-                                                     [20000, 20050],
-                                                     [40000, 40050],
-                                                     [60000, 60050],
-                                                     [80000, 80050],
-                                                     [99950, 100000]])
-            vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
-            for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
-                print(
-                    f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max, 0]}, {i_intervals_vtk_domain_slice[interval_min_max, 1]}]")
-                vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
-                                                                                          interval=1,
-                                                                                          filename_base=outdir_data + "/vtk/slice_domain_intervals/slice_domain_intervals",
-                                                                                          sliceXY=(
-                                                                                          [0, flow.shape[0] - 1],
-                                                                                          [0, flow.shape[1] - 1]),
-                                                                                          sliceZ=outlet_sliceZ,
-                                                                                          imin=
-                                                                                          i_intervals_vtk_domain_slice[
-                                                                                              interval_min_max, 0],
-                                                                                          imax=
-                                                                                          i_intervals_vtk_domain_slice[
-                                                                                              interval_min_max, 1])
-                simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
+        # export ground_mask
+        # mask_dict["mask"] = flow.ground_mask.astype(int) if len(flow.shape) == 3 else flow.ground_mask[..., None].astype(
+        #     int)  # extension to pseudo-3D is needed for vtk-export to work
+        # imageToVTK(
+        #     path=outdir_vtk + "/ground_mask_point",
+        #     pointData=mask_dict
+        # )
+        # imageToVTK(
+        #     path=outdir_vtk + "/ground_mask_cell",
+        #     cellData=mask_dict
+        # )
 
+        # NEW
+        # OBEN: vtk_reporter.output_mask(flow.ground_mask, outdir_vtk, "ground_mask")
 
-# WATCHDOG-REPORTER (reports runtime, estimated end etc.)
+# PROGRESS REPORTER
+# progress_reporter = lt.ProgressReporter(flow, n_stop_target)
+# simulation.reporters.append(progress_reporter)
+
+# WATCHDOG-REPORTER
 if args["watchdog"]:
-    if args["watchdog_interval"] < 1:
-        baguette = int(n_steps/100)
-    else:
-        baguette = int(args["watchdog_interval"])
-    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=baguette, i_start=0, i_target=n_steps, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not args["cluster"])
+    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=int(n_steps/100), i_start=n_start, i_target=n_stop_target, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not cluster)
     simulation.reporters.append(watchdog_reporter)
 
-# NAN REPORTER (stops sim if NaN is detected)
+# NAN REPORTER
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow, lattice, n_steps, t_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_data+"/vtk", vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_vtk+"/vtk", vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
-# HIGH MA REPORTER (reports high Ma positions (Ma>0.3))
 if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_stop_target, t_stop_target, interval=args["nan_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_vtk+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
@@ -1152,8 +1160,72 @@ output_file.close()
 
 ### *** PLOTTING OF FINAL OBSERVABLE FIELDS ***
 
-# TODO: make plotting parametrisierbar
-# TODO: vorticity and nicht-periodische Randbedingungen anpassen. denn torch_gradient rechnet so, als ob ALLES free flow wäre...!!!
+# # TODO: make plotting parametrisierbar
+# ### PLOTTING u, p, vorticity over 2D slice:
+# t = flow.units.convert_time_to_pu(simulation.i)
+# dx = flow.units.convert_length_to_pu(1.0)
+#
+# u_LU = lattice.u(simulation.f)
+# rho_LU = lattice.rho(simulation.f)
+# u_PU = flow.units.convert_velocity_to_pu(u_LU) #[:,:,:,int(u_LU.shape[3]/2)]
+# p_PU = flow.units.convert_density_lu_to_pressure_pu(rho_LU)  #[:,:,:,int(rho_LU.shape[3]/2)]
+#
+# # TODO: vorticity and nicht-periodische Randbedingungen anpassen. denn torch_gradient rechnet so, als ob ALLES free flow wäre...!!!
+# plot_vorticity = False
+#
+# # vorticity:
+# if plot_vorticity:
+#     grad_u0 = torch_gradient(u_LU[0], dx=dx, order=6)
+#     grad_u1 = torch_gradient(u_LU[1], dx=dx, order=6)
+#     vorticity = (grad_u0[1] - grad_u1[0]) * (grad_u0[1] - grad_u1[0])
+#     if lattice.D == 3:
+#         grad_u2 = torch_gradient(u_LU[2], dx=dx, order=6)
+#         vorticity += (grad_u2[1] - grad_u1[2]) * (grad_u2[1] - grad_u1[2])\
+#                         + ((grad_u0[2] - grad_u2[0]) * (grad_u0[2] - grad_u2[0]))
+#     vorticity = vorticity * dx ** lattice.D
+#
+# # CONVERT TO NUMPY and slice:
+# u = lattice.convert_to_numpy(u_PU)  # [:,:,:,int(u_PU.shape[3]/2)]
+# p = lattice.convert_to_numpy(p_PU) # [:,:,:,int(rho_LU.shape[3]/2)]
+# u_magnitude = np.linalg.norm(u, axis=0)
+# if plot_vorticity:
+#     vorticity = lattice.convert_to_numpy(vorticity)
+#
+# print("\nPLOTTING final observable fields...")
+# print(f"u.shape = {u.shape}")
+# print(f"p.shape = {p.shape}")
+# print(f"u_magnitude.shape = {u_magnitude.shape}")
+# if plot_vorticity:
+#     print(f"vorticity.shape = {vorticity.shape}")
+#     print(f"abs(vorticity).shape = {np.abs(vorticity).shape}")
+#
+# # PROTOTYPE plotting without show2d... >>>
+# # fig, axes = plt.subplots(2,1, figsize=(8,8), dpi=300)
+# # fig.tight_layout()
+# # axes[0].set_title("Pressure")
+# # pos0 = axes[0].imshow(p[:,:,:,int(p.shape[3]/2)].transpose(), origin="lower", ) #vmin=p[0,ny-1,0], vmax=p[0].mean(axis=-1).max())
+# # fig.colorbar(pos0, ax=axes[0])
+# # axes[1].set_title("Velocity magnitude")
+# # pos1 = axes[1].imshow(u_magnitude[:,:,int(u_magnitude.shape[2]/2)].transpose(), origin="lower", cmap='inferno',
+# #                       vmin=np.percentile(u_magnitude.flatten(), 1),
+# #                       vmax=np.percentile(u_magnitude.flatten(), 95)
+# #                       )
+# # fig.colorbar(pos1, ax=axes[1])
+# # plt.show()  # watch out for "show" on cluster...
+# # <<<
+#
+# show2d_observables(u_magnitude, f"u_magnitude(t = {t:.3f} s, step = {simulation.i}) noLIM", f"u_magnitude_t{int(t)}_i{simulation.i:08}_noLIM", cmap='inferno')
+# show2d_observables(u_magnitude, f"u_magnitude(t = {t:.3f} s, step = {simulation.i}) LIM99", f"u_magnitude_t{int(t)}_i{simulation.i:08}_LIM99", vlim=(np.percentile(u_magnitude.flatten(),1), np.percentile(u_magnitude.flatten(), 99)))
+# show2d_observables(u_magnitude, f"u_magnitude(t = {t:.3f} s, step = {simulation.i}) LIM95", f"u_magnitude_t{int(t)}_i{simulation.i:08}_LIM95", vlim=(np.percentile(u_magnitude.flatten(),1), np.percentile(u_magnitude.flatten(), 95)))
+#
+# if plot_vorticity:
+#     show2d_observables(np.abs(vorticity), f"vorticity_mag(t = {t} s, step = {simulation.i}) noLIM", f"vorticity_mag_t{int(t)}_noLIM")
+#     show2d_observables(np.abs(vorticity), f"vorticity_mag(t = {t} s, step = {simulation.i}) LIM99", f"vorticity_mag_t{int(t)}_LIM99", vlim=(np.percentile(np.abs(vorticity).flatten(),1), np.percentile(np.abs(vorticity).flatten(), 99)))
+#     show2d_observables(np.abs(vorticity), f"vorticity_mag(t = {t} s, step = {simulation.i}) LIM95", f"vorticity_mag_t{int(t)}_LIM95", vlim=(np.percentile(np.abs(vorticity).flatten(),1), np.percentile(np.abs(vorticity).flatten(), 95)))
+#
+# show2d_observables(p[0], f"pressure(t = {t:.3f} s, step = {simulation.i}) noLIM", f"pressure_t{int(t)}_i{simulation.i:08}_noLIM")
+# show2d_observables(p[0], f"pressure(t = {t:.3f} s, step = {simulation.i}) LIM99", f"pressure_t{int(t)}_i{simulation.i:08}_LIM99", vlim=(np.percentile(p[0].flatten(),1), np.percentile(p[0].flatten(), 99)))
+# show2d_observables(p[0], f"pressure(t = {t:.3f} s, step = {simulation.i}) LIM95", f"pressure_t{int(t)}_i{simulation.i:08}_LIM95", vlim=(np.percentile(p[0].flatten(),1), np.percentile(p[0].flatten(), 95)))
 
 ### WRITE CHECKPOINT
 # TODO: write checkpointfile, if write_cpt=True and save sim.i to it / should be on correct device! or CPU to be save
@@ -1167,20 +1239,20 @@ output_file.close()
 if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     t0 = time()
     print(f"(INFO) creating animations from slice2dRepoter Data...")
-    os.makedirs(outdir_data+"/animations")
+    os.makedirs(outdir_vtk+"/animations")
 
-    if args["animations_fps_mp4"] > 0:
-        fps = int(args["animations_fps_mp4"])
+    if args["animation_fps_mp4"] > 0:
+        fps = int(args["animation_fps_mp4"])
     else:
         fps = 3
 
-    save_mp4(outdir_data+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=fps)
-    save_mp4(outdir_data+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=fps)
-    save_mp4(outdir_data+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim99_u_mag", observable_2D_plots_path, "lim99_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim2uchar_u_mag", observable_2D_plots_path, "lim2uchar_u_mag", fps=fps)
+    save_mp4(outdir_vtk+"/animations/nolim_u_mag", observable_2D_plots_path, "nolim_u_mag", fps=fps)
 
-    save_mp4(outdir_data+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=fps)
-    save_mp4(outdir_data+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=fps)
-    save_mp4(outdir_data+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/lim99_p", observable_2D_plots_path, "lim99_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/limfix_p", observable_2D_plots_path, "limfix_p", fps=fps)
+    save_mp4(outdir_vtk+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
     t1 = time()
     print(f"Creating animations from slice2dRepoter Data took {floor((t1 - t0) / 60):02d}:{floor((t1- t0) % 60):02d} [mm:ss]")
 else:  # plots final u_mag and p fields
@@ -1270,7 +1342,42 @@ plt.savefig(outdir+"/min_max_p.png")
 if not cluster:
     plt.show()
 
-# TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
+# PLOT testpoint timeline of p
+#
+# obs_testpoint = np.array(testpoint_reporter.out)
+#
+#     # PRESSURE
+# fig, ax = plt.subplots(constrained_layout=True)
+# ax.plot(obs_testpoint[:, 1], obs_testpoint[:, 2])
+# ax.set_xlabel("physical time / s")
+# ax.set_ylabel("p_PU")
+# y_lim_50_min = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 2].min()
+# y_lim_50_max = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 3].max()
+# ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_max)])  # show 10% more above and below
+# secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+# secax.set_xlabel("timesteps (simulation time / LU)")
+# fig.suptitle(str(timestamp) + "\n" + name + " TESTPOINT")
+# plt.savefig(outdir+"/p_testpoint.png")
+# if not cluster:
+#     plt.show()
+#
+#     # U_MAGNITUDE
+# fig, ax = plt.subplots(constrained_layout=True)
+# ax.plot(obs_testpoint[:, 1], np.sqrt(np.square(obs_testpoint[:, 3]) + np.square(obs_testpoint[:, 4]) + np.square(obs_testpoint[:, 5])), label="u_mag_pu")
+# ax.set_xlabel("physical time / s")
+# ax.set_ylabel("u_mag_PU")
+# y_lim_50 = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+# ax.set_ylim([0, y_lim_50*1.1])  # show 10% more than u_mag_max
+# ax.axhline(y=flow.units.characteristic_velocity_pu, color='tab:green', ls=":", label="characteristic velocity")
+# ax.axhline(y=flow.units.convert_velocity_to_pu(lattice.convert_to_numpy(lattice.cs)*0.3), color='tab:red', ls=":", label="Ma = 0.3")
+# secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+# secax.set_xlabel("timesteps (simulation time / LU)")
+# fig.suptitle(str(timestamp) + "\n" + name + " TESTPOINT")
+# ax.legend()
+# plt.savefig(outdir + "/u_mag_testpoint.png")
+# if not cluster:
+#     plt.show()
+# # TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
 
 # PRESSURE and VELOCITY at points
 for i in range(len(x_positions_lu)):

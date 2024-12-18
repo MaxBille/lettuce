@@ -32,7 +32,7 @@ __all__ = ["BounceBackBoundary", "HalfwayBounceBackBoundary", "FullwayBounceBack
            "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP", "SlipBoundary",
            "InterpolatedBounceBackBoundary", "InterpolatedBounceBackBoundary_compact_v1", "InterpolatedBounceBackBoundary_compact_v2", "InterpolatedBounceBackBoundary_occ",
            "FullwayBounceBackBoundary_compact", "HalfwayBounceBackBoundary_compact_v1", "HalfwayBounceBackBoundary_compact_v2",
-           "HalfwayBounceBackBoundary_compact_v3", "PartiallySaturatedBoundary"]
+           "HalfwayBounceBackBoundary_compact_v3", "PartiallySaturatedBoundary", "RampedEquilibriumBoundaryPU"]
 
 
 class PartiallySaturatedBoundary:
@@ -2372,6 +2372,10 @@ class EquilibriumBoundaryPU:
         # parameter input (u, p) in PU!
         # u can be a field (individual ux, uy, (uz) for all boundary nodes) or vector (uniform ux, uy, (uz)))
         self.mask = lattice.convert_to_tensor(mask)
+        # temp >>>
+        # self._no_stream_mask = np.zeros((lattice.Q, mask.shape[0], mask.shape[1], mask.shape[2] if len(mask.shape)==3 else None), dtype=bool)
+        # self._no_stream_mask = self._no_stream_mask | mask
+        # <<< temp
         self.lattice = lattice
         self.units = units
         self.velocity = lattice.convert_to_tensor(velocity)
@@ -2386,7 +2390,41 @@ class EquilibriumBoundaryPU:
         f = torch.where(self.mask, feq, f)
         return f
 
-    # TODO: add no_streaming_mask to counter the BC-order artifacts through "in"-streaming of outlet populations!
+    # TODO: add no_streaming_mask to counter the BC-order artifacts through "in"-streaming of outlet populations!? -> is this necessary? Depends on order of boundary-calls (list in flow)
+    # # OPT: no_stream_mask Test for interaction with populations from Outlet-BC...?
+    # def make_no_stream_mask(self, f_shape):
+    #     assert self._no_stream_mask.shape == f_shape
+    #     # no_stream_mask has to be dimensions: (q,x,y,z) (z optional), but CAN be (x,y,z) (z optional).
+    #     # ...in the latter case, torch.where broadcasts the mask to (q,x,y,z), so ALL q populations of a lattice-node are marked equally
+    #     return self.lattice.convert_to_tensor(self._no_stream_mask)
+
+
+class RampedEquilibriumBoundaryPU(EquilibriumBoundaryPU):
+    '''similar to EquilibriumBoundaryPU, but ramps up velocity from 0,0,0 to velocity linearly over ramp_steps steps'''
+    def __init__(self, mask, lattice, units, velocity, pressure=0, ramp_steps=1):
+        # inheritance...DOESNT WORK?
+        super(EquilibriumBoundaryPU, self).__init__()
+        self.mask = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+        self.units = units
+        self.velocity = lattice.convert_to_tensor(velocity)
+        self.pressure = lattice.convert_to_tensor(pressure)
+        self.ramp_steps = ramp_steps
+        self.ratio = lattice.convert_to_tensor(np.linspace(0, 1, self.ramp_steps, endpoint=True))
+        self.ramp_counter = lattice.convert_to_tensor(0)
+
+    def __call__(self, f):
+        # convert PU-inputs to LU, calc feq and overwrite f with feq where mask==True
+        rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
+        if self.ramp_counter < self.ramp_steps:
+            u = self.units.convert_velocity_to_lu(self.velocity) * self.ramp_counter/self.ramp_steps
+            self.ramp_counter += 1
+        else:
+            u = self.units.convert_velocity_to_lu(self.velocity)
+        feq = self.lattice.equilibrium(rho, u)
+        feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
+        f = torch.where(self.mask, feq, f)
+        return f
 
 class AntiBounceBackOutlet:
     """Allows distributions to leave domain unobstructed through this boundary.
