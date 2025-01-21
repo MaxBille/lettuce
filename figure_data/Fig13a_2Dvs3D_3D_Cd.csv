@@ -1,0 +1,4 @@
+"Coefficient of drag for HWBB and IBB boundary condition over reynolds number for 3D simulation. D3Q27, GPD = 30, D/Y = 10, D/Z = 3, BGK collision",,,,,,
+Reynolds number,200,220,240,260,280,300
+HWBB BGK,1.48688854,1.47402175,1.46051495,1.36119372,1.34917452,1.33613069
+IBB BGK,1.44161486,1.41363376,1.38179907,1.3368146,1.30275087,1.28596052

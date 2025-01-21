@@ -69,6 +69,9 @@ ax2.tick_params(color='r', direction='in', width=1.2)
 
 ax_all.legend(fontsize="6")
 plt.savefig(folder+"/plots/"+name+"_complete.png")
+
+#ax_all.legend(fontsize="6")
+#plt.savefig(folder+"/plots/"+name+"_complete_nolegend.png")
 plt.show()
 
 

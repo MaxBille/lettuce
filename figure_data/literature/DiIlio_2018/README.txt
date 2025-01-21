@@ -1,0 +1,3 @@
+- Fig. Number in this folder corresponds to figure number in the Paper by Di Ilio et al. (2018)!
+- average velocity- and reynolds-stress profiles taken from plots out of Di Ilio (2018) - see bibliography
+- file names are: <figure number in Di Ilio Paper>_<observable (velocity or reynolds stress with directions)>_<position number>_<shortID of reference/author of data series>
