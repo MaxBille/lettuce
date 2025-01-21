@@ -1,5 +1,5 @@
 README:
-- the gpu4_(2D/3D)Test_JobScript.sh files are examples for slurm-batch-files to pass to the slurm scheduler on the HPC-cluster of the H-BRS. Use their python commands locally or on your preferred cluster with respective changes in the SBTACH-header.
+- the gpu4_(2D/3D)Test_JobScript.sh files are examples for slurm-batch-files to pass to the slurm scheduler on the HPC-cluster of the H-BRS. Use their python commands locally or on your preferred cluster with respective changes in the SBATCH-header.
 - 3d_cylinder_simulation_v5.py is a simulation script that runs a 3D Cylinder flow and accepts parameters/arguments. Look into the code and search for argument parsing.
 - without parameters, the defaults (see code) will be used.
     - for an exemplary simulation at Re3900 the following parameters can be used:

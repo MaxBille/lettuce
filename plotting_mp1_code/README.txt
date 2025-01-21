@@ -1,1 +1,0 @@
-This directory includes code and data used for figures in the MP1 main document. It is not meant to be used "as is" by a third party and is not guaranteed to work properly
