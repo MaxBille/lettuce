@@ -23,6 +23,7 @@ class VelocityKeilFlow:
     def __init__(self, shape: tuple, reynolds_number: float, mach_number: float, lattice: Lattice,
                  domain_constraints: tuple, char_length_lu: float,
                  char_length_pu: float = 1, char_velocity_pu = 1, u_init: int = 0,
+                 char_density_pu=1,
                  keil_percentage_of_inlet: float = 0.5,
                  keil_steigung = None,  # u_PU/x_LU
                  inlet_bc: str = "equin",
@@ -40,7 +41,8 @@ class VelocityKeilFlow:
             mach_number=mach_number,
             characteristic_length_lu=char_length_lu,
             characteristic_length_pu=char_length_pu,
-            characteristic_velocity_pu=char_velocity_pu  # reminder: u_char_lu = Ma * cs_lu = Ma * 1/sqrt(3)
+            characteristic_velocity_pu=char_velocity_pu,  # reminder: u_char_lu = Ma * cs_lu = Ma * 1/sqrt(3)
+            characteristic_density_pu=char_density_pu
         )
 
         self.domain_constraints = domain_constraints

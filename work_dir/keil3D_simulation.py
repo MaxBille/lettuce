@@ -14,7 +14,7 @@ import datetime
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 from PIL import Image
-import subprocess
+import subprocess  # for mp4 export...
 
 import numpy as np
 import torch
@@ -62,7 +62,6 @@ parser.add_argument("--vtk_3D_step_end", type=int)
 parser.add_argument("--vtk_3D_t_start", type=float)
 parser.add_argument("--vtk_3D_t_end", type=float)
 
-
 parser.add_argument("--vtk_slice2D", action='store_true', help="toggle vtk-output of 2D slice for WHOLE DOMAIN (!) to outdir_data, if set True (1)")
 parser.add_argument("--vtk_slice2D_fps", type=float)
 parser.add_argument("--vtk_slice2D_step_interval", type=float)
@@ -107,10 +106,11 @@ parser.add_argument("--keil_delta_ux_pu", default=None, type=float, help="max. d
 parser.add_argument("--keil_u_max_pu", default=None, type=float, help="max. velocity = characteristic velocity in PU. Overwrites Re and keil_delta_ux_pu (!)")
 parser.add_argument("--keil_delta_ux_lu", default=None, type=float, help="max. delta_ux (grad) for velocity profile in LU. Overwrites Re(!)")
 parser.add_argument("--keil_u_max_lu", default=None, type=float, help="max. velocity = characteristic velocity in LU. Overwrites Re and keil_delta_ux_lu (!)")
+
+parser.add_argument("--resolution", default=1, type=float, help="number of gridpoints per meter [LU/PU]")
 parser.add_argument("--domain_length_x_lu", default=None, type=int, help="domain length in flow direction (X) in LU (only specify lu OR pu)")
 parser.add_argument("--domain_length_x_pu", default=None, type=float, help="domain length in flow direction (X) in PU (only specify lu OR pu)")
 parser.add_argument("--domain_height_y_lu", default=None, type=int, help="domain height in cross flow direction (Y) in LU (only specify lu OR pu)")
-parser.add_argument("--resolution", default=1, type=float, help="number of gridpoints per meter [LU/PU]")
 parser.add_argument("--domain_height_y_pu", default=None, type=float, help="domain height in cross flow direction (Y) in PU (only specify lu OR pu)")
 parser.add_argument("--domain_width_z_lu", default=None, type=int, help="domain width in cross flow direction (Z) in LU (only specify lu OR pu)")
 parser.add_argument("--domain_width_z_pu", default=None, type=float, help="domain width in cross flow direction (Z) in PU (only specify lu OR pu)")
@@ -371,7 +371,7 @@ elif args["n_steps_target"] is not None:
     t_duration = n_steps_target / (domain_length_x_lu/domain_length_x_pu * keil_u_max_pu/(ma*1/np.sqrt(3)))
     t_target = t_start + t_duration 
 else:
-    print("ERROR: could not determin steps and time!")
+    print("ERROR: could not determine steps and time!")
 
 
 
@@ -387,13 +387,13 @@ print("STATUS: Simulator setup started...")
 
 # STENCIL
 if args["stencil"] == "D2Q9":
-    stencil_obj = lt.D2Q9
+    stencil_class = lt.D2Q9
 elif args["stencil"] == "D3Q15":
-    stencil_obj = lt.D3Q15
+    stencil_class = lt.D3Q15
 elif args["stencil"] == "D3Q19":
-    stencil_obj = lt.D3Q19
+    stencil_class = lt.D3Q19
 elif args["stencil"] == "D3Q27":
-    stencil_obj = lt.D3Q27
+    stencil_class = lt.D3Q27
 else:
     print(f"ERROR: could not interpret stencil argument: {args['stencil']}...")
 
@@ -409,7 +409,7 @@ else:
     float_dtype = torch.float64
 
 # LATTICE
-lattice = lt.Lattice(stencil_obj, device=torch.device(args["default_device"]), dtype=float_dtype)
+lattice = lt.Lattice(stencil_class, device=torch.device(args["default_device"]), dtype=float_dtype)
 if args["eqlm"]:  # use EQLM with 20% less memory usage and 2% less performance
     print("(INFO) Using Equilibrium_LessMemory (saving ~20% VRAM on GPU, but ~2% slower)")
     lattice.equilibrium = lt.QuadraticEquilibrium_LessMemory(lattice)
@@ -427,7 +427,7 @@ print(f"-> Domain LU shape = {shape}")
 ## FLOW Class
 print("Initializing flow class...")
 flow = VelocityKeilFlow(shape, re, ma, lattice, domain_constraints, domain_length_x_lu, domain_length_x_pu,
-                        keil_u_max_pu, u_init=args["u_init"],
+                        keil_u_max_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
                         keil_percentage_of_inlet=keil_percentage_of_inlet,
                         keil_steigung=keil_delta_ux_pu,
                         inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
@@ -445,11 +445,13 @@ output_file.write('\n{:30s} {:30s}'.format("l_char_LU", str(flow.units.character
 output_file.write('\n{:30s} {:30s}'.format("u_char_LU", str(flow.units.characteristic_velocity_lu)))
 output_file.write('\n{:30s} {:30s}'.format("viscosity_LU", str(flow.units.viscosity_lu)))
 output_file.write('\n{:30s} {:30s}'.format("p_char_LU", str(flow.units.characteristic_pressure_lu)))
+output_file.write('\n{:30s} {:30s}'.format("rho_char_LU", str(flow.units.characteristic_density_lu)))
 output_file.write('\n')
 output_file.write('\n{:30s} {:30s}'.format("l_char_PU", str(flow.units.characteristic_length_pu)))
 output_file.write('\n{:30s} {:30s}'.format("u_char_PU", str(flow.units.characteristic_velocity_pu)))
 output_file.write('\n{:30s} {:30s}'.format("viscosity_PU", str(flow.units.viscosity_pu)))
 output_file.write('\n{:30s} {:30s}'.format("p_char_PU", str(flow.units.characteristic_pressure_pu)))
+output_file.write('\n{:30s} {:30s}'.format("rho_char_PU", str(flow.units.characteristic_density_pu)))
 output_file.write('\n')
 output_file.write('\n{:30s} {:30s}'.format("grid reynolds number Re_g", str(flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5)))))
 output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_x_pu/keil_u_max_pu)))

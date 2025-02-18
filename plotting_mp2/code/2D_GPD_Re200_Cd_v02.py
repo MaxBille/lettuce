@@ -29,12 +29,13 @@ name = "2D_GPD_Re200_Cd_v02"
 data = np.genfromtxt(folder+"/data/"+name+".csv", delimiter=",")
 # PARAMETERS: Re200, DpY19, D2Q9
 
-gpd_2_index = np.where(np.isin(data[0], [2,4,8,16,32,64,128]))
+gpd_2_index = np.where(np.isin(data[0], [2,4,8,16,32,64]))#,128]))
 gpd_3_index = np.where(np.isin(data[0], [3,6,12,24,48,96]))
 gpd_5_index = np.where(np.isin(data[0], [5,10,20,40,80]))
 
 converged_mean = np.nanmean(data[1:,-1])
-
+converged_mean = data[9,-1]
+converged_mean = data[4,-1]
 print(converged_mean)
 data_delta = np.abs(data-converged_mean)
 #print(data_delta)
@@ -192,4 +193,55 @@ plt.grid()
 
 plt.legend()
 plt.savefig(folder+"/plots/"+name+"_loglog_ibbkbc.png")
+plt.show()
+
+
+##HWBBBGK
+fig_loglog_hwbbbgk, ax_hwbbbgk = plt.subplots()
+# BC (plot), CO (marker), base (color
+
+hwbb_bgk_base2 = plt.loglog(data[0][gpd_2_index], data_delta[4][gpd_2_index], marker=".", color="tab:blue", label="HWBB BGK base2")
+hwbb_bgk_base3 = plt.loglog(data[0][gpd_3_index], data_delta[4][gpd_3_index], marker=".", color="tab:orange", label="HWBB BGK base3")
+hwbb_bgk_base5 = plt.loglog(data[0][gpd_5_index], data_delta[4][gpd_5_index], marker=".", color="tab:green", label="HWBB BGK base5")
+
+# hwbb_kbc_base2 = plt.loglog(data[0][gpd_2_index], data_delta[6][gpd_2_index], marker="x", color="tab:blue", label="HWBB KBC base2")
+# hwbb_kbc_base3 = plt.loglog(data[0][gpd_3_index], data_delta[6][gpd_3_index], marker="x", color="tab:orange", label="HWBB KBC base3")
+# hwbb_kbc_base5 = plt.loglog(data[0][gpd_5_index], data_delta[6][gpd_5_index], marker="x", color="tab:green", label="HWBB KBC base5")
+
+plt.xlabel("GPD")
+plt.ylabel(r"$|C_{D} - \overline{C_{D,GPD128}}|$")
+#plt.xlim([9,61])
+plt.ylim([10**-3,10**-0])
+plt.grid()
+#plt.title("Widerstandsbeiwert $C_{D}$ in Abhängigkeit der Domänenbreite in Durchmessern (DpY), für Re = 200", wrap=True)
+
+plt.legend()
+plt.savefig(folder+"/plots/"+name+"_loglog_hwbbbgk_no128.png")
+plt.show()
+
+##HWBBBGK + ALL
+fig_loglog_hwbbbgk, ax_hwbbbgk = plt.subplots()
+# BC (plot), CO (marker), base (color
+
+hwbb_bgk = plt.loglog(data[0], data_delta[4], linestyle="", marker="x", color="grey", label="all tested res.", alpha=0.8)
+
+hwbb_bgk_base2 = plt.loglog(data[0][gpd_2_index], data_delta[4][gpd_2_index], marker=".", color="tab:blue", label="base res. 16 ( = 2 x 2⁴)")
+hwbb_bgk_base3 = plt.loglog(data[0][gpd_3_index], data_delta[4][gpd_3_index], marker=".", color="tab:orange", label="base res. 12 ( = 3 x 2²)")
+hwbb_bgk_base5 = plt.loglog(data[0][gpd_5_index], data_delta[4][gpd_5_index], marker=".", color="tab:green", label="base res. 10 ( = 5 x 2¹)")
+
+
+
+# hwbb_kbc_base2 = plt.loglog(data[0][gpd_2_index], data_delta[6][gpd_2_index], marker="x", color="tab:blue", label="HWBB KBC base2")
+# hwbb_kbc_base3 = plt.loglog(data[0][gpd_3_index], data_delta[6][gpd_3_index], marker="x", color="tab:orange", label="HWBB KBC base3")
+# hwbb_kbc_base5 = plt.loglog(data[0][gpd_5_index], data_delta[6][gpd_5_index], marker="x", color="tab:green", label="HWBB KBC base5")
+
+plt.xlabel("GPD")
+plt.ylabel(r"$|C_{D} - C_{D,GPD128}|$")
+#plt.xlim([9,61])
+plt.ylim([10**-3,10**-0])
+plt.grid()
+#plt.title("Widerstandsbeiwert $C_{D}$ in Abhängigkeit der Domänenbreite in Durchmessern (DpY), für Re = 200", wrap=True)
+
+plt.legend()
+plt.savefig(folder+"/plots/"+name+"_loglog_hwbbbgk_no128.png")
 plt.show()

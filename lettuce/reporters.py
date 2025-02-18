@@ -15,7 +15,7 @@ import gc
 from collections import Counter
 
 __all__ = [
-    "write_image", "write_vtk", "VTKReporter", "VTKsliceReporter", "ObservableReporter", "ErrorReporter",
+    "write_image", "write_vtk", "VTKReporter", "VTKsliceReporter", "VTKsliceReporter3D", "ObservableReporter", "ErrorReporter",
     "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter", "Watchdog", "ProgressReporter", "HighMaReporter", "UPpointReporter"
 ]
 
@@ -32,7 +32,7 @@ def write_image(filename, array2d):
     plt.savefig(filename)
 
 
-def write_vtk(point_dict, id=0, filename_base="./data/output"):
+def write_vtk(point_dict, id=0, filename_base="./data/output", origin: tuple[float, float, float] = (0.0, 0.0, 0.0)):
     # OLD Master-version
     # vtk.gridToVTK(f"{filename_base}_{id:08d}",
     #               np.arange(0, point_dict["p"].shape[0]),
@@ -43,7 +43,7 @@ def write_vtk(point_dict, id=0, filename_base="./data/output"):
     # version by M.C.B.
     vtk.imageToVTK(
         path=f"{filename_base}_{id:08d}",
-        origin=(0.0, 0.0, 0.0),
+        origin=origin,
         spacing=(1.0, 1.0, 1.0),
         cellData=None,
         pointData=point_dict,
@@ -216,7 +216,7 @@ class VTKsliceReporter:
     def __call__(self, i, t, f):
         if i % self.interval == 0 and i >= self.imin and i <= self.imax:
             if self.z_index is not None:
-                f = f[:,self.xmin:self.xmax, self.ymin:self.ymax, self.z_index, None]
+                f = f[:,self.xmin:self.xmax+1, self.ymin:self.ymax+1, self.z_index, None]
                 # (!) None is needed because single-slice omits the last dimension and will result in bad dimension in conversion of u and rho/p below!
                 #print(f.shape)
             u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
@@ -305,7 +305,142 @@ class VTKsliceReporter:
         #               pointData=mask_dict)
         # <<<
 
+class VTKsliceReporter3D:
+    '''reports a certain specified area portion of the domain as vtk-file, at the moment, only from 3D simulation
+    '''
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, slice_region: tuple = ([int, int], [int, int], [int, int]), imin=0, imax=None):
+        self.lattice = lattice
+        self.flow = flow
+        self.interval = interval
+        self.filename_base = filename_base
+        self.imin = imin
+        if imax is None:
+            self.imax = 1e15
+        elif imax <= 0:
+            self.imax = 1
+        else:
+            self.imax = imax
 
+        if solid_mask is not None and lattice.D == 2:
+            self.solid_mask = solid_mask[..., None]
+        else:
+            self.solid_mask = solid_mask
+
+        directory = os.path.dirname(filename_base)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+
+        self.point_dict = dict()
+
+        #comment: area = ([xmin, xmax], [ymin, ymax], [zmin, zmax])
+        #comment: sliceXY = ([xmin, xmax], [ymin,ymax])
+        #comment: sliceZ = zi
+        #comment: f = f[xmin:xmax, ymin:ymax, zi]  # selektiert nur die benötigten f-Werte, sodass kleinere Slices entstehen
+        # x = [0:50], y = [0:100], z=[int(zmax/2)
+
+        # OPTIONAL: Abfrage, welche schaut ob xmin == xmax (und y... und z...) und falls das der Fall ist, dann dort entsprechend eine "None" Dimension anhängt und nur einen Wert nimmt, also ein "slice"
+        #   Wahrscheinlich am sinnvollsten direkt unten im Call dann abzufragen aus einem ([xmin, xmax],[ymin, ymax],[zmin, zmax]) tupel, in dem dann Werte gleich sind, wenn in dieser Ebne geslicet werden soll.
+        if slice_region[0][0] == slice_region[0][1]:  # x-normal
+            self.normal_dir = 0
+        elif slice_region[1][0] == slice_region[1][1]: self.normal_dir = 1
+        elif slice_region[2][0] == slice_region[2][1]: self.normal_dir = 2
+        else: self.normal_dir = None
+        self.xmin = slice_region[0][0]
+        self.ymin = slice_region[1][0]
+        self.zmin = slice_region[2][0]
+        self.xmax = slice_region[0][1]
+        self.ymax = slice_region[1][1]
+        self.zmax = slice_region[2][1]
+
+
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0 and i >= self.imin and i <= self.imax:
+            if self.normal_dir is None:  # full 3D subdomain
+                f = f[:, self.xmin:self.xmax+1, self.ymin:self.ymax+1, self.zmin:self.zmax+1]
+            elif self.normal_dir == 0:  # slice in YZ plane
+                f = f[:, self.xmin, None, self.ymin:self.ymax+1, self.zmin:self.zmax+1]
+            elif self.normal_dir == 1:  # slice in XZ plane
+                f = f[:, self.xmin:self.xmax+1, self.ymin, None, self.zmin:self.zmax+1]
+            elif self.normal_dir == 2:  # slice in XY plane
+                f = f[:, self.xmin:self.xmax + 1, self.ymin:self.ymax + 1, self.zmin, None]
+            # (!) None index is needed because single-slice omits the last dimension and will result in bad dimension in conversion of u and rho/p below!
+            # print(f.shape)
+
+            # CALC. observables u and p in PU
+            u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+            p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+
+            if self.solid_mask is None:  # if you want to set all the solid nodes to p[solid]=0 provide solid_mask
+                self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+            else:
+                self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ...]))
+            # (!) pressure comes with singleton-dimension in first position! (where u has 2 or 3 dimensions respectivly)
+
+            # ORIGINAL: self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+            # ALTERNATIVE:               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
+            for d in range(self.lattice.D):
+                # ORIGINAL: self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                if self.solid_mask is None:
+                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                else:
+                    self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(u[d, ...]))
+
+                # self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])  # if you want to include the density in your vtk data...
+            # correct origin for 3D display in Paraview:
+
+            write_vtk(self.point_dict, i, self.filename_base, origin=(self.xmin, self.ymin, self.zmin))
+
+    def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
+        """
+        Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
+        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)
+        UPDATE 28.08.2024 (MBille: outputs mask as cell data. cell data represents the approx.
+        location of solid boundaries, assuming Fullway or Halfway Bounce Back implementation,
+        if translated by (-0.5,-0.5,-0.5) LU.
+        Attention: point data is misleading, looking at masks rendered as solid objects or point-clouds!
+
+        USE: in Paraview use Filter:Threshold -> Above Upper Threshold (Upper Threshold 0.9) -> Solid Color -> Volume/Wireframe,...
+        """
+
+        if outdir is None:
+            filename_base = self.filename_base
+        else:
+            filename_base = outdir + "/" + str(name)
+
+        mask_dict = dict()
+
+        mask_dict["mask"] = mask.astype(int) if len(mask.shape) == 3 else mask[..., None].astype(
+            int)  # extension to pseudo-3D is needed for vtk-export to work
+
+        if point:
+            vtk.imageToVTK(
+                path=filename_base + "_point",
+                pointData=mask_dict
+            )
+        if no_offset:
+            vtk.imageToVTK(
+                path=filename_base + "_cell_noOffset",
+                cellData=mask_dict
+            )
+        vtk.imageToVTK(
+            path=filename_base + "_cell",
+            cellData=mask_dict,
+            origin=(-0.5, -0.5, -0.5),
+            spacing=(1.0, 1.0, 1.0)
+        )
+
+        # OLD Martin Kliemank: >>>
+        # if self.lattice.D == 2:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+        # else:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
+        # vtk.gridToVTK(self.filename_base + "_mask",
+        #               np.arange(0, mask_dict["mask"].shape[0]),
+        #               np.arange(0, mask_dict["mask"].shape[1]),
+        #               np.arange(0, mask_dict["mask"].shape[2]),
+        #               pointData=mask_dict)
+        # <<<
 
 class ErrorReporter:
     """Reports numerical errors with respect to analytic solution."""

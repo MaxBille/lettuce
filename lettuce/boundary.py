@@ -1134,12 +1134,17 @@ class SlipBoundary:
         based on fullway bounce back algorithm (population remains in the wall for 1 time step)
     """
 
+    #TODO: implement Halfway Variant
+    #TODO: implement f_index-variant which does not invert everything and applies no_streaming mask to everything else...
+
     def __init__(self, mask, lattice, direction):
         self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
-        self.bb_direction = direction
-        e = self.lattice.stencil.e
-        bb_direction = self.bb_direction
+        self.bb_direction = direction  # scalar {0,1,2} specifying x,y or z as the direction to "bounce"
+        e = self.lattice.stencil.e  # numpy-typed velocity vectors
+        bb_direction = self.bb_direction  # wtf?
+
+        # from all velocity vectors, invert the component pointing in direction (?)
         opposite_stencil = np.array(e)
         opposite_stencil[:, bb_direction] = -e[:, bb_direction]
         self.opposite = []
@@ -1154,6 +1159,225 @@ class SlipBoundary:
         assert self.mask.shape == f_shape[1:]
         return self.mask
 
+    # def make_no_stream_mask(self, f_shape):
+    #     # alle Pops., die genau orthogonal zur direction sind sollen nicht gestreamt werden.
+
+
+
+# class HalfwaySlipBoundary:
+#     """
+#         bounce back in direction, but normal propagation in orthogonal direction; based on halfway bounce back algorithm
+#     """
+#
+#     def __init__(self, lattice, flow, direction, periodicity: tuple[bool,...] = None, global_solid_mask = None):
+#         self.lattice = lattice
+#         self.flow = flow
+#         self.bb_direction = direction
+#
+#         if periodicity is None:
+#             periodicity = (False, False, False if lattice.D == 3 else None)
+#
+#         # TODO: correct periodicity and solid-to-solid contact: periodicity attribute and global solid mask! in neighbor search
+#         # global_solid_mask to filter out all "fake" fluid neighbors, which are outside the FWBB but not in the fluid region
+#         if global_solid_mask is None:
+#             global_solid_mask = np.zeros(self.flow.shape, dtype=bool)
+#
+#         # create f_mask of populations that must be created through HWSB
+#             # für alle dieser "Domänengrenze" nahen Knoten.
+#                 # für alle Populationen
+#                     # wenn die Population aus der Domäne raus zeigt...
+#                         # markiere die umgekehrte Population auf dem Knoten als "durch HWSB zu ersetzen"
+#                         # finde die Herkunfts post-collision-Population (wand-parallelem geschwindigkeitsanteil folgen und diesen Eintrag im e-vektor umkehren(x,y,z))
+#
+#         # Diskussion/Planung mit Ben
+#             # für alle Randknoten in Richtung der Direction
+#                 # Alle c, welche den +1 oder -1 Eintrag mit dem direction-Tupel identisch haben, sind die, die raus zeigen!
+#                     # - der identische Eintrag muss im Endeffekt von from nach to invertiert werden
+#                     # - die beiden (oder in 2D einer) anderen Einträge des c-Vektors, werden auf den Koordinatenindex (x,y,z) draufgerechnet, um den Zielpunkt herauszufinden.
+#                 # Periodizität: andere Zielkoordinaten bzw. in der Periodizitätsrichtung um n Stellen den Index ändern
+#                 #
+#
+#         self.f_index = []
+#
+#         self.f_index_from = []  # stores list of indexes (q,x,y,z) to get pop. from
+#         self.f_index_to = []    # stores list of indexes (q,x,y,z) to put pops. on (order corresponding to f_index_from)
+#
+#         if self.lattice.D == 2:
+#             nx, ny = self.flow.shape  # domain size in x and y
+#
+#             border_points = []
+#             # Iterate over the grid points
+#             for x in range(nx):
+#                 for y in range(ny):
+#                     #for z in range(nz):
+#                         # Check if the point is on the border according to the direction
+#                         if direction[0] != 0 and (x == 0 if direction[0] == -1 else x == nx - 1):
+#                             border_points.append((x, y))#, z))
+#                         elif direction[1] != 0 and (y == 0 if direction[1] == -1 else y == ny - 1):
+#                             border_points.append((x, y))#, z))
+#                         # elif direction[2] != 0 and (z == 0 if direction[2] == -1 else z == nz - 1):
+#                         #     border_points.append((x, y, z))
+#
+#             # get stencil-vectors that point in slip boundary direction
+#             direction_index = np.argmax(np.abs(direction))  # which coordinate is relevant?
+#             relevant_velocity_vectors = []
+#             relevant_velocity_vectors_mirrored = []
+#             for i in range(0, self.lattice.Q):
+#                if self.lattice.stencil.e[i,direction_index] == direction[direction_index]:
+#                    relevant_velocity_vectors.append(i)  # all c_i index in stencil, pointing out of domain through mirror
+#                    relevant_velocity_vectors_mirrored.append(np.where(self.lattice.stencil.e[:, direction_index] == -direction[direction_index]))  # all c_i index in stencil, with invard facing normal part, corresponding to relevant_velocity_vectors (order)
+#             # ODER: q_relevant = np.where(self.lattice.stencil.e[i,direction_index] == direction[direction_index])[0]
+#
+#             # for p in range(0, len(border_points)):  # for all border points
+#             #     for i in relevant_velocity_vectors:  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
+#             #         # check for boundary-nodes neighboring the domain-border.
+#             #         # ...they have to take the periodicity into account...
+#             #         border = np.zeros(self.lattice.D, dtype=int)
+#             #
+#             #         if border_points[p][0] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[0] and not np.abs(direction[0]):  # searching border on left [x]
+#             #             border[0] = -1
+#             #         elif border_points[p][0] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[0] and not np.abs(direction[0]):  # searching border on right [x]
+#             #             border[0] = 1
+#             #
+#             #         if border_points[p][1] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[1] and not np.abs(direction[1]):  # searching border on left [y]
+#             #             border[1] = -1
+#             #         elif border_points[p][1] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[1] and not np.abs(direction[1]):  # searching border on right [y]
+#             #             border[1] = 1
+#             #
+#             #         try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
+#             #             self.f_index_from.append([i, border_points[p][0], border_points[p][1]])
+#             #             self.f_index_to.append([])
+#             #
+#             #             if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#             #             b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]
+#             #                     and not global_solid_mask[
+#             #                         a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#             #                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]):
+#             #                 # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
+#             #                 # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
+#             #
+#             #                 self.f_index.append([self.lattice.stencil.opposite[i],
+#             #                                      a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#             #                                      b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny])
+#             #         except IndexError:
+#             #             pass  # just ignore this iteration since there is no neighbor there
+#
+#             for p in range(0, len(border_points)):  # for all border points
+#                 for i in range(0, len(relevant_velocity_vectors)):
+#                     # where to take population from in post_collision_population...
+#                     self.f_index_from.append([relevant_velocity_vectors[i], border_points[p][0], border_points[p][1]])
+#                     # where to put population in f
+#                     if direction[0] != 0:  # mirror in x-direction, don't alter x-coordinate
+#                         self.f_index_to.append([relevant_velocity_vectors_mirrored[i], border_points[p][0], border_points[p][1]+self.lattice.stencil.e[relevant_velocity_vectors[i],1]])
+#                         # PERIODICITY: if am rand und periodisch in x Richtung, go to other side of domain
+#                     elif direction[1] !=0:  # mirror in y-direction, don't alter y-coordinate
+#                         self.f_index_to.append([relevant_velocity_vectors_mirrored[i], border_points[p][0] + self.lattice.stencil.e[relevant_velocity_vectors[i], 0], border_points[p][1]])
+#                         # PERIODICITY: if am rand und periodisch in y Richtung, go to other side of domain
+#
+#
+#
+#         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
+#             nx, ny, nz = mask.shape
+#             a, b, c = np.where(mask)
+#
+#             for p in range(0, len(a)):
+#                 for i in range(0, self.lattice.Q):
+#                     border = np.zeros(self.lattice.D, dtype=int)
+#                     # x - direction
+#                     if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[
+#                         0]:  # searching border on left
+#                         border[0] = -1
+#                     elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[
+#                         0]:  # searching border on right
+#                         border[0] = 1
+#                     # y - direction
+#                     if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[
+#                         1]:  # searching border on left
+#                         border[1] = -1
+#                     elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[
+#                         1]:  # searching border on right
+#                         border[1] = 1
+#                     # z - direction
+#                     if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1 and periodicity[
+#                         2]:  # searching border on left
+#                         border[2] = -1
+#                     elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1 and periodicity[
+#                         2]:  # searching border on right
+#                         border[2] = 1
+#
+#                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+#                         if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+#                         c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]
+#                                 and not global_solid_mask[
+#                                     a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#                                     b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+#                                     c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]):
+#                             self.f_index.append([self.lattice.stencil.opposite[i],
+#                                                  a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
+#                                                  b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
+#                                                  c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz])
+#                     except IndexError:
+#                         pass  # just ignore this iteration since there is no neighbor there
+#
+#         # convert relevant tensors:
+#         self.f_index = torch.tensor(np.array(self.f_index), device=self.lattice.device,
+#                                     dtype=torch.int64)  # the batch-index has to be integer
+#         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
+#                                             dtype=torch.int64)  # batch-index has to be a tensor
+#         # f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+#         # f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
+#         # self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
+#
+#
+#     def __call__(self, f):
+#         pass
+#         # an allen betroffenen Zielknoten-Populationen, werden die post_collision Populationen genommen,
+#         # ...welche entgegen der Populationsrichtung einen knoten weiter liegen, jedoch bei dieser Suche bei
+#         # ...Überschreiten der Domänengrenze in direction-Richtung nicht in genau diese Richtung auf den nächsten Knoten gegangen wird
+#         # ...und in genau dieser Teilrichtung die umgekehrte Populationsrichtung verwendet wird.
+#
+#
+#     def make_no_stream_mask(self, f_shape):
+#         # überall, wo pops. während der Boundary.call() gesetzt werden?
+#         # - das sollte für die HalfwaySlipBoundary selbst nicht relevant sein, da sie genau diese Populationen
+#         #   ...sofort nach dem Streaming sowieso durch die passenden post_collision_populationen ersetzt.
+#         # - (?) was ist mit anderen Boundaries, die auf diese Populationen vielleicht VORHER zugreifen? (IN, OUT,...)
+#         pass
+
+# class HalfWayBounceBackWall:
+#     # THIS IS A HALFWAY BBBC ohne Solid_knoten
+#     """Halfway Bounce-Back Boundary on side of the domain (0 thickness)"""
+#     #TODO;: diese MK Implementierung beinhaltet nicht die post_collision Populationen! Diese sollten anstelle von outgoing genutzt werden...
+#
+#     # DAS sollte auf post_collision umgeschrieben werden. Es kann jedoch keine Periodizität abgebildet werden...
+#     def __init__(self, direction, lattice):
+#         self.lattice = lattice
+#         direction = np.array(direction)
+#
+#         # select velocities to be bounced (the ones pointing in "direction")
+#         velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0)
+#         index = []
+#         for i in direction:
+#             if i == 0:
+#                 index.append(slice(None))
+#             if i == 1:
+#                 index.append(-1)
+#             if i == -1:
+#                 index.append(0)
+#
+#         self.bounced = [np.array(self.lattice.stencil.opposite)[velocities]] + index
+#         self.outgoing = [velocities] + index
+#
+#     def __call__(self, f):
+#         f[self.bounced] = f[self.outgoing]
+#         return f
+#
+#     def make_no_stream_mask(self, f_shape):
+#         mask = np.zeros(f_shape, dtype=bool)
+#         mask[tuple(self.bounced)] = 1
+#         mask = self.lattice.convert_to_tensor(mask)
+#         return mask
 
 class BounceBackBoundary:
     """Fullway Bounce-Back Boundary"""
@@ -1467,7 +1691,7 @@ class FullwayBounceBackBoundary_occ:
         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
             nx, ny, nz = mask.shape
 
-            ix_sp, iy_sp, c = np.where(mask)
+            ix_sp, iy_sp, iz_sp = np.where(mask)
             for sp_index in range(0, len(ix_sp)):
                 for q_index in range(0, self.lattice.Q):
                     border = np.zeros(self.lattice.D, dtype=int)
@@ -1479,18 +1703,18 @@ class FullwayBounceBackBoundary_occ:
                         border[1] = -1
                     elif iy_sp[sp_index] == ny - 1 and self.lattice.e[q_index, 1] == 1 and periodicity[1]:  # searching border on right
                         border[1] = 1
-                    if c[sp_index] == 0 and self.lattice.stencil.e[q_index, 2] == -1 and periodicity[2]:  # searching border on left
+                    if iz_sp[sp_index] == 0 and self.lattice.stencil.e[q_index, 2] == -1 and periodicity[2]:  # searching border on left
                         border[2] = -1
-                    elif c[sp_index] == nz - 1 and self.lattice.e[q_index, 2] == 1 and periodicity[2]:  # searching border on right
+                    elif iz_sp[sp_index] == nz - 1 and self.lattice.e[q_index, 2] == 1 and periodicity[2]:  # searching border on right
                         border[2] = 1
                     try:  # try in case the neighboring cell does not exist (and f pointing out of simulation domain)
                         if (not mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0] * nx,
                                     iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1] * ny,
-                                    c[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]
+                                    iz_sp[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]
                                 and not other_solid_bc_mask[ix_sp[sp_index] + self.lattice.stencil.e[q_index, 0] - border[0] * nx,
-                                    iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1] * ny,
-                                    c[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]):
-                            self.f_index_fwbb.append([self.lattice.stencil.opposite[q_index], ix_sp[sp_index], iy_sp[sp_index], c[sp_index]])
+                                                            iy_sp[sp_index] + self.lattice.stencil.e[q_index, 1] - border[1] * ny,
+                                                            iz_sp[sp_index] + self.lattice.stencil.e[q_index, 2] - border[2] * nz]):
+                            self.f_index_fwbb.append([self.lattice.stencil.opposite[q_index], ix_sp[sp_index], iy_sp[sp_index], iz_sp[sp_index]])
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
 
