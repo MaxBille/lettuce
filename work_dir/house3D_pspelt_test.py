@@ -49,7 +49,7 @@ parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 # Infrastructure and I/O (path, devices, name, walltime, vtk-output,...)
 parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
-parser.add_argument("--float_dtype", default="float32", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
+parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
 parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime [s] to simulate, default is 72 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
 
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
@@ -113,7 +113,7 @@ parser.add_argument("--eqlm", action="store_true", help="use Equilibium LessMemo
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
-parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to (?) coordinate system")  # characteristic length LU, in flow direction
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute LU coordinates relative to (?) coordinate system")
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben

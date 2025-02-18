@@ -27,7 +27,7 @@ from pspelt.obstacleFunctions import makeGrid
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
 parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
-parser.add_argument("--float_dtype", default="float32", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
+parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
 parser.add_argument("--dim", default=3, type=int, help="dimensions: 2D (2), oder 3D (3, default)")
 parser.add_argument("--stencil", default="D3Q27", choices=['D2Q9', 'D3Q15', 'D3Q19', 'D3Q27'], help="stencil (D2Q9, D3Q27, D3Q19, D3Q15), dimensions will be infered from D")
@@ -36,7 +36,7 @@ parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory t
 
 # house and domain geometry
 parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
-parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute LU coordinates relative to coordinate system")
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute LU coordinates relative to (?) coordinate system")
 parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
 parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
 #house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
@@ -90,23 +90,23 @@ sys.stdout = Logger(outdir)
 # STENCIL
 if dim == 2:
     if stencil == "D2Q9":
-        stencil_obj = lt.D2Q9
+        stencil_class = lt.D2Q9
     else:
         print("WARNING: wrong stencil choice for 2D simulation, D2Q9 is used")
-        stencil_obj = lt.D2Q9
+        stencil_class = lt.D2Q9
 elif dim == 3:
     if stencil == "D3Q15":
-        stencil_obj = lt.D3Q15
+        stencil_class = lt.D3Q15
     elif stencil == "D3Q19":
-        stencil_obj = lt.D3Q19
+        stencil_class = lt.D3Q19
     elif stencil == "D3Q27":
-        stencil_obj = lt.D3Q27
+        stencil_class = lt.D3Q27
     else:
         print("WARNING: wrong stencil choice for 3D simulation, D3Q27 is used")
-        stencil_obj = lt.D3Q27
+        stencil_class = lt.D3Q27
 else:
     print("WARNING: wrong dimension choise. Using 2D simulation and D2Q9")
-    stencil_obj = lt.D2Q9
+    stencil_class = lt.D2Q9
     dim = 2
 
 if float_dtype == "float32" or float_dtype == "single":
@@ -117,7 +117,7 @@ elif float_dtype == "half" or float_dtype == "float16":
     float_dtype = torch.float16
 
 # LATTICE
-lattice = lt.Lattice(stencil_obj, device=torch.device(default_device), dtype=float_dtype)
+lattice = lt.Lattice(stencil_class, device=torch.device(default_device), dtype=float_dtype)
 
 
 # calculate resolution LU/m
