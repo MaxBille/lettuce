@@ -28,7 +28,7 @@ from lettuce import torch_gradient
 from lettuce.boundary import InterpolatedBounceBackBoundary_occ, BounceBackBoundary
 from lettuce.boundary_mk import EquilibriumExtrapolationOutlet, NonEquilibriumExtrapolationInletU, ZeroGradientOutlet, SyntheticEddyInlet
 # flow
-from lettuce.flows.velocityKeilFlow import VelocityKeilFlow
+from lettuce.flows.velocityTestFlow import VelocityTestFlow
 
 # pspelt
 from pspelt.geometric_building_model import build_house_max
@@ -44,9 +44,9 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
 # (!) action = 'store_false' bedeutet, dass im Fall des GEGEBENEN Arguments, false gespeichert wird, und wenn es NICHT gegeben ist, True... wtf
-parser.add_argument("--name", default="Keil3D", help="name of the simulation, appears in output directory name")
+parser.add_argument("--name", default="velocity3D", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
-parser.add_argument("--float_dtype", default="float32", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
+parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
 parser.add_argument("--t_sim_max", default=(71*60*60), type=float, help="max. walltime [s] to simulate, default is 71 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
 
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
@@ -85,7 +85,6 @@ parser.add_argument("--ma", default=0.05, type=float, help="Mach number (should 
 parser.add_argument("--viscosity_pu", default=14.852989758837 * 10**(-6), type=float, help="kinematic fluid viscosity in PU. Default is air at ~14.853e-6 (at 15°C, 1atm)")
 parser.add_argument("--char_density_pu", default=1.2250, type=float, help="density, default is air at ~1.2250 at 15°C, 1atm")  # ist das so korrekt? - von Martin Kiemank übernommen
 parser.add_argument("--u_init", default=0, type=int, choices=[0, 1, 2], help="0: initial velocity zero, 1: velocity one uniform, 2: velocity profile") # könnte ich noch auf Philipp und mich anpassen...und uniform durch komplett WSP ersetzen
-#OLD: parser.add_argument("--u_max_pu", default=0, type=float, help="max. velocity in PU at the tip of the keil. If set, overwrites Reynoldsnumber!")
 # -> see domain_geometry below for velocity-profile parameters
 # char velocity PU will be calculated from Re, viscosity and char_length!
 
@@ -100,12 +99,10 @@ parser.add_argument("--eqlm", action="store_true", help="use Equilibium LessMemo
 
 # domain geometry
 #TODO: [opt., Philipp]: wenn die charakteristische Geschwindigkeit der maximalen Geschwindigkeit in der Domäne entspricht, bin ich möglicherweise bzgl. meines Mach-Spielraums begrenzter.
-parser.add_argument("--keil_percentage_of_inlet", default=None, type=float, help="percentage of inlet that is keilförmig")
-# KEIL STEIGUNG? - vielleicht später, um daraus dann die Reynoldszahl zu berechnen...
-parser.add_argument("--keil_delta_ux_pu", default=None, type=float, help="max. delta_ux (grad) for velocity profile in PU. Overwrites Re(!)")
-parser.add_argument("--keil_u_max_pu", default=None, type=float, help="max. velocity = characteristic velocity in PU. Overwrites Re and keil_delta_ux_pu (!)")
-parser.add_argument("--keil_delta_ux_lu", default=None, type=float, help="max. delta_ux (grad) for velocity profile in LU. Overwrites Re(!)")
-parser.add_argument("--keil_u_max_lu", default=None, type=float, help="max. velocity = characteristic velocity in LU. Overwrites Re and keil_delta_ux_lu (!)")
+parser.add_argument("--inlet_y_rel_start", default=None, type=float, help="where velocity-front begins on inlet-layer")
+parser.add_argument("--inlet_y_rel_end", default=None, type=float, help="where velocity-front ends on inlet-layer")
+parser.add_argument("--inlet_velocity_pu", default=None, type=float, help="which velocity the inlet velocity-front has (in PU)")
+parser.add_argument("--inlet_velocity_lu", default=None, type=float, help="which velocity the inlet velocity-front has (in LU)")
 
 parser.add_argument("--resolution", default=1, type=float, help="number of gridpoints per meter [LU/PU]")
 parser.add_argument("--domain_length_x_lu", default=None, type=int, help="domain length in flow direction (X) in LU (only specify lu OR pu)")
@@ -114,6 +111,8 @@ parser.add_argument("--domain_height_y_lu", default=None, type=int, help="domain
 parser.add_argument("--domain_height_y_pu", default=None, type=float, help="domain height in cross flow direction (Y) in PU (only specify lu OR pu)")
 parser.add_argument("--domain_width_z_lu", default=None, type=int, help="domain width in cross flow direction (Z) in LU (only specify lu OR pu)")
 parser.add_argument("--domain_width_z_pu", default=None, type=float, help="domain width in cross flow direction (Z) in PU (only specify lu OR pu)")
+#parser.add_argument("--char_length_lu", default=None, type=float)
+parser.add_argument("--char_length_pu", default=10, type=float)
 
 # boundary algorithms
 parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI")
@@ -140,8 +139,8 @@ outdir = args["outdir"]+"/"+sim_id  # adding individal sim-ID to outdir path to 
 outdir_data = outdir_data+"/"+sim_id
 if (args["vtk_3D"] or args["vtk_slice2D"] or args["save_animations"]) and not os.path.exists(outdir_data):
     os.makedirs(outdir_data)
-print(f"Outdir/simID = {outdir}/{sim_id}")
-print(f"Outdir_vtk/simID = {outdir_data}/{sim_id}")
+print(f"outdir/simID = {outdir}/{sim_id}")
+print(f"outdir_data/simID = {outdir_data}/{sim_id}")
 print(f"Input arguments: {args}")
 
 # [optional] os.makedirs(outdir+"/PU_point_report")
@@ -305,56 +304,67 @@ else:
 viscosity_pu = args["viscosity_pu"]
 char_density_pu = args["char_density_pu"]
 ma = args["ma"]
+re = args["re"]  # for char_velocity
+char_length_pu = args["char_length_pu"]  # independent of flow geometry, to keep flow physics comparable
 
-if args["keil_delta_ux_pu"] is not None and args["keil_percentage_of_inlet"] is not None:
-    # calculate u_max and Reynoldsnumber
-    triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
-    
-    keil_u_max_pu = args["keil_delta_ux_pu"] * triangle_y_pu
-    re = keil_u_max_pu * domain_length_x_pu / viscosity_pu
-    keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
-    keil_delta_ux_pu = args["keil_delta_ux_pu"]
+# GIVEN: Re, Ma, char_length
+# CALCULATE: char_velocity_pu,
+char_velocity_pu = re * viscosity_pu / char_length_pu
 
-elif args["keil_delta_ux_pu"] is not None and (args["re"] is not None or args["keil_u_max_pu"] is not None):
-    # calculate percentage of inlet
-    
-    if args["keil_u_max_pu"] is not None:
-        # calculate Reynoldsnumber
-        re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
-        keil_u_max_pu = args["keil_u_max_pu"]
-    elif args["re"] is not None:
-        # calc char_velocity
-        re = args["re"]
-        keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
-    else:
-        print("ERROR: could not determin Reynoldsnumber or keil_u_max_pu!")
-    
-    triangle_y_pu = keil_u_max_pu / args["keil_delta_ux_pu"]
-    keil_delta_ux_pu = args["keil_delta_ux_pu"]
-    keil_percentage_of_inlet = 2 * triangle_y_pu / domain_height_y_pu
+if args["inlet_velocity_pu"] is None and args["inlet_velocity_lu"] is not None:
+    inlet_velocity_lu = args["inlet_velocity_lu"]
+    inlet_velocity_pu = inlet_velocity_lu / (ma * 1 / np.sqrt(3)) * char_velocity_pu
+elif args["inlet_velocity_lu"] is None and args["inlet_velocity_pu"] is not None:
+    inlet_velocity_pu = args["inlet_velocity_pu"]
+    inlet_velocity_lu = inlet_velocity_pu / char_velocity_pu * (ma * 1 / np.sqrt(3))
 
-elif (args["re"] is not None or args["keil_u_max_pu"] is not None) and args["keil_percentage_of_inlet"] is not None:
-    # calculate delta_ux_pu
+# if args["keil_delta_ux_pu"] is not None and args["keil_percentage_of_inlet"] is not None:
+#     # calculate u_max and Reynoldsnumber
+#     triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
+#
+#     keil_u_max_pu = args["keil_delta_ux_pu"] * triangle_y_pu
+#     re = keil_u_max_pu * domain_length_x_pu / viscosity_pu
+#     keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
+#     keil_delta_ux_pu = args["keil_delta_ux_pu"]
+#
+# elif args["keil_delta_ux_pu"] is not None and (args["re"] is not None or args["keil_u_max_pu"] is not None):
+#     # calculate percentage of inlet
+#
+#     if args["keil_u_max_pu"] is not None:
+#         # calculate Reynoldsnumber
+#         re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
+#         keil_u_max_pu = args["keil_u_max_pu"]
+#     elif args["re"] is not None:
+#         # calc char_velocity
+#         re = args["re"]
+#         keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
+#     else:
+#         print("ERROR: could not determin Reynoldsnumber or keil_u_max_pu!")
+#
+#     triangle_y_pu = keil_u_max_pu / args["keil_delta_ux_pu"]
+#     keil_delta_ux_pu = args["keil_delta_ux_pu"]
+#     keil_percentage_of_inlet = 2 * triangle_y_pu / domain_height_y_pu
+#
+# elif (args["re"] is not None or args["keil_u_max_pu"] is not None) and args["keil_percentage_of_inlet"] is not None:
+#     # calculate delta_ux_pu
+#
+#     if args["keil_u_max_pu"] is not None:
+#         # calculate Reynoldsnumber
+#         re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
+#         keil_u_max_pu = args["keil_u_max_pu"]
+#     elif args["re"] is not None:
+#         # calc char_velocity
+#         re = args["re"]
+#         keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
+#     else:
+#         print("ERROR: could not determine Reynoldsnumber or keil_u_max_pu!")
+#
+#     keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
+#     triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
+#     keil_delta_ux_pu = keil_u_max_pu / triangle_y_pu
+# else:
+#     print("ERROR: could not determine flow physics!")
 
-    if args["keil_u_max_pu"] is not None:
-        # calculate Reynoldsnumber
-        re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
-        keil_u_max_pu = args["keil_u_max_pu"]
-    elif args["re"] is not None:
-        # calc char_velocity
-        re = args["re"]
-        keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
-    else:
-        print("ERROR: could not determin Reynoldsnumber or keil_u_max_pu!")
-
-    keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
-    triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
-    keil_delta_ux_pu = keil_u_max_pu / triangle_y_pu
-else:
-    print("ERROR: could not determin flow physics!")
-        
-        
-        
 # steps and time
 
 t_start = 0  # TODO: add t_start argument, add t_end output
@@ -363,12 +373,12 @@ if args["t_target"] is not None:  # calculate steps LU
     # t_start, t_target
     t_target = args["t_target"]
     t_duration = args["t_target"] - t_start
-    n_steps_duration = int(t_duration * domain_length_x_lu/domain_length_x_pu * keil_u_max_pu/(ma*1/np.sqrt(3)))
+    n_steps_duration = int(t_duration * domain_length_x_lu/domain_length_x_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
     n_steps_target = n_steps_duration + n_steps_start
 elif args["n_steps_target"] is not None:
     n_steps_target = args["n_steps_target"]
     n_steps_duration = args["n_steps_target"] - n_steps_start
-    t_duration = n_steps_target / (domain_length_x_lu/domain_length_x_pu * keil_u_max_pu/(ma*1/np.sqrt(3)))
+    t_duration = n_steps_target / (domain_length_x_lu/domain_length_x_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
     t_target = t_start + t_duration 
 else:
     print("ERROR: could not determine steps and time!")
@@ -426,10 +436,10 @@ print(f"-> Domain LU shape = {shape}")
 
 ## FLOW Class
 print("Initializing flow class...")
-flow = VelocityKeilFlow(shape, re, ma, lattice, domain_constraints, domain_length_x_lu, domain_length_x_pu,
-                        keil_u_max_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
-                        keil_percentage_of_inlet=keil_percentage_of_inlet,
-                        keil_steigung=keil_delta_ux_pu,
+flow = VelocityTestFlow(shape, re, ma, lattice, domain_constraints, char_length_pu * resolution, char_length_pu,
+                        char_velocity_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
+                        inlet_y_rel_start=0.33,
+                        inlet_velocity_pu=inlet_velocity_pu,
                         inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
                         inlet_ramp_steps=args["inlet_ramp_steps"])
 
@@ -454,8 +464,9 @@ output_file.write('\n{:30s} {:30s}'.format("p_char_PU", str(flow.units.character
 output_file.write('\n{:30s} {:30s}'.format("rho_char_PU", str(flow.units.characteristic_density_pu)))
 output_file.write('\n')
 output_file.write('\n{:30s} {:30s}'.format("grid reynolds number Re_g", str(flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5)))))
-output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_x_pu/keil_u_max_pu)))
-output_file.write('\n{:30s} {:30s}'.format("flow through time LU", str(flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu)))
+output_file.write('\n{:30s} {:30s}'.format("grid reynolds number for max.u (Re_g,u_max)", str(inlet_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5)))))
+output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_x_pu/inlet_velocity_pu)))
+output_file.write('\n{:30s} {:30s}'.format("flow through time LU", str(flow.grid[0].shape[0]/inlet_velocity_lu)))
 output_file.write('\n')
 output_file.close()
 
@@ -495,7 +506,7 @@ if args["t_sim_max"] > 0:
 
 # PLOT VELOCITY PROFILE over central slice in XY-plane at z=int(Z/2)
 fig, ax = plt.subplots(constrained_layout=True)
-ux_profile_lu = flow.units.convert_velocity_to_lu(flow.u_x_keil_3D[0, :, int(shape[2] / 2)])  # (!) lattice.u gibt LU, flow.initial_solution gibt PU; flow hat ux_profile auch in PU
+ux_profile_lu = flow.units.convert_velocity_to_lu(flow.u_x_profile_3D_values[0, :, int(shape[2] / 2)])  # (!) lattice.u gibt LU, flow.initial_solution gibt PU; flow hat ux_profile auch in PU
 y_values_lu = np.arange(len(ux_profile_lu))
 ux_profile_table = np.stack([y_values_lu, ux_profile_lu])
 np.savetxt(outdir + f"/velocity_profile_ux_inlet.txt", ux_profile_table, header="y_value (LU) |  ux (LU)")

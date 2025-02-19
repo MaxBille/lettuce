@@ -942,8 +942,15 @@ if args["vtk_3D"]:
         vtk_3d_reporter.output_mask(flow.house_mask, outdir_data + "/vtk", "house_mask")
         vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask")
 
+    ## REPROTER for last 4 frames in steps
+    vtk_3d_end_reporter = lt.VTKReporter(lattice, flow,
+                                     interval=1,
+                                     filename_base=outdir_data + "/vtk/out",
+                                     imin=vtk_3d_i_end-3, imax=vtk_3d_i_end)
+    simulation.reporters.append(vtk_3d_end_reporter)
+
 # slice2D
-if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
+if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"] or args["vtk_slice_intervals"]:
     if args["vtk_slice2D_t_start"] is not None and args["vtk_slice2D_t_start"] > 0:
         #print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
         vtk_slice2d_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_slice2D_t_start"])))
@@ -981,6 +988,42 @@ if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
                                                        imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
         simulation.reporters.append(vtk_domainSlice_reporter)
 
+    # vtk_slices for specific intervals
+    if args["vtk_slice_intervals"]:
+        #i_intervals_vtk_domain_slice = np.array([[0, 1000],
+        #                                          [5000, 5050],
+        #                                          [20000, 20050],
+        #                                          [40000, 40050],
+        #                                          [60000, 60050],
+        #                                          [80000, 80050],
+        #                                          [99950, 100000]])
+        t_starts_vtk_domain_slice = np.array([0, 1000, 5000, 10000, 15000, 19000])
+        i_intervals_vtk_domain_slice = np.array([[0, 1000],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5])+50]
+                                                 ], dtype=int)
+        vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
+        for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
+            print(
+                f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max, 0]}, {i_intervals_vtk_domain_slice[interval_min_max, 1]}]")
+            vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
+                                                                                      interval=1,
+                                                                                      filename_base=outdir_data + "/vtk/slice_domain_intervals/slice_domain_intervals",
+                                                                                      sliceXY=(
+                                                                                      [0, flow.shape[0] - 1],
+                                                                                      [0, flow.shape[1] - 1]),
+                                                                                      sliceZ=int(shape[2] / 2),
+                                                                                      imin=
+                                                                                      i_intervals_vtk_domain_slice[
+                                                                                          interval_min_max, 0],
+                                                                                      imax=
+                                                                                      i_intervals_vtk_domain_slice[
+                                                                                          interval_min_max, 1])
+            simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
+
     if args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
         # inlet slice [0 to Xindex] [0 to Yindex]
         inlet_sliceXY = ([0, args["vtk_slice_x"]], [0, args["vtk_slice_y"]])  # inlet_sliceXY = ([0, 100], [0, 50])
@@ -1010,34 +1053,6 @@ if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
                                                            sliceZ=outlet_sliceZ,
                                                            imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
             simulation.reporters.append(vtk_outletSlice_reporter)
-
-        # vtk_slices for specific intervals
-        if args["vtk_slice_intervals"]:
-            i_intervals_vtk_domain_slice = np.array([[0, 1000],
-                                                     [5000, 5050],
-                                                     [20000, 20050],
-                                                     [40000, 40050],
-                                                     [60000, 60050],
-                                                     [80000, 80050],
-                                                     [99950, 100000]])
-            vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
-            for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
-                print(
-                    f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max, 0]}, {i_intervals_vtk_domain_slice[interval_min_max, 1]}]")
-                vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
-                                                                                          interval=1,
-                                                                                          filename_base=outdir_data + "/vtk/slice_domain_intervals/slice_domain_intervals",
-                                                                                          sliceXY=(
-                                                                                          [0, flow.shape[0] - 1],
-                                                                                          [0, flow.shape[1] - 1]),
-                                                                                          sliceZ=outlet_sliceZ,
-                                                                                          imin=
-                                                                                          i_intervals_vtk_domain_slice[
-                                                                                              interval_min_max, 0],
-                                                                                          imax=
-                                                                                          i_intervals_vtk_domain_slice[
-                                                                                              interval_min_max, 1])
-                simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
 
 
 # WATCHDOG-REPORTER (reports runtime, estimated end etc.)
