@@ -937,10 +937,10 @@ if args["vtk_3D"]:
                                   filename_base=outdir_data + "/vtk/out",
                                   imin=vtk_3d_i_start, imax=vtk_3d_i_end)
     simulation.reporters.append(vtk_3d_reporter)
-    vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask")
+    vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)
     if not combine_solids:
-        vtk_3d_reporter.output_mask(flow.house_mask, outdir_data + "/vtk", "house_mask")
-        vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask")
+        vtk_3d_reporter.output_mask(flow.house_mask, outdir_data + "/vtk", "house_mask", point=True)
+        vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask", point=True)
 
     ## REPROTER for last 4 frames in steps
     vtk_3d_end_reporter = lt.VTKReporter(lattice, flow,
