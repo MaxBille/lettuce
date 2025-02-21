@@ -942,7 +942,7 @@ class Watchdog:
         #print("calling watchdog")
         if not self.running:
             self.start_timer()
-        elif i % self.interval == 0:
+        elif i % self.interval == 0 or i == 100:
             #print("watchdog in interval")
             #print("watchdog with", str(i))
             timestamp = datetime.datetime.now()
