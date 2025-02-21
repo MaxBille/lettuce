@@ -252,7 +252,7 @@ class VTKsliceReporter:
                                                                    self.lattice.convert_to_numpy(u[d, ...]))
 
                 # self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
-            write_vtk(self.point_dict, i, self.filename_base)
+            write_vtk(self.point_dict, i, self.filename_base, origin=(self.xmin, self.ymin, self.z_index))  # origin to show slice at correct position when superimposing on 3D vtk-data!
 
     def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
         """
