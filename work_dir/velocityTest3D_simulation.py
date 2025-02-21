@@ -71,6 +71,8 @@ parser.add_argument("--vtk_slice2D_step_end", type=int)
 parser.add_argument("--vtk_slice2D_t_start", type=float)
 parser.add_argument("--vtk_slice2D_t_end", type=float)
 
+parser.add_argument("--vtk_slice_intervals", action='store_true', help="toggle vtk-output of 2D slice for specific intervals (hardcoded, see below)")
+
 # SURVEILANCE reporters
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
 parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
