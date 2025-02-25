@@ -116,16 +116,27 @@ parser.add_argument("--domain_width_z_pu", default=None, type=float, help="domai
 #parser.add_argument("--char_length_lu", default=None, type=float)
 parser.add_argument("--char_length_pu", default=10, type=float)
 
+#OPTIONAL FOR BBBC-velocity-interaction...
+parser.add_argument("--bound_flow", action='store_true', help="if the flow is bound by walls on top and bottom")
+parser.add_argument("--ibb_d", default=0.5, type=float, help="d for ibb [0,1]")
+
 # boundary algorithms
 parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI")
 parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP, EQoutU")
 parser.add_argument("--inlet_ramp_steps", default=1, type=int, help="step number over which the velocity of ramped EquilibriumInlet is ramped to 100%")
+#TO implement: parser.add_argument("--wall_bc", default="fwbb", help="wall boundary condition top and bottom")
 
 # plotting and output
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
 parser.add_argument("--animations_number_of_frames", default=None, type=int, help="number of frames to take over the course of the simulation every t_target/#frames time units, overwrites animations_fps!")
 parser.add_argument("--animations_fps_pu", default=None, type=int, help="number of frames per second PU for 2D animations (mp4s). Not the fps for the mp4, but the rate at which frames are taken from simulation (relative to it's simulated PU-time)")
 parser.add_argument("--animations_fps_mp4", default=None, type=int, help="number of frames per second PU for 2D animations (mp4s). Actual fps of the resulting mp4. (Not the fps at which frames are taken from simulation!")
+
+parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
+parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
+# parser.add_argument("--double_precision", action='store_true', help="") # ist bei mir als float_dtype hinterlegt (s.o.)
+parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
+parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 
 args = vars(parser.parse_args())
 
@@ -320,55 +331,6 @@ elif args["inlet_velocity_lu"] is None and args["inlet_velocity_pu"] is not None
     inlet_velocity_pu = args["inlet_velocity_pu"]
     inlet_velocity_lu = inlet_velocity_pu / char_velocity_pu * (ma * 1 / np.sqrt(3))
 
-# if args["keil_delta_ux_pu"] is not None and args["keil_percentage_of_inlet"] is not None:
-#     # calculate u_max and Reynoldsnumber
-#     triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
-#
-#     keil_u_max_pu = args["keil_delta_ux_pu"] * triangle_y_pu
-#     re = keil_u_max_pu * domain_length_x_pu / viscosity_pu
-#     keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
-#     keil_delta_ux_pu = args["keil_delta_ux_pu"]
-#
-# elif args["keil_delta_ux_pu"] is not None and (args["re"] is not None or args["keil_u_max_pu"] is not None):
-#     # calculate percentage of inlet
-#
-#     if args["keil_u_max_pu"] is not None:
-#         # calculate Reynoldsnumber
-#         re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
-#         keil_u_max_pu = args["keil_u_max_pu"]
-#     elif args["re"] is not None:
-#         # calc char_velocity
-#         re = args["re"]
-#         keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
-#     else:
-#         print("ERROR: could not determin Reynoldsnumber or keil_u_max_pu!")
-#
-#     triangle_y_pu = keil_u_max_pu / args["keil_delta_ux_pu"]
-#     keil_delta_ux_pu = args["keil_delta_ux_pu"]
-#     keil_percentage_of_inlet = 2 * triangle_y_pu / domain_height_y_pu
-#
-# elif (args["re"] is not None or args["keil_u_max_pu"] is not None) and args["keil_percentage_of_inlet"] is not None:
-#     # calculate delta_ux_pu
-#
-#     if args["keil_u_max_pu"] is not None:
-#         # calculate Reynoldsnumber
-#         re = args["keil_u_max_pu"] * domain_length_x_pu / viscosity_pu
-#         keil_u_max_pu = args["keil_u_max_pu"]
-#     elif args["re"] is not None:
-#         # calc char_velocity
-#         re = args["re"]
-#         keil_u_max_pu = re / domain_length_x_pu * viscosity_pu
-#     else:
-#         print("ERROR: could not determine Reynoldsnumber or keil_u_max_pu!")
-#
-#     keil_percentage_of_inlet = args["keil_percentage_of_inlet"]
-#     triangle_y_pu = domain_height_y_pu * args["keil_percentage_of_inlet"] / 2
-#     keil_delta_ux_pu = keil_u_max_pu / triangle_y_pu
-# else:
-#     print("ERROR: could not determine flow physics!")
-
-# steps and time
-
 t_start = 0  # TODO: add t_start argument, add t_end output
 n_steps_start = 0
 if args["t_target"] is not None:  # calculate steps LU
@@ -436,14 +398,86 @@ shape = (domain_length_x_lu, domain_height_y_lu, domain_width_z_lu) if lattice.D
 print(f"-> Domain PU constraints = {domain_constraints}")
 print(f"-> Domain LU shape = {shape}")
 
+if args["bound_flow"]:
+    # GEOMETRY
+    # setting polygon 1 and 2 on "Placeholder", to have gt/lt correct
+    if args["ibb_d"] <= 0.5:
+        placeholder = 0.4
+    else:
+        placeholder = 0.6
+
+    top_polygon = [[xmin_pu-0.1*domain_length_x_pu, domain_height_y_pu-(1+placeholder)*1/resolution],
+                   [xmin_pu-0.1*domain_length_x_pu, domain_height_y_pu+0.1*domain_height_y_pu],
+                   [xmax_pu+0.1*domain_length_x_pu, domain_height_y_pu+0.1*domain_height_y_pu],
+                   [xmax_pu+0.1*domain_length_x_pu, domain_height_y_pu-(1+placeholder)*1/resolution]]
+    bottom_polygon = [[xmin_pu-0.1*domain_length_x_pu, placeholder*1/resolution],
+                      [xmin_pu-0.1*domain_length_x_pu, -0.1*domain_height_y_pu],
+                      [xmax_pu+0.1*domain_length_x_pu, -0.1*domain_height_y_pu],
+                      [xmax_pu+0.1*domain_length_x_pu, placeholder*1/resolution]]
+
+    # create unique ID of geometry parameters:
+    geometry_hash = hashlib.md5(f"ibb_d_{domain_constraints}{shape}".encode()).hexdigest()
+    top_bc_name = "top_bc_"+ str(geometry_hash)
+    bottom_bc_name = "bottom_bc_"+ str(geometry_hash)
+
+    ## CALCULATE SOLID BOUNDARY DATA
+    print("Calculating 3D TopoDS_Shapes...")
+
+    top_prism_shape = build_house_max(top_polygon, minz=zmin_pu-0.1*domain_width_z_pu, maxz=zmax_pu+0.1*domain_width_z_pu)  #TopoDS_Shape als Rückgabe
+    bottom_prism_shape = build_house_max(bottom_polygon, minz=zmin_pu-0.1*domain_width_z_pu, maxz=zmax_pu+0.1*domain_width_z_pu)
+
+    ### IS THIS POSSIBLE? solid_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(top_prism_shape, bottom_prism_shape).Shape())
+
+    top_solid_boundary_data = getIBBdata(top_prism_shape, makeGrid(domain_constraints, shape),
+                                            periodicity=(False, False, True),
+                                            # TODO: clean the tensor(array() stuff with stack/cat etc.
+                                            lattice=lattice, no_store_solid_boundary_data=False, res=resolution, dim=3,
+                                            name=top_bc_name,
+                                            solid_boundary_data_path=args["solid_boundary_data_path"],
+                                            redo_calculations=args["recalc"],
+                                            # TODO: redo_calc as parameter of house3D script
+                                            parallel=False,  # TODO: eliminate parallelism
+                                            device=args["default_device"],
+                                            cluster=args["cluster"],
+                                            verbose=args["verbose"]
+                                            )
+    bottom_solid_boundary_data = getIBBdata(bottom_prism_shape, makeGrid(domain_constraints, shape),
+                                         periodicity=(False, False, True),
+                                         # TODO: clean the tensor(array() stuff with stack/cat etc.
+                                         lattice=lattice, no_store_solid_boundary_data=False, res=resolution, dim=3,
+                                         name=bottom_bc_name,
+                                         solid_boundary_data_path=args["solid_boundary_data_path"],
+                                         redo_calculations=args["recalc"],
+                                         # TODO: redo_calc as parameter of house3D script
+                                         parallel=False,  # TODO: eliminate parallelism
+                                         device=args["default_device"],
+                                         cluster=args["cluster"],
+                                         verbose=args["verbose"]
+                                         )
+
 ## FLOW Class
 print("Initializing flow class...")
-flow = VelocityTestFlow(shape, re, ma, lattice, domain_constraints, char_length_pu * resolution, char_length_pu,
-                        char_velocity_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
-                        inlet_y_rel_start=0.33,
-                        inlet_velocity_pu=inlet_velocity_pu,
-                        inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
-                        inlet_ramp_steps=args["inlet_ramp_steps"])
+if args["bound_flow"]:
+    flow = VelocityTestFlow(shape, re, ma, lattice, domain_constraints, char_length_pu * resolution, char_length_pu,
+                            char_velocity_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
+                            inlet_y_rel_start=args["inlet_y_rel_start"],
+                            inlet_velocity_pu=inlet_velocity_pu,
+                            inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
+                            inlet_ramp_steps=args["inlet_ramp_steps"],
+                            bound_flow=True,
+                            ibb_d=args["ibb_d"],
+                            top_solid_boundary_data=top_solid_boundary_data,
+                            bottom_solid_boundary_data=bottom_solid_boundary_data
+                            )
+else:
+    flow = VelocityTestFlow(shape, re, ma, lattice, domain_constraints, char_length_pu * resolution, char_length_pu,
+                            char_velocity_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
+                            inlet_y_rel_start=args["inlet_y_rel_start"],
+                            inlet_velocity_pu=inlet_velocity_pu,
+                            inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
+                            inlet_ramp_steps=args["inlet_ramp_steps"])
+
+test_grid = flow.grid
 
 # export flow physics to file:
 output_file = open(outdir+"/flow_physics_parameters.txt", "a")
@@ -618,6 +652,9 @@ if args["vtk_3D"]:
                                   filename_base=outdir_data + "/vtk/out",
                                   imin=vtk_3d_i_start, imax=vtk_3d_i_end)
     simulation.reporters.append(vtk_3d_reporter)
+
+    if flow.bound_flow:
+        vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)
 
 # slice2D
 if args["vtk_slice2D"]:

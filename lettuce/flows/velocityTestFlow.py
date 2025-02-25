@@ -30,6 +30,10 @@ class VelocityTestFlow:
                  inlet_ramp_steps = 0,
                  outlet_bc: str = "eqoutp",
                  lateral_bc: str = "periodic",
+                 bound_flow=False,
+                 ibb_d=0.5,
+                 top_solid_boundary_data=None,
+                 bottom_solid_boundary_data=None
                  ):
 
         self.shape = shape
@@ -62,11 +66,24 @@ class VelocityTestFlow:
 
         self.in_mask = np.zeros(shape=self.shape, dtype=bool)
         self.in_mask[0,:,:] = True  # inlet on the left
-        self.solid_mask = np.zeros(shape=self.shape, dtype=bool)
+        #self.solid_mask = np.zeros(shape=self.shape, dtype=bool)
 
         self.inlet_ramp_steps = inlet_ramp_steps
 
         self.u_x_profile_3D_values = self.u_x_profile_3D(self.grid[1], inlet_velocity_pu = self.inlet_velocity_pu)
+
+        self.bound_flow = bound_flow
+        self.top_solid_boundary_data = top_solid_boundary_data
+        self.bottom_solid_boundary_data = bottom_solid_boundary_data
+        self.ibb_d = ibb_d
+        if self.bound_flow and self.top_solid_boundary_data is not None and self.bottom_solid_boundary_data is not None and 1 >= ibb_d >= 0:
+            self.in_mask = np.zeros(shape=self.shape, dtype=bool)
+            self.in_mask[0, 1:-1, :] = True
+            self.bottom_mask = self.bottom_solid_boundary_data.solid_mask
+            self.top_mask = self.top_solid_boundary_data.solid_mask
+        else:
+            self.bound_flow = False
+            print("PERIODIC lateral boundaries")
 
     def initial_solution(self, x: torch.Tensor):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
@@ -96,6 +113,18 @@ class VelocityTestFlow:
             raise NotImplementedError("Specify u_init = 0, 1, ...")
 
         return p, u
+
+    @property
+    def solid_mask(self):
+        if not hasattr(self, '_solid_mask'):
+            self.overlap_all_solid_masks()
+        return self._solid_mask
+
+    @property
+    def non_free_flow_mask(self):
+        if not hasattr(self, '_non_free_flow_mask'):
+            self.calculate_non_free_flow_mask()
+        return self._non_free_flow_mask
 
     @property
     def grid(self):
@@ -146,11 +175,29 @@ class VelocityTestFlow:
         else:
             raise NotImplementedError("lateral walls must be periodic or...")
 
+        self.overlap_all_solid_masks()
+        self.calculate_non_free_flow_mask()
+
+        if self.bound_flow:
+            top_boundary_condition = InterpolatedBounceBackBoundary_occ(self.top_solid_boundary_data.solid_mask, self.lattice, self.top_solid_boundary_data)
+            bottom_boundary_condition = InterpolatedBounceBackBoundary_occ(self.bottom_solid_boundary_data.solid_mask, self.lattice, self.bottom_solid_boundary_data)
+
+        self.overlap_all_solid_masks()
+        self.calculate_non_free_flow_mask()
+
         # LIST OF boundaries
-        boundaries = [
-            inlet_boundary_condition,
-            outlet_boundary_condition
-        ]
+        if self.bound_flow:
+            boundaries = [
+                inlet_boundary_condition,
+                outlet_boundary_condition,
+                top_boundary_condition,
+                bottom_boundary_condition
+            ]
+        else:
+            boundaries = [
+                inlet_boundary_condition,
+                outlet_boundary_condition
+            ]
         # LATERAL NOT IMPLEMENTED YET
 
         i = 0
@@ -158,10 +205,84 @@ class VelocityTestFlow:
             print(f"boundaries[{i}]: {str(boundary)}")
             i += 1
 
+        if self.bound_flow:
+            # adjust ibb_d
+            print("adjusting d for f_index(_gt_lt) of bounce back boundaries")
+            # exclude solid nodes (and non-free-flow nodes) from f_indices of all solid boundaries
+            print("excluding solid nodes from f_index(_gt_lt) of bounce back boundaries")
+            for boundary in boundaries:
+                if hasattr(boundary, 'f_index_gt'):
+                    num_entries = boundary.f_index_gt.shape[0]
+                    print(f"boundary {boundary} has f_index_gt with {num_entries} entries")
+                    if boundary.f_index_gt.shape[0] > 0:
+                        boundary.d_gt = boundary.d_gt[torch.where(
+                            ~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                        boundary.f_index_gt = boundary.f_index_gt[torch.where(
+                            ~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_gt[:, 1], boundary.f_index_gt[:, 2], boundary.f_index_gt[:, 3] if len(self.shape) == 3 else None])]
+                        boundary.d_gt.fill_(self.ibb_d)
+                    print(f"removed {num_entries - boundary.f_index_gt.shape[0]} entries")
+                if hasattr(boundary, 'f_index_lt'):
+                    num_entries = boundary.f_index_lt.shape[0]
+                    print(f"boundary {boundary} has f_index_lt with {num_entries} entries")
+                    if boundary.f_index_lt.shape[0] > 0:
+                        boundary.d_lt = boundary.d_lt[torch.where(
+                            ~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                        boundary.f_index_lt = boundary.f_index_lt[torch.where(
+                            ~self.lattice.convert_to_tensor(self.non_free_flow_mask)[boundary.f_index_lt[:, 1], boundary.f_index_lt[:, 2], boundary.f_index_lt[:, 3] if len(self.shape) == 3 else None])]
+                        boundary.d_lt.fill_(self.ibb_d)
+                    print(f"removed {num_entries - boundary.f_index_lt.shape[0]} entries")
+
         # time execution of flow.boundary()
         time1 = time.time() - time0
         print(f"boundaries took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return boundaries
+
+    def overlap_all_solid_masks(self):
+        print("overlap_all_solid_masks")
+        time0 = time.time()
+        ###assert self.boundary_objects is not None
+            # boundaries_list = [_ for _ in self.boundary_objects
+            #                    if _.unique_boundary and _.boundary_type is not PartiallySaturatedBoundary]
+        #boundaries_list = self.boundaries
+        # for boundary in boundaries_list:
+        #     if not hasattr(boundary.collision_data, 'solid_mask'):
+        #         boundary.calculate_points_inside()
+        # COMBINE ALL SOLID-Masks to single mask
+        # self._solid_mask = torch.zeros_like(boundaries_list[0].solid_mask, dtype=torch.bool, device=self.lattice.device)
+        # for boundary in boundaries_list:
+        #     self._solid_mask = self.solid_mask | boundary.solid_mask.to(self.lattice.device)
+
+        # TODO: geht das irgendwie anders? ich kann nicht self.boundaries aufrufen, weil die boundaries dann komplett neu initialisiert werden und das Zeit kostet!
+        self._solid_mask = np.zeros(shape=self.shape, dtype=bool)
+        if self.bound_flow:
+            self._solid_mask = self.solid_mask | self.top_mask | self.bottom_mask
+        # TODO: falls hier weitere solids hinzugefügt werden (in diesem flow), dann müssen deren Masken nach Erstellung noch entsprechend verschnitten werden...
+        #  alternativ: man könnte ein "update solid mask" oderso machen, in dem man dann alle True Punkte hinzufügt... und das wird von einer boundary selbst bei initialisierung aufgerufen
+        time1 = time.time() - time0
+        print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
+        return
+
+    def calculate_non_free_flow_mask(self):
+        print("calculating non_free_flow_mask")
+        time0 = time.time()
+        self._non_free_flow_mask = np.zeros(shape=self.shape, dtype=bool)
+
+        if self.bound_flow:
+            out_mask = np.zeros_like(self.solid_mask)
+            out_mask[-1, 1:, :] = True
+
+            self._non_free_flow_mask = self.solid_mask | out_mask | self.in_mask | self.top_mask | self.bottom_mask
+        else:
+            out_mask = np.zeros_like(self.solid_mask)
+            out_mask[-1, :, :] = True
+
+            self._non_free_flow_mask =  self.solid_mask | out_mask | self.in_mask
+
+        # (!) outlet is currently defined through "direction" and not mask, this is why this is implemented locally like this
+
+        time1 = time.time() - time0
+        print(f"calculate_non_free_flow_mask took {floor(time1/ 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
+        return
 
     def u_x_profile_3D(self, y, inlet_velocity_pu):
         u_profile = np.zeros_like(y)
