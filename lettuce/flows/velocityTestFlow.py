@@ -169,18 +169,19 @@ class VelocityTestFlow:
             print("(INFO) outlet_bc was not recognized or specified. Defaulting to EQ_outlet_P")
             outlet_boundary_condition = EquilibriumOutletP(self.units.lattice, [1, 0, 0], rho0=self.units.convert_pressure_pu_to_density_lu(0))
 
-        # LATERAL
-        if self.lateral_bc == "periodic":
-            pass
-        else:
-            raise NotImplementedError("lateral walls must be periodic or...")
+
 
         self.overlap_all_solid_masks()
         self.calculate_non_free_flow_mask()
 
+        # LATERAL
         if self.bound_flow:
-            top_boundary_condition = InterpolatedBounceBackBoundary_occ(self.top_solid_boundary_data.solid_mask, self.lattice, self.top_solid_boundary_data)
-            bottom_boundary_condition = InterpolatedBounceBackBoundary_occ(self.bottom_solid_boundary_data.solid_mask, self.lattice, self.bottom_solid_boundary_data)
+            if self.lateral_bc == "ibb":
+                top_boundary_condition = InterpolatedBounceBackBoundary_occ(self.top_solid_boundary_data.solid_mask, self.lattice, self.top_solid_boundary_data)
+                bottom_boundary_condition = InterpolatedBounceBackBoundary_occ(self.bottom_solid_boundary_data.solid_mask, self.lattice, self.bottom_solid_boundary_data)
+            elif self.lateral_bc == "fwbb":
+                top_boundary_condition = FullwayBounceBackBoundary_occ(self.top_solid_boundary_data.solid_mask, self.lattice, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
+                bottom_boundary_condition = FullwayBounceBackBoundary_occ(self.bottom_solid_boundary_data.solid_mask, self.lattice, global_solid_mask=self.solid_mask, periodicity=(False, False, True))
 
         self.overlap_all_solid_masks()
         self.calculate_non_free_flow_mask()

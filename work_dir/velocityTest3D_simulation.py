@@ -124,7 +124,7 @@ parser.add_argument("--ibb_d", default=0.5, type=float, help="d for ibb [0,1]")
 parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI")
 parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP, EQoutU")
 parser.add_argument("--inlet_ramp_steps", default=1, type=int, help="step number over which the velocity of ramped EquilibriumInlet is ramped to 100%")
-#TO implement: parser.add_argument("--wall_bc", default="fwbb", help="wall boundary condition top and bottom")
+parser.add_argument("--lateral_bc", default="ibb", help="wall boundary condition top and bottom")
 
 # plotting and output
 parser.add_argument("--save_animations", action='store_true', help="create and save animations and pngs of u and p fields")
@@ -463,6 +463,7 @@ if args["bound_flow"]:
                             inlet_y_rel_start=args["inlet_y_rel_start"],
                             inlet_velocity_pu=inlet_velocity_pu,
                             inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
+                            lateral_bc=args["lateral_bc"],
                             inlet_ramp_steps=args["inlet_ramp_steps"],
                             bound_flow=True,
                             ibb_d=args["ibb_d"],
