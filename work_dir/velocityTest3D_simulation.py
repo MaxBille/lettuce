@@ -784,7 +784,9 @@ if args["save_animations"]:
 print(f"INFO: flow through time (time a particle takes to travel from input to output unobstructed at u_char): T_ft_PU = {domain_length_x_pu/flow.units.characteristic_velocity_pu} s")
 print(f"(debug) flow through time (calc. as grid.shape[0]/u_char_lu) T_ft_LU = {flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu} steps")
 print(f"(debug) flow through time (calc. as convert_PU_to_LU(T_ft_PU) T_ft_LU = {flow.units.convert_time_to_lu(domain_length_x_pu/flow.units.characteristic_velocity_pu)} steps")
-
+# TODO: die Flow-Through-Time bezieht sich auf die charakteristische Geschwindigkeit. Das bedeutet,
+#  nur dort wo die vorliegt fließt tatsächlich ein "Partikel" in genau dieser Zeit einmal durch die Domäne.
+#  - im Endeffekt sollte eine u_mean und eine u_max Flow-Through-Time ausgegeben werden. Insb. wenn in der DOmäne die u_char gar nicht erreicht wird.
 
 
 ### RUN SIMULATION
@@ -920,84 +922,98 @@ else:  # only plots final u_mag and p fields
 
 max_u_lu = np.array(max_u_lu_reporter.out)
 np.savetxt(outdir + f"/max_u_lu_timeseries.txt", max_u_lu, header="stepLU  |  timePU  |  u_mag_max_LU")
-
-# PLOT max. Ma in domain over time...
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(max_u_lu[:, 1], max_u_lu[:, 2]/lattice.convert_to_numpy(lattice.cs))
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("maximum Ma")
-ax.set_ylim([0,0.3])
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. Mach")
-plt.savefig(outdir+"/max_Ma.png")
-if not args["cluster"]:
-    plt.show()
+try:
+    # PLOT max. Ma in domain over time...
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(max_u_lu[:, 1], max_u_lu[:, 2]/lattice.convert_to_numpy(lattice.cs))
+    ax.set_xlabel("physical time / s")
+    ax.set_ylabel("maximum Ma")
+    ax.set_ylim([0,0.3])
+    secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax.set_xlabel("timesteps (simulation time / LU)")
+    fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. Mach")
+    plt.savefig(outdir+"/max_Ma.png")
+    if not args["cluster"]:
+        plt.show()
+except:
+    pass
 
 # PLOT max. u_mag for abs. anaylsis (y_limits from first part of sim)
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("maximum momentary velocity magnitude (PU)")
-y_lim_50_first = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
-ax.set_ylim([0, y_lim_50_first*1.1])  # show 10% more than u_mag_max
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0-0.75 T)")
-plt.savefig(outdir+"/max_u_mag_lim_start.png")
-if not args["cluster"]:
-    plt.show()
+try:
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
+    ax.set_xlabel("physical time / s")
+    ax.set_ylabel("maximum momentary velocity magnitude (PU)")
+    y_lim_50_first = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
+    ax.set_ylim([0, y_lim_50_first*1.1])  # show 10% more than u_mag_max
+    secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax.set_xlabel("timesteps (simulation time / LU)")
+    fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0-0.75 T)")
+    plt.savefig(outdir+"/max_u_mag_lim_start.png")
+    if not args["cluster"]:
+        plt.show()
+except:
+    pass
 
-# ...(y_limits from last part of sim)
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("maximum momentary velocity magnitude (PU)")
-y_lim_50_second = flow.units.convert_velocity_to_pu(max_u_lu[int(max_u_lu.shape[0]*0.25):int(max_u_lu.shape[0]*0.95), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
-ax.set_ylim([0, y_lim_50_second*1.1 if abs(y_lim_50_second)<1000 else 1])  # show 10% more than u_mag_max
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0.25-1 T)")
-plt.savefig(outdir+"/max_u_mag_lim_end.png")
-if not args["cluster"]:
-    plt.show()
+try:
+    # ...(y_limits from last part of sim)
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
+    ax.set_xlabel("physical time / s")
+    ax.set_ylabel("maximum momentary velocity magnitude (PU)")
+    y_lim_50_second = flow.units.convert_velocity_to_pu(max_u_lu[int(max_u_lu.shape[0]*0.25):int(max_u_lu.shape[0]*0.95), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
+    ax.set_ylim([0, y_lim_50_second*1.1 if abs(y_lim_50_second)<1000 else 1])  # show 10% more than u_mag_max
+    secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax.set_xlabel("timesteps (simulation time / LU)")
+    fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0.25-1 T)")
+    plt.savefig(outdir+"/max_u_mag_lim_end.png")
+    if not args["cluster"]:
+        plt.show()
+except:
+    pass
 
-# PLOT max/min p for abs. analysis
-min_max_p_pu = np.array(min_max_p_pu_reporter.out)
-np.savetxt(outdir + f"/min_max_p_pu_timeseries.txt", min_max_p_pu, header="stepLU  |  timePU  |  p_min_PU  |  p_max_PU")
-# y_lim from first part of sim...
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("min. and max. momentary pressure (PU)")
-y_lim_50_min = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 2].min()
-y_lim_50_max = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 3].max()
-ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_max)])  # show 10% more above and below
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-ax.legend()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0-0.75 T)")
-plt.savefig(outdir+"/min_max_p_lim_start.png")
-if not args["cluster"]:
-    plt.show()
+try:
+    # PLOT max/min p for abs. analysis
+    min_max_p_pu = np.array(min_max_p_pu_reporter.out)
+    np.savetxt(outdir + f"/min_max_p_pu_timeseries.txt", min_max_p_pu, header="stepLU  |  timePU  |  p_min_PU  |  p_max_PU")
+    # y_lim from first part of sim...
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
+    ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
+    ax.set_xlabel("physical time / s")
+    ax.set_ylabel("min. and max. momentary pressure (PU)")
+    y_lim_50_min = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 2].min()
+    y_lim_50_max = min_max_p_pu[:int(min_max_p_pu.shape[0]/1.3), 3].max()
+    ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_max)])  # show 10% more above and below
+    secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax.set_xlabel("timesteps (simulation time / LU)")
+    ax.legend()
+    fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0-0.75 T)")
+    plt.savefig(outdir+"/min_max_p_lim_start.png")
+    if not args["cluster"]:
+        plt.show()
+except:
+    pass
 
-# y_lim from last part half of sim...
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("min. and max. momentary pressure (PU)")
-y_lim_50_min_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 2].min()
-y_lim_50_max_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 3].max()
-ax.set_ylim([y_lim_50_min_second-0.1*abs(y_lim_50_min_second), y_lim_50_max_second+0.1*abs(y_lim_50_max_second)])  # show 10% more above and below
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-ax.legend()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0.25-1 T)")
-plt.savefig(outdir+"/min_max_p_lim_end.png")
-if not args["cluster"]:
-    plt.show()
+try:
+    # y_lim from last part half of sim...
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
+    ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
+    ax.set_xlabel("physical time / s")
+    ax.set_ylabel("min. and max. momentary pressure (PU)")
+    y_lim_50_min_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 2].min()
+    y_lim_50_max_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 3].max()
+    ax.set_ylim([y_lim_50_min_second-0.1*abs(y_lim_50_min_second), y_lim_50_max_second+0.1*abs(y_lim_50_max_second)])  # show 10% more above and below
+    secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax.set_xlabel("timesteps (simulation time / LU)")
+    ax.legend()
+    fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0.25-1 T)")
+    plt.savefig(outdir+"/min_max_p_lim_end.png")
+    if not args["cluster"]:
+        plt.show()
+except:
+    pass
 
 # PRESSURE and VELOCITY at points
 # only for ground and house sims...
