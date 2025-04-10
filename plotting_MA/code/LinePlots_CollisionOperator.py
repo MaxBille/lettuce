@@ -26,6 +26,7 @@ matplotlib.style.use('../figure_style.mplstyle')
 matplotlib.rcParams.update({'lines.linewidth': 0.8})
 #matplotlib.rcParams.update({'lines.linestyle': '--'})
 #matplotlib.rcParams.update({'font.size': 8}) # font size was 11
+matplotlib.rcParams.update({'figure.figsize': (7.22433,6)})
 
 ### DATA I/O settings
 data_base_path = "/home/mbille/Desktop/MA_Paraview_DataAndScreenshots-for-Thesis/FIG_CollisionOperator"
@@ -43,171 +44,261 @@ yrel_variants = ["rel0", "yrel5"]
 # "TimeStep", "p" ,"ux" ,"uy" ,"uz" ,"Points:0" ,"Points:1" ,"Points:2"
 # 0            1    2     3     4     5   x        6   y        7  z
 
-data_noBBBC_yrel0 = []
-data_noBBBC_yrel5 = []
-data_IBBd05_yrel0 = []
-data_IBBd05_yrel5 = []
-for timestep_index in range(len(timesteps)):
-    data_noBBBC_yrel0.append(np.genfromtxt(data_base_path + "/noBBBC_HL80_LinePlotData_step"+str(timesteps[timestep_index])+"_yrel0.csv", delimiter=",", skip_header=1))
-    data_noBBBC_yrel5.append(np.genfromtxt(data_base_path + "/noBBBC_HL80_LinePlotData_step" + str(timesteps[timestep_index]) + "_yrel5.csv", delimiter=",", skip_header=1))
-    data_IBBd05_yrel0.append(np.genfromtxt(data_base_path + "/IBBd0.5_HL80_LinePlotData_step" + str(timesteps[timestep_index]) + "_yrel0.csv", delimiter=",", skip_header=1))
-    data_IBBd05_yrel5.append(np.genfromtxt(data_base_path + "/IBBd0.5_HL80_LinePlotData_step" + str(timesteps[timestep_index]) + "_yrel5.csv", delimiter=",", skip_header=1))
+if False:
 
-# convert to np-array and exclude all duplicate points from f'in ParaView
-data_noBBBC_yrel0 = np.unique(np.array(data_noBBBC_yrel0),axis=1)
-data_noBBBC_yrel5 = np.unique(np.array(data_noBBBC_yrel5),axis=1)
-data_IBBd05_yrel0 = np.unique(np.array(data_IBBd05_yrel0),axis=1)
-data_IBBd05_yrel5 = np.unique(np.array(data_IBBd05_yrel5),axis=1)
-# ARRAY CONFIG: (timestep (5), x-coord (80), data-columns (8))
+    ### FIG_CO_1: KBC-oscillation around i10000, reg does not.
+    data_fig_path = "/lowInlet_tempOsz_step10000_REGvsKBC_ibb05"
 
-# SORT along x-axis
-sort_indices = np.argsort(data_noBBBC_yrel0[:, :, 5], axis=1)
-data_noBBBC_yrel0 = np.take_along_axis(data_noBBBC_yrel0, np.expand_dims(sort_indices, axis=2), axis=1)
-sort_indices = np.argsort(data_noBBBC_yrel5[:, :, 5], axis=1)
-data_noBBBC_yrel5 = np.take_along_axis(data_noBBBC_yrel5, np.expand_dims(sort_indices, axis=2), axis=1)
-sort_indices = np.argsort(data_IBBd05_yrel0[:, :, 5], axis=1)
-data_IBBd05_yrel0 = np.take_along_axis(data_IBBd05_yrel0, np.expand_dims(sort_indices, axis=2), axis=1)
-sort_indices = np.argsort(data_IBBd05_yrel5[:, :, 5], axis=1)
-data_IBBd05_yrel5 = np.take_along_axis(data_IBBd05_yrel5, np.expand_dims(sort_indices, axis=2), axis=1)
+    # READ DATA
+    timesteps = [10000, 10001, 10002, 10003]
+    yrels = [0, 1]
 
-# list datasets:
-datasets = [data_noBBBC_yrel0,
-            data_noBBBC_yrel5,
-            data_IBBd05_yrel0,
-            data_IBBd05_yrel5]
-dataset_names = ['noBBBC_yrel0',
-                 'noBBBC_yrel5',
-                 'IBBd05_yrel0',
-                 'IBBd05_yrel5']
+    # read and uniqui-fy datasets
+    data_reg_ibb05_low_step10000_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/REG_ibbd05_low_step10000_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+    data_reg_ibb05_low_step10000_yrel4 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/REG_ibbd05_low_step10000_yrel4.csv", delimiter=",", skip_header=1), axis=0)
 
+    data_kbc_ibbd05_low_step10000_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10000_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10000_yrel4 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10000_yrel4.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10001_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10001_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10001_yrel4 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10001_yrel4.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10002_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10002_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10002_yrel4 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10002_yrel4.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10003_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10003_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+    data_kbc_ibbd05_low_step10003_yrel4 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_ibbd05_low_step10003_yrel4.csv", delimiter=",", skip_header=1), axis=0)
 
-for dataset_index in range(len(datasets)):
+    # THIS SOMEHOW DOESN't WORK:...
+    # datasets = [data_reg_ibb05_low_step10000_yrel0, data_reg_ibb05_low_step10000_yrel4,
+    #             data_kbc_ibbd05_low_step10000_yrel0, data_kbc_ibbd05_low_step10000_yrel4,
+    #             data_kbc_ibbd05_low_step10001_yrel0, data_kbc_ibbd05_low_step10001_yrel4,
+    #             data_kbc_ibbd05_low_step10002_yrel0, data_kbc_ibbd05_low_step10002_yrel4,
+    #             data_kbc_ibbd05_low_step10003_yrel0, data_kbc_ibbd05_low_step10003_yrel4]
+    # for dataset in datasets:
+    #     sort_indices = np.argsort(dataset[:, 5])
+    #     dataset = dataset[sort_indices]
 
+    sort_indices = np.argsort(data_reg_ibb05_low_step10000_yrel0[:, 5])
+    data_reg_ibb05_low_step10000_yrel0 = data_reg_ibb05_low_step10000_yrel0[sort_indices]
 
+    sort_indices = np.argsort(data_reg_ibb05_low_step10000_yrel4[:, 5])
+    data_reg_ibb05_low_step10000_yrel4 = data_reg_ibb05_low_step10000_yrel4[sort_indices]
 
-    ### NOT NORMALIZED >>>
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10000_yrel0[:, 5])
+    data_kbc_ibbd05_low_step10000_yrel0 = data_kbc_ibbd05_low_step10000_yrel0[sort_indices]
 
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10000_yrel4[:, 5])
+    data_kbc_ibbd05_low_step10000_yrel4 = data_kbc_ibbd05_low_step10000_yrel4[sort_indices]
 
-    ## PRESSURE
-    p_fig, p_axs = plt.subplots()
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10001_yrel0[:, 5])
+    data_kbc_ibbd05_low_step10001_yrel0 = data_kbc_ibbd05_low_step10001_yrel0[sort_indices]
 
-    for timestep_index in range(len(timesteps)):
-        p_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 1],
-                   #marker="", #linewidth=0.4,
-                   label=fr"p(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    p_axs.set_xlabel(r"$x_{LU}$")
-    p_axs.set_ylabel(r"$p_{LU}$")
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10001_yrel4[:, 5])
+    data_kbc_ibbd05_low_step10001_yrel4 = data_kbc_ibbd05_low_step10001_yrel4[sort_indices]
 
-    # p_axs.set_xlim(left=100)
-    # p_axs.set_xlim([9000,11000])
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10002_yrel0[:, 5])
+    data_kbc_ibbd05_low_step10002_yrel0 = data_kbc_ibbd05_low_step10002_yrel0[sort_indices]
 
-    p_axs.legend(fontsize=5)
-    plt.suptitle(f"p(x,t), {dataset_names[dataset_index]}_pressure")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_pressure")
-    plt.close(p_fig)
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10002_yrel4[:, 5])
+    data_kbc_ibbd05_low_step10002_yrel4 = data_kbc_ibbd05_low_step10002_yrel4[sort_indices]
 
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10003_yrel0[:, 5])
+    data_kbc_ibbd05_low_step10003_yrel0 = data_kbc_ibbd05_low_step10003_yrel0[sort_indices]
 
-    ## VELOCITY x
-    u_fig, u_axs = plt.subplots()
+    sort_indices = np.argsort(data_kbc_ibbd05_low_step10003_yrel4[:, 5])
+    data_kbc_ibbd05_low_step10003_yrel4 = data_kbc_ibbd05_low_step10003_yrel4[sort_indices]
 
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 2],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{x}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
+    fig_co_1, axs_co = plt.subplots(3,2, sharex='col', sharey='row')
+    # p, ux, uy (3 observables)  -> 3 rows
+    # reg + 3 timesteps (4 lines per plot) -> 4 LINES PER PLOT
+    # 2 positions... yrel -> 2 COLS
 
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([9000,11000])
+    # p @ yrel0
+    axs_co[0,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,1],
+                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,1],
+                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,1],
+                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,1],
+                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,1],
+                       )
 
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_x(x,t), {dataset_names[dataset_index]}_pressure")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_x")
-    plt.close(u_fig)
+    # p @ yrel4
+    axs_co[0,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,1],
+                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,1],
+                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,1],
+                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,1],
+                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,1],
+                       )
 
+    # ux @yrel0
+    axs_co[1,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,2],
+                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,2],
+                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,2],
+                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,2],
+                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,2],
+                       )
 
-    ## VELOCITY MAGNITUDE
-    u_fig, u_axs = plt.subplots()
+    # ux @yrel4
+    axs_co[1,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,2],
+                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,2],
+                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,2],
+                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,2],
+                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,2],
+                       )
 
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   np.sqrt(datasets[dataset_index][timestep_index, :, 2]**2+datasets[dataset_index][timestep_index, :, 3]**2+datasets[dataset_index][timestep_index, :, 4]**2),
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{mag}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
+    # uy @yrel0
+    axs_co[2,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,3],
+                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,3],
+                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,3],
+                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,3],
+                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,3],
+                       )
 
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([1,80])
-    # u_axs.set_ylim(top=0.005)
+    # uy @urel4
+    axs_co[2,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,3],
+                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,3],
+                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,3],
+                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,3],
+                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,3],
+                       )
 
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_mag(x,t), {dataset_names[dataset_index]}_velocity_magnitude")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_magnitude")
-    plt.close(u_fig)
+    # x-axis labels
+    axs_co[2,0].set_xlabel(r"$x_{LU}$")
+    axs_co[2,1].set_xlabel(r"$x_{LU}$")
 
+    # y-axis labels
+    axs_co[0,0].set_ylabel(r"$p_{LU}$")
+    axs_co[1,0].set_ylabel(r"$u_{x,LU}$")
+    axs_co[2,0].set_ylabel(r"$u_{y,LU}$")
 
-    ## NORMALIZED >>>
+    # y-axis limits
+    axs_co[0,0].set_ylim([-0.0001,0.0001])
+    axs_co[1,0].set_ylim([-0.015,0.015])
+    axs_co[2,0].set_ylim([-0.015,0.015])
 
-    ## PRESSURE
-    p_fig, p_axs = plt.subplots()
+    # x-axis limits
+    axs_co[2,0].set_xlim([0,40])
+    axs_co[2,1].set_xlim([0,40])
 
-    for timestep_index in range(len(timesteps)):
-        p_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 1]/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"p(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    p_axs.set_xlabel(r"$x_{LU}$")
-    p_axs.set_ylabel(r"$p_{LU}$")
+    axs_co[0,0].set_title(r"at $y_{LU} = 1$")
+    axs_co[0,1].set_title(r"at $y_{LU} = 5$")
 
-    # p_axs.set_xlim(left=100)
-    # p_axs.set_xlim([9000,11000])
+    axs_co[2,1].legend(labels=["REG","KBC, i=10000","KBC, i=10001","KBC, i=10002","KBC, i=10003"],fontsize=6)
+    #TODO: add subtitle for ax[0,1] and ax[0,0] to be yrel0 and yrel4 (!)
+    plt.suptitle(f"p/ux/uy(x,ti), REG vs. KBC around ti=10000, RES8, lowInlet")
+    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_lwInlet_CO_IBB")
+    plt.close(fig_co_1)
 
-    p_axs.legend(fontsize=5)
-    plt.suptitle(f"p(x,t), {dataset_names[dataset_index]}_pressure_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_pressure_normalized")
-    plt.close(p_fig)
+####################################
 
+### FIG_CO_2: KBC temporal oscillation around ti30000+3:
+# noBBBC, KBC, yrelMID (10, 15)
+data_fig_path = "/tempOsz_mid_step30000_KBC_andCrash_noBBBC"
 
-    ## VELOCITY x
-    u_fig, u_axs = plt.subplots()
+# READ DATA
+timesteps = [10000, 10001, 10002, 10003]
+yrels = [0, 5]
 
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 2]/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{x}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
+data_kbc_noBBBC_low_step30000_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30000_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30000_yrel5 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30000_yrel5.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30001_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30001_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30001_yrel5 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30001_yrel5.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30002_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30002_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30002_yrel5 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30002_yrel5.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30003_yrel0 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30003_yrel0.csv", delimiter=",", skip_header=1), axis=0)
+data_kbc_noBBBC_low_step30003_yrel5 = np.unique(np.genfromtxt(data_base_path + data_fig_path + "/KBC_step30003_yrel5.csv", delimiter=",", skip_header=1), axis=0)
 
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([9000,11000])
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30000_yrel0[:, 5])
+data_kbc_noBBBC_low_step30000_yrel0 = data_kbc_noBBBC_low_step30000_yrel0[sort_indices]
 
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_x(x,t), {dataset_names[dataset_index]}_pressure_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_x_normalized")
-    plt.close(u_fig)
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30000_yrel5[:, 5])
+data_kbc_noBBBC_low_step30000_yrel5 = data_kbc_noBBBC_low_step30000_yrel5[sort_indices]
 
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30001_yrel0[:, 5])
+data_kbc_noBBBC_low_step30001_yrel0 = data_kbc_noBBBC_low_step30001_yrel0[sort_indices]
 
-    ## VELOCITY MAGNITUDE
-    u_fig, u_axs = plt.subplots()
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30001_yrel5[:, 5])
+data_kbc_noBBBC_low_step30001_yrel5 = data_kbc_noBBBC_low_step30001_yrel5[sort_indices]
 
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   np.sqrt(datasets[dataset_index][timestep_index, :, 2]**2+datasets[dataset_index][timestep_index, :, 3]**2+datasets[dataset_index][timestep_index, :, 4]**2)/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{mag}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30002_yrel0[:, 5])
+data_kbc_noBBBC_low_step30002_yrel0 = data_kbc_noBBBC_low_step30002_yrel0[sort_indices]
 
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([1,80])
-    # u_axs.set_ylim(top=0.005)
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30002_yrel5[:, 5])
+data_kbc_noBBBC_low_step30002_yrel5 = data_kbc_noBBBC_low_step30002_yrel5[sort_indices]
 
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_mag(x,t),{dataset_names[dataset_index]}_velocity_magnitude_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_magnitude_normalized")
-    plt.close(u_fig)
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30003_yrel0[:, 5])
+data_kbc_noBBBC_low_step30003_yrel0 = data_kbc_noBBBC_low_step30003_yrel0[sort_indices]
 
+sort_indices = np.argsort(data_kbc_noBBBC_low_step30003_yrel5[:, 5])
+data_kbc_noBBBC_low_step30003_yrel5 = data_kbc_noBBBC_low_step30003_yrel5[sort_indices]
+
+fig_co_2, axs_co = plt.subplots(3,2, sharex='col', sharey='row')
+# p, ux, uy (3 observables)  -> 3 rows
+# reg + 3 timesteps (4 lines per plot) -> 4 LINES PER PLOT
+# 2 positions... yrel -> 2 COLS
+
+# p @ yrel0
+axs_co[0,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,1],
+                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,1],
+                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,1],
+                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,1]
+                 )
+
+# p @ yrel5
+axs_co[0,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,1],
+                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,1],
+                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,1],
+                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,1]
+                   )
+
+# ux @yrel0
+axs_co[1,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,2],
+                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,2],
+                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,2],
+                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,2]
+                   )
+
+# ux @yrel5
+axs_co[1,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,2],
+                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,2],
+                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,2],
+                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,2]
+                   )
+
+# uy @yrel0
+axs_co[2,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,3],
+                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,3],
+                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,3],
+                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,3]
+                   )
+
+# uy @urel5
+axs_co[2,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,3],
+                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,3],
+                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,3],
+                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,3]
+                   )
+
+# x-axis labels
+axs_co[2,0].set_xlabel(r"$x_{LU}$")
+axs_co[2,1].set_xlabel(r"$x_{LU}$")
+
+# y-axis labels
+axs_co[0,0].set_ylabel(r"$p_{LU}$")
+axs_co[1,0].set_ylabel(r"$u_{x,LU}$")
+axs_co[2,0].set_ylabel(r"$u_{y,LU}$")
+
+# y-axis limits
+axs_co[0,0].set_ylim([-0.0001,0.0001])
+axs_co[1,0].set_ylim([-0.005,0.005])
+axs_co[2,0].set_ylim([-0.005,0.005])
+
+# x-axis limits
+axs_co[2,0].set_xlim([0,80])
+axs_co[2,1].set_xlim([0,80])
+
+axs_co[0,0].set_title(r"at $y_{LU} = 10$ (Inlet node height)")
+axs_co[0,1].set_title(r"at $y_{LU} = 15$ (Inlet node height + 5 nodes)")
+
+axs_co[2,1].legend(labels=["KBC, i=30000","KBC, i=30001","KBC, i=30002","KBC, i=30003"],fontsize=6)
+#TODO: add subtitle for ax[0,1] and ax[0,0] to be yrel0 and yrel4 (!)
+plt.suptitle(f"p/ux/uy(x,ti), KBC, noBBBC around ti=30000, RES8, MidInlet")
+plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_midInlet_KBC_noBBBC_tempOsc")
+plt.close(fig_co_2)
