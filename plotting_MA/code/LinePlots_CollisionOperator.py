@@ -23,9 +23,9 @@ import matplotlib.pyplot as plt
 
 matplotlib.style.use('../figure_style.mplstyle')
 #matplotlib.style.use('../figure_style_2column_singleplot.mplstyle')
-matplotlib.rcParams.update({'lines.linewidth': 0.8})
+matplotlib.rcParams.update({'lines.linewidth': 1.5})
 #matplotlib.rcParams.update({'lines.linestyle': '--'})
-#matplotlib.rcParams.update({'font.size': 8}) # font size was 11
+matplotlib.rcParams.update({'font.size': 8}) # font size was 11
 matplotlib.rcParams.update({'figure.figsize': (7.22433,6)})
 
 ### DATA I/O settings
@@ -44,7 +44,30 @@ yrel_variants = ["rel0", "yrel5"]
 # "TimeStep", "p" ,"ux" ,"uy" ,"uz" ,"Points:0" ,"Points:1" ,"Points:2"
 # 0            1    2     3     4     5   x        6   y        7  z
 
-if False:
+def plot_steps(ax, datasets, xcol, ycol, steps_styles=None, label_prefix=""):
+    """
+    Plotte mehrere Datensätze auf einer Achse mit optionalem Linestyle pro Step.
+
+    ax : matplotlib axis
+        Achse, auf der geplottet wird.
+    datasets : list of tuples
+        Liste von (step, data_array)-Tupeln.
+    xcol, ycol : int
+        Spaltenindex für x- und y-Daten.
+    steps_styles : dict
+        Optionales dict {step: linestyle}, z. B. {10001: '--', 10003: '--'}
+    label_prefix : str
+        Optionaler Label-Präfix für Legende.
+    """
+    if steps_styles is None:
+        steps_styles = {}
+
+    for step, data in datasets:
+        linestyle = steps_styles.get(step, '-')  # Default: durchgezogen
+        label = f"{label_prefix} step{step}"
+        ax.plot(data[:, xcol], data[:, ycol], linestyle=linestyle, label=label)
+
+if True:
 
     ### FIG_CO_1: KBC-oscillation around i10000, reg does not.
     data_fig_path = "/lowInlet_tempOsz_step10000_REGvsKBC_ibb05"
@@ -111,62 +134,136 @@ if False:
     # reg + 3 timesteps (4 lines per plot) -> 4 LINES PER PLOT
     # 2 positions... yrel -> 2 COLS
 
-    # p @ yrel0
-    axs_co[0,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,1],
-                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,1],
-                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,1],
-                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,1],
-                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,1],
-                       )
+    # # p @ yrel0
+    # axs_co[0,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,1],
+    #                    data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,1],
+    #                    data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,1],
+    #                    data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,1],
+    #                    data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,1],
+    #                    )
+    #
+    # # p @ yrel4
+    # axs_co[0,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,1],
+    #                    data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,1],
+    #                    data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,1],
+    #                    data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,1],
+    #                    data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,1],
+    #                    )
+    #
+    # # ux @yrel0
+    # axs_co[1,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,2],
+    #                    data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,2],
+    #                    data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,2],
+    #                    data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,2],
+    #                    data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,2],
+    #                    )
+    #
+    # # ux @yrel4
+    # axs_co[1,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,2],
+    #                    data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,2],
+    #                    data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,2],
+    #                    data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,2],
+    #                    data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,2],
+    #                    )
+    #
+    # # uy @yrel0
+    # axs_co[2,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,3],
+    #                    data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,3],
+    #                    data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,3],
+    #                    data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,3],
+    #                    data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,3],
+    #                    )
+    #
+    # # uy @urel4
+    # axs_co[2,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,3],
+    #                    data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,3],
+    #                    data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,3],
+    #                    data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,3],
+    #                    data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,3],
+    #                    )
+    # Linienstile für spezielle Steps
+    steps_styles = {10002: ':', 10003: ':'}
 
-    # p @ yrel4
-    axs_co[0,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,1],
-                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,1],
-                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,1],
-                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,1],
-                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,1],
-                       )
+    # ====================
+    # === p @ yrel0
+    # ====================
+    datasets_p_yrel0 = [
+        (10000, data_reg_ibb05_low_step10000_yrel0),
+        (10000, data_kbc_ibbd05_low_step10000_yrel0),
+        (10001, data_kbc_ibbd05_low_step10001_yrel0),
+        (10002, data_kbc_ibbd05_low_step10002_yrel0),
+        (10003, data_kbc_ibbd05_low_step10003_yrel0),
+    ]
+    plot_steps(axs_co[0, 0], datasets_p_yrel0, xcol=5, ycol=1, steps_styles=steps_styles, label_prefix="p yrel0")
 
-    # ux @yrel0
-    axs_co[1,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,2],
-                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,2],
-                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,2],
-                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,2],
-                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,2],
-                       )
+    # ====================
+    # === p @ yrel4
+    # ====================
+    datasets_p_yrel4 = [
+        (10000, data_reg_ibb05_low_step10000_yrel4),
+        (10000, data_kbc_ibbd05_low_step10000_yrel4),
+        (10001, data_kbc_ibbd05_low_step10001_yrel4),
+        (10002, data_kbc_ibbd05_low_step10002_yrel4),
+        (10003, data_kbc_ibbd05_low_step10003_yrel4),
+    ]
+    plot_steps(axs_co[0, 1], datasets_p_yrel4, xcol=5, ycol=1, steps_styles=steps_styles, label_prefix="p yrel4")
 
-    # ux @yrel4
-    axs_co[1,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,2],
-                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,2],
-                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,2],
-                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,2],
-                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,2],
-                       )
+    # ====================
+    # === ux @ yrel0
+    # ====================
+    datasets_ux_yrel0 = [
+        (10000, data_reg_ibb05_low_step10000_yrel0),
+        (10000, data_kbc_ibbd05_low_step10000_yrel0),
+        (10001, data_kbc_ibbd05_low_step10001_yrel0),
+        (10002, data_kbc_ibbd05_low_step10002_yrel0),
+        (10003, data_kbc_ibbd05_low_step10003_yrel0),
+    ]
+    plot_steps(axs_co[1, 0], datasets_ux_yrel0, xcol=5, ycol=2, steps_styles=steps_styles, label_prefix="ux yrel0")
 
-    # uy @yrel0
-    axs_co[2,0].plot(data_reg_ibb05_low_step10000_yrel0[:,5],data_reg_ibb05_low_step10000_yrel0[:,3],
-                       data_kbc_ibbd05_low_step10000_yrel0[:,5],data_kbc_ibbd05_low_step10000_yrel0[:,3],
-                       data_kbc_ibbd05_low_step10001_yrel0[:,5], data_kbc_ibbd05_low_step10001_yrel0[:,3],
-                       data_kbc_ibbd05_low_step10002_yrel0[:,5], data_kbc_ibbd05_low_step10002_yrel0[:,3],
-                       data_kbc_ibbd05_low_step10003_yrel0[:,5], data_kbc_ibbd05_low_step10003_yrel0[:,3],
-                       )
+    # ====================
+    # === ux @ yrel4
+    # ====================
+    datasets_ux_yrel4 = [
+        (10000, data_reg_ibb05_low_step10000_yrel4),
+        (10000, data_kbc_ibbd05_low_step10000_yrel4),
+        (10001, data_kbc_ibbd05_low_step10001_yrel4),
+        (10002, data_kbc_ibbd05_low_step10002_yrel4),
+        (10003, data_kbc_ibbd05_low_step10003_yrel4),
+    ]
+    plot_steps(axs_co[1, 1], datasets_ux_yrel4, xcol=5, ycol=2, steps_styles=steps_styles, label_prefix="ux yrel4")
 
-    # uy @urel4
-    axs_co[2,1].plot(data_reg_ibb05_low_step10000_yrel4[:,5],data_reg_ibb05_low_step10000_yrel4[:,3],
-                       data_kbc_ibbd05_low_step10000_yrel4[:,5],data_kbc_ibbd05_low_step10000_yrel4[:,3],
-                       data_kbc_ibbd05_low_step10001_yrel4[:,5], data_kbc_ibbd05_low_step10001_yrel4[:,3],
-                       data_kbc_ibbd05_low_step10002_yrel4[:,5], data_kbc_ibbd05_low_step10002_yrel4[:,3],
-                       data_kbc_ibbd05_low_step10003_yrel4[:,5], data_kbc_ibbd05_low_step10003_yrel4[:,3],
-                       )
+    # ====================
+    # === uy @ yrel0
+    # ====================
+    datasets_uy_yrel0 = [
+        (10000, data_reg_ibb05_low_step10000_yrel0),
+        (10000, data_kbc_ibbd05_low_step10000_yrel0),
+        (10001, data_kbc_ibbd05_low_step10001_yrel0),
+        (10002, data_kbc_ibbd05_low_step10002_yrel0),
+        (10003, data_kbc_ibbd05_low_step10003_yrel0),
+    ]
+    plot_steps(axs_co[2, 0], datasets_uy_yrel0, xcol=5, ycol=3, steps_styles=steps_styles, label_prefix="uy yrel0")
+
+    # ====================
+    # === uy @ yrel4
+    # ====================
+    datasets_uy_yrel4 = [
+        (10000, data_reg_ibb05_low_step10000_yrel4),
+        (10000, data_kbc_ibbd05_low_step10000_yrel4),
+        (10001, data_kbc_ibbd05_low_step10001_yrel4),
+        (10002, data_kbc_ibbd05_low_step10002_yrel4),
+        (10003, data_kbc_ibbd05_low_step10003_yrel4),
+    ]
+    plot_steps(axs_co[2, 1], datasets_uy_yrel4, xcol=5, ycol=3, steps_styles=steps_styles, label_prefix="uy yrel4")
 
     # x-axis labels
     axs_co[2,0].set_xlabel(r"$x_{LU}$")
     axs_co[2,1].set_xlabel(r"$x_{LU}$")
 
     # y-axis labels
-    axs_co[0,0].set_ylabel(r"$p_{LU}$")
-    axs_co[1,0].set_ylabel(r"$u_{x,LU}$")
-    axs_co[2,0].set_ylabel(r"$u_{y,LU}$")
+    axs_co[0,0].set_ylabel(r"$p$")
+    axs_co[1,0].set_ylabel(r"$u_x$")
+    axs_co[2,0].set_ylabel(r"$u_y$")
 
     # y-axis limits
     axs_co[0,0].set_ylim([-0.0001,0.0001])
@@ -177,15 +274,15 @@ if False:
     axs_co[2,0].set_xlim([0,40])
     axs_co[2,1].set_xlim([0,40])
 
-    axs_co[0,0].set_title(r"at $y_{LU} = 1$")
-    axs_co[0,1].set_title(r"at $y_{LU} = 5$")
+    axs_co[0,0].set_title(r"Profil bei $y_{LU} = 1$")
+    axs_co[0,1].set_title(r"Profil bei $y_{LU} = 5$")
 
-    axs_co[2,1].legend(labels=["REG","KBC, i=10000","KBC, i=10001","KBC, i=10002","KBC, i=10003"],fontsize=6)
+    axs_co[2,1].legend(labels=[r"REG","KBC, $t_{LU}$=10000","KBC, $t_{LU}$=10001","KBC, $t_{LU}$=10002","KBC, $t_{LU}$=10003"],fontsize=7)
     #TODO: add subtitle for ax[0,1] and ax[0,0] to be yrel0 and yrel4 (!)
-    plt.suptitle(f"p/ux/uy(x,ti), REG vs. KBC around ti=10000, RES8, lowInlet")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_lwInlet_CO_IBB")
+    #plt.suptitle(f"p/ux/uy(x,ti), REG vs. KBC around t$t_{LU}$=10000, RES8, lowInlet")
+    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "tempOsz_CO_HWBB_at10000_lowInlet")
     plt.close(fig_co_1)
-
+#print(output_base_path + "/" + plot_batch_name + "/" + "test_lowInlet_CO_IBB")
 ####################################
 
 ### FIG_CO_2: KBC temporal oscillation around ti30000+3:
@@ -234,56 +331,125 @@ fig_co_2, axs_co = plt.subplots(3,2, sharex='col', sharey='row')
 # reg + 3 timesteps (4 lines per plot) -> 4 LINES PER PLOT
 # 2 positions... yrel -> 2 COLS
 
-# p @ yrel0
-axs_co[0,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,1],
-                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,1],
-                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,1],
-                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,1]
-                 )
+# # p @ yrel0
+# axs_co[0,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,1],
+#                    data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,1],
+#                    data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,1],
+#                    data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,1]
+#                  )
+# 
+# # p @ yrel5
+# axs_co[0,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,1],
+#                    data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,1],
+#                    data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,1],
+#                    data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,1]
+#                    )
+# 
+# # ux @yrel0
+# axs_co[1,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,2],
+#                    data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,2],
+#                    data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,2],
+#                    data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,2]
+#                    )
+# 
+# # ux @yrel5
+# axs_co[1,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,2],
+#                    data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,2],
+#                    data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,2],
+#                    data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,2]
+#                    )
+# 
+# # uy @yrel0
+# axs_co[2,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,3],
+#                    data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,3],
+#                    data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,3],
+#                    data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,3]
+#                    )
+# 
+# # uy @urel5
+# axs_co[2,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,3],
+#                    data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,3],
+#                    data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,3],
+#                    data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,3]
+#                    )
+# Linienstile für spezielle Steps – diesmal gepunktet für 30002 und 30003
+steps_styles_3000x = {30002: ':', 30003: ':'}
 
-# p @ yrel5
-axs_co[0,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,1],
-                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,1],
-                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,1],
-                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,1]
-                   )
+# ====================
+# === p @ yrel0
+# ====================
+datasets_p_yrel0 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel0),
+    (30001, data_kbc_noBBBC_low_step30001_yrel0),
+    (30002, data_kbc_noBBBC_low_step30002_yrel0),
+    (30003, data_kbc_noBBBC_low_step30003_yrel0),
+]
+plot_steps(axs_co[0,0], datasets_p_yrel0, xcol=5, ycol=1, steps_styles=steps_styles_3000x, label_prefix="p yrel0")
 
-# ux @yrel0
-axs_co[1,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,2],
-                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,2],
-                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,2],
-                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,2]
-                   )
+# ====================
+# === p @ yrel4
+# ====================
+datasets_p_yrel4 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel5),
+    (30001, data_kbc_noBBBC_low_step30001_yrel5),
+    (30002, data_kbc_noBBBC_low_step30002_yrel5),
+    (30003, data_kbc_noBBBC_low_step30003_yrel5),
+]
+plot_steps(axs_co[0,1], datasets_p_yrel4, xcol=5, ycol=1, steps_styles=steps_styles_3000x, label_prefix="p yrel4")
 
-# ux @yrel5
-axs_co[1,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,2],
-                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,2],
-                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,2],
-                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,2]
-                   )
+# ====================
+# === ux @ yrel0
+# ====================
+datasets_ux_yrel0 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel0),
+    (30001, data_kbc_noBBBC_low_step30001_yrel0),
+    (30002, data_kbc_noBBBC_low_step30002_yrel0),
+    (30003, data_kbc_noBBBC_low_step30003_yrel0),
+]
+plot_steps(axs_co[1,0], datasets_ux_yrel0, xcol=5, ycol=2, steps_styles=steps_styles_3000x, label_prefix="ux yrel0")
 
-# uy @yrel0
-axs_co[2,0].plot(data_kbc_noBBBC_low_step30000_yrel0[:,5],data_kbc_noBBBC_low_step30000_yrel0[:,3],
-                   data_kbc_noBBBC_low_step30001_yrel0[:,5], data_kbc_noBBBC_low_step30001_yrel0[:,3],
-                   data_kbc_noBBBC_low_step30002_yrel0[:,5], data_kbc_noBBBC_low_step30002_yrel0[:,3],
-                   data_kbc_noBBBC_low_step30003_yrel0[:,5], data_kbc_noBBBC_low_step30003_yrel0[:,3]
-                   )
+# ====================
+# === ux @ yrel4
+# ====================
+datasets_ux_yrel4 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel5),
+    (30001, data_kbc_noBBBC_low_step30001_yrel5),
+    (30002, data_kbc_noBBBC_low_step30002_yrel5),
+    (30003, data_kbc_noBBBC_low_step30003_yrel5),
+]
+plot_steps(axs_co[1,1], datasets_ux_yrel4, xcol=5, ycol=2, steps_styles=steps_styles_3000x, label_prefix="ux yrel4")
 
-# uy @urel5
-axs_co[2,1].plot(data_kbc_noBBBC_low_step30000_yrel5[:,5],data_kbc_noBBBC_low_step30000_yrel5[:,3],
-                   data_kbc_noBBBC_low_step30001_yrel5[:,5], data_kbc_noBBBC_low_step30001_yrel5[:,3],
-                   data_kbc_noBBBC_low_step30002_yrel5[:,5], data_kbc_noBBBC_low_step30002_yrel5[:,3],
-                   data_kbc_noBBBC_low_step30003_yrel5[:,5], data_kbc_noBBBC_low_step30003_yrel5[:,3]
-                   )
+# ====================
+# === uy @ yrel0
+# ====================
+datasets_uy_yrel0 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel0),
+    (30001, data_kbc_noBBBC_low_step30001_yrel0),
+    (30002, data_kbc_noBBBC_low_step30002_yrel0),
+    (30003, data_kbc_noBBBC_low_step30003_yrel0),
+]
+plot_steps(axs_co[2,0], datasets_uy_yrel0, xcol=5, ycol=3, steps_styles=steps_styles_3000x, label_prefix="uy yrel0")
+
+# ====================
+# === uy @ yrel4
+# ====================
+datasets_uy_yrel4 = [
+    (30000, data_kbc_noBBBC_low_step30000_yrel5),
+    (30001, data_kbc_noBBBC_low_step30001_yrel5),
+    (30002, data_kbc_noBBBC_low_step30002_yrel5),
+    (30003, data_kbc_noBBBC_low_step30003_yrel5),
+]
+plot_steps(axs_co[2,1], datasets_uy_yrel4, xcol=5, ycol=3, steps_styles=steps_styles_3000x, label_prefix="uy yrel4")
+
 
 # x-axis labels
 axs_co[2,0].set_xlabel(r"$x_{LU}$")
 axs_co[2,1].set_xlabel(r"$x_{LU}$")
 
 # y-axis labels
-axs_co[0,0].set_ylabel(r"$p_{LU}$")
-axs_co[1,0].set_ylabel(r"$u_{x,LU}$")
-axs_co[2,0].set_ylabel(r"$u_{y,LU}$")
+axs_co[0,0].set_ylabel(r"$p$")
+axs_co[1,0].set_ylabel(r"$u_{x}$")
+axs_co[2,0].set_ylabel(r"$u_{y}$")
 
 # y-axis limits
 axs_co[0,0].set_ylim([-0.0001,0.0001])
@@ -294,11 +460,12 @@ axs_co[2,0].set_ylim([-0.005,0.005])
 axs_co[2,0].set_xlim([0,80])
 axs_co[2,1].set_xlim([0,80])
 
-axs_co[0,0].set_title(r"at $y_{LU} = 10$ (Inlet node height)")
-axs_co[0,1].set_title(r"at $y_{LU} = 15$ (Inlet node height + 5 nodes)")
+axs_co[0,0].set_title(r"Profil bei $y_{LU} = 10$")
+axs_co[0,1].set_title(r"Profil bei $y_{LU} = 15$")
 
-axs_co[2,1].legend(labels=["KBC, i=30000","KBC, i=30001","KBC, i=30002","KBC, i=30003"],fontsize=6)
+axs_co[2,1].legend(labels=[r"KBC, $t_{LU}$=30000","KBC, $t_{LU}$=30001","KBC, $t_{LU}$=30002","KBC, $t_{LU}$=30003"],fontsize=8)
 #TODO: add subtitle for ax[0,1] and ax[0,0] to be yrel0 and yrel4 (!)
-plt.suptitle(f"p/ux/uy(x,ti), KBC, noBBBC around ti=30000, RES8, MidInlet")
-plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_midInlet_KBC_noBBBC_tempOsc")
+#plt.suptitle(f"p/ux/uy(x,ti), KBC, noBBBC around ti=30000, RES8, MidInlet")
+plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "tempOsz_KBC_noBBBC_at30000_midInlet")
 plt.close(fig_co_2)
+#print(output_base_path + "/" + plot_batch_name + "/" + "test_midInlet_KBC_noBBBC_tempOsc")

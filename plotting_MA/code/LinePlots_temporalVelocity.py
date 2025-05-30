@@ -25,18 +25,15 @@ matplotlib.style.use('../figure_style.mplstyle')
 #matplotlib.style.use('../figure_style_2column_singleplot.mplstyle')
 matplotlib.rcParams.update({'lines.linewidth': 0.8})
 #matplotlib.rcParams.update({'lines.linestyle': '--'})
-#matplotlib.rcParams.update({'font.size': 8}) # font size was 11
+matplotlib.rcParams.update({'font.size': 8}) # font size was 11
 
 ### DATA I/O settings
 data_base_path = "/home/mbille/Desktop/MA_Paraview_DataAndScreenshots-for-Thesis/FIG_Einlassgeschwindigkeit_Zeitpunkt"
 output_base_path = "/home/mbille/lettuce/plotting_MA"
-plot_batch_name = "test_LinePlotting"
+plot_batch_name = "test_LinePlotting_SmoothTemporalVelocity"
 
-if not os.path.exists(output_base_path + "/" + plot_batch_name):
-    os.makedirs(output_base_path + "/" + plot_batch_name)
-
-timesteps = [51, 2500, 5000, 7500, 10000]
-inlet_velocities = [0.0000865, 0.00432327, 0.00864827, 0.01297327, 0.01727728733]
+timesteps = [2500, 5000, 7500, 10000] #[51, 2500, 5000, 7500, 10000]
+inlet_velocities = [0.00432327, 0.00864827, 0.01297327, 0.01727728733] #[0.0000865, 0.00432327, 0.00864827, 0.01297327, 0.01727728733]
 bc_variants = ["noBBBC", "IBBd0.5"]
 yrel_variants = ["rel0", "yrel5"]
 # CSV format:
@@ -75,139 +72,60 @@ datasets = [data_noBBBC_yrel0,
             data_noBBBC_yrel5,
             data_IBBd05_yrel0,
             data_IBBd05_yrel5]
-dataset_names = ['noBBBC_yrel0',
-                 'noBBBC_yrel5',
-                 'IBBd05_yrel0',
-                 'IBBd05_yrel5']
+dataset_names = ['oben/unten periodisch', 'oben/unten periodisch', 'oben/unten HWBB', 'oben/unten HWBB'] # ['noBBBC_yrel0',
+                 # 'noBBBC_yrel5',
+                 # 'IBBd05_yrel0',
+                 # 'IBBd05_yrel5']
 
+# Mapping: [noBBBC_yrel0, IBBd05_yrel0, noBBBC_yrel5, IBBd05_yrel5]
+# Ziel: 4x Figures mit je 2x2 Layout
 
-for dataset_index in range(len(datasets)):
+plot_configs = [
+    {"title": "yrel0",              "norm": False, "dataset_idxs": [0, 2], "filename": "smoothTemporalProfiles_noBBBCvsHWBB_yrel0", "ylimsp": [-0.00015, 0.00015], "ylimsu": [-0.005, 0.02], "legloc": "upper right"},
+    {"title": "yrel0 (normalized)", "norm": True, "dataset_idxs": [0, 2], "filename": "smoothTemporalProfiles_noBBBCvsHWBB_yrel0_normalized", "ylimsp": [-0.01, 0.01], "ylimsu": [-0.2, 1], "legloc": "upper right"},
+    {"title": "yrel5",              "norm": False, "dataset_idxs": [1, 3], "filename": "smoothTemporalProfiles_noBBBCvsHWBB_yrel5", "ylimsp": [-0.00008, 0.00008], "ylimsu": [-0.002, 0.002], "legloc": "lower right"},
+    {"title": "yrel5 (normalized)", "norm": True, "dataset_idxs": [1, 3], "filename": "smoothTemporalProfiles_noBBBCvsHWBB_yrel5_normalized", "ylimsp": [-0.008, 0.008], "ylimsu": [-0.2, 0.2], "legloc": "lower right"},
+]
 
+for config in plot_configs:
+    fig, axs = plt.subplots(2, 2, sharex='col',sharey='row', figsize=(7, 4), constrained_layout=True)
+    axs = axs.reshape(2, 2)  # [row][col]
 
+    for col, dataset_index in enumerate(config["dataset_idxs"]):
+        data = datasets[dataset_index]
+        name = dataset_names[dataset_index]
 
-    ### NOT NORMALIZED >>>
+        for timestep_index in range(len(timesteps)):
+            x_vals = data[timestep_index, :, 5]
+            p_vals = data[timestep_index, :, 1]
+            u_vals = data[timestep_index, :, 2]
 
+            if config["norm"]:
+                norm_factor = inlet_velocities[timestep_index]
+                p_vals = p_vals / norm_factor
+                u_vals = u_vals / norm_factor
 
-    ## PRESSURE
-    p_fig, p_axs = plt.subplots()
+            axs[0][col].plot(x_vals, p_vals,
+                             label=fr"$t_{{LU}}= \overline{{{timesteps[timestep_index]}\pm 50}}$")
+            axs[1][col].plot(x_vals, u_vals,
+                             label=fr"$t_{{LU}}= \overline{{{timesteps[timestep_index]}\pm 50}}$")
+        #fr"p(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)"
+        axs[0][col].set_title(f"{name}")
+        axs[0][col].set_xlim([0, 80])
+        axs[0][0].set_ylabel(r"$p$" if not config["norm"] else r"$p/u_{in}$")
+        axs[1][col].set_xlabel(r"$x_{LU}$")
+        axs[1][0].set_ylabel(r"$u_x$" if not config["norm"] else r"$u_x/u_{in}$")
+        axs[1][col].set_xlim([0, 80])
 
-    for timestep_index in range(len(timesteps)):
-        p_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 1],
-                   #marker="", #linewidth=0.4,
-                   label=fr"p(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    p_axs.set_xlabel(r"$x_{LU}$")
-    p_axs.set_ylabel(r"$p_{LU}$")
+        axs[0][col].set_ylim(config["ylimsp"])
+        axs[1][col].set_ylim(config["ylimsu"])
 
-    # p_axs.set_xlim(left=100)
-    # p_axs.set_xlim([9000,11000])
+        # if col == 1:
+        #     axs[0][col].legend(fontsize=5)
+        #     axs[1][col].legend(fontsize=5)
 
-    p_axs.legend(fontsize=5)
-    plt.suptitle(f"p(x,t), {dataset_names[dataset_index]}_pressure")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_pressure")
-    plt.close(p_fig)
-
-
-    ## VELOCITY x
-    u_fig, u_axs = plt.subplots()
-
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 2],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{x}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
-
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([9000,11000])
-
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_x(x,t), {dataset_names[dataset_index]}_pressure")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_x")
-    plt.close(u_fig)
-
-
-    ## VELOCITY MAGNITUDE
-    u_fig, u_axs = plt.subplots()
-
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   np.sqrt(datasets[dataset_index][timestep_index, :, 2]**2+datasets[dataset_index][timestep_index, :, 3]**2+datasets[dataset_index][timestep_index, :, 4]**2),
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{mag}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
-
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([1,80])
-    # u_axs.set_ylim(top=0.005)
-
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_mag(x,t), {dataset_names[dataset_index]}_velocity_magnitude")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_magnitude")
-    plt.close(u_fig)
-
-
-    ## NORMALIZED >>>
-
-    ## PRESSURE
-    p_fig, p_axs = plt.subplots()
-
-    for timestep_index in range(len(timesteps)):
-        p_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 1]/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"p(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    p_axs.set_xlabel(r"$x_{LU}$")
-    p_axs.set_ylabel(r"$p_{LU}$")
-
-    # p_axs.set_xlim(left=100)
-    # p_axs.set_xlim([9000,11000])
-
-    p_axs.legend(fontsize=5)
-    plt.suptitle(f"p(x,t), {dataset_names[dataset_index]}_pressure_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_pressure_normalized")
-    plt.close(p_fig)
-
-
-    ## VELOCITY x
-    u_fig, u_axs = plt.subplots()
-
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   datasets[dataset_index][timestep_index, :, 2]/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{x}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
-
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([9000,11000])
-
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_x(x,t), {dataset_names[dataset_index]}_pressure_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_x_normalized")
-    plt.close(u_fig)
-
-
-    ## VELOCITY MAGNITUDE
-    u_fig, u_axs = plt.subplots()
-
-    for timestep_index in range(len(timesteps)):
-        u_axs.plot(datasets[dataset_index][timestep_index, :, 5],
-                   np.sqrt(datasets[dataset_index][timestep_index, :, 2]**2+datasets[dataset_index][timestep_index, :, 3]**2+datasets[dataset_index][timestep_index, :, 4]**2)/inlet_velocities[timestep_index],
-                   #marker="", #linewidth=0.4,
-                   label=fr"$u_{{mag}}$(x,y = 0,z = 5, i = $\overline{{{timesteps[timestep_index]}\pm 50}}$)")
-    u_axs.set_xlabel(r"$x_{LU}$")
-    u_axs.set_ylabel(r"$u_{LU}$")
-
-    # u_axs.set_xlim(left=100)
-    # u_axs.set_xlim([1,80])
-    # u_axs.set_ylim(top=0.005)
-
-    u_axs.legend(fontsize=5)
-    plt.suptitle(f"u_mag(x,t),{dataset_names[dataset_index]}_velocity_magnitude_normalized")
-    plt.savefig(output_base_path + "/" + plot_batch_name + "/" + dataset_names[dataset_index] + "_velocity_magnitude_normalized")
-    plt.close(u_fig)
-
+    axs[1][1].legend(loc=config["legloc"])
+    #fig.suptitle(f"Pressure and Velocity (uₓ) Profiles – {config['title']}", fontsize=10)
+    savepath = f"{output_base_path}/{plot_batch_name}/{config['filename']}.png"
+    plt.savefig(savepath, dpi=300)
+    plt.close(fig)

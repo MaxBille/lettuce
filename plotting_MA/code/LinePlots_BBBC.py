@@ -23,9 +23,9 @@ import matplotlib.pyplot as plt
 
 matplotlib.style.use('../figure_style.mplstyle')
 #matplotlib.style.use('../figure_style_2column_singleplot.mplstyle')
-matplotlib.rcParams.update({'lines.linewidth': 0.8})
+matplotlib.rcParams.update({'lines.linewidth': 1.2})
 #matplotlib.rcParams.update({'lines.linestyle': '--'})
-#matplotlib.rcParams.update({'font.size': 8}) # font size was 11
+matplotlib.rcParams.update({'font.size': 8}) # font size was 11
 matplotlib.rcParams.update({'figure.figsize': (7.22433,6)})
 
 ### DATA I/O settings
@@ -40,6 +40,24 @@ cobc_variants = ["KBC_FWBB", "REG_ibb05"]
 #bc_variants = ["FWBB", "ibbd05"]
 timesteps = [30000, 30001, 30002, 30003]
 yrel_variants = ["yrel0", "yrel4"]
+
+
+def plot_datasets_bbbc(ax, dataset_refs, xcol, ycol):
+    for idx_tuple in dataset_refs:
+        style = ':' if idx_tuple[1] in [2, 3] else '-'  # zweite Indexposition entscheidet Stil
+        data = datasets[idx_tuple]
+        ax.plot(data[:, xcol], data[:, ycol], linestyle=style)
+
+def plot_mixed_dataset(ax, static_data, dataset_refs, xcol, ycol):
+    # Fester Datensatz (z. B. data_reg_fwbb_yrelX)
+    ax.plot(static_data[:, xcol], static_data[:, ycol], linestyle='-')
+
+    # Variable Datensätze mit Linienstil je nach zweitem Index
+    for idx_tuple in dataset_refs:
+        style = ':' if idx_tuple[1] in [2, 3] else '-'
+        data = datasets[idx_tuple]
+        ax.plot(data[:, xcol], data[:, ycol], linestyle=style)
+
 
 # CSV format:
 # "TimeStep", "p" ,"ux" ,"uy" ,"uz" ,"Points:0" ,"Points:1" ,"Points:2"
@@ -74,56 +92,75 @@ fig_bbbc_1, axs_bbbc = plt.subplots(3,2, sharex='col', sharey='row')
 # 2 positions... yrel -> 2 COLS
 # 4 timesteps (within one plot)
 
+# # p @ yrel0
+# axs_bbbc[0,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,1],
+#                    datasets[0,1,0][:,5],datasets[0,1,0][:,1],
+#                    datasets[0,2,0][:,5],datasets[0,2,0][:,1],
+#                    datasets[0,3,0][:,5],datasets[0,3,0][:,1]
+#                    )
+#
+# # p @ yrel4
+# axs_bbbc[0,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,1],
+#                    datasets[0,1,1][:,5],datasets[0,1,1][:,1],
+#                    datasets[0,2,1][:,5],datasets[0,2,1][:,1],
+#                    datasets[0,3,1][:,5],datasets[0,3,1][:,1]
+#                    )
+#
+# # ux @yrel0
+# axs_bbbc[1,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,2],
+#                    datasets[0,1,0][:,5],datasets[0,1,0][:,2],
+#                    datasets[0,2,0][:,5],datasets[0,2,0][:,2],
+#                    datasets[0,3,0][:,5],datasets[0,3,0][:,2]
+#                    )
+#
+# # ux @yrel4
+# axs_bbbc[1,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,2],
+#                    datasets[0,1,1][:,5],datasets[0,1,1][:,2],
+#                    datasets[0,2,1][:,5],datasets[0,2,1][:,2],
+#                    datasets[0,3,1][:,5],datasets[0,3,1][:,2]
+#                    )
+#
+# # uy @yrel0
+# axs_bbbc[2,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,3],
+#                    datasets[0,1,0][:,5],datasets[0,1,0][:,3],
+#                    datasets[0,2,0][:,5],datasets[0,2,0][:,3],
+#                    datasets[0,3,0][:,5],datasets[0,3,0][:,3]
+#                    )
+#
+# # uy @urel4
+# axs_bbbc[2,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,3],
+#                    datasets[0,1,1][:,5],datasets[0,1,1][:,3],
+#                    datasets[0,2,1][:,5],datasets[0,2,1][:,3],
+#                    datasets[0,3,1][:,5],datasets[0,3,1][:,3]
+#                    )
+
 # p @ yrel0
-axs_bbbc[0,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,1],
-                   datasets[0,1,0][:,5],datasets[0,1,0][:,1],
-                   datasets[0,2,0][:,5],datasets[0,2,0][:,1],
-                   datasets[0,3,0][:,5],datasets[0,3,0][:,1]
-                   )
+plot_datasets_bbbc(axs_bbbc[0,0], [(0,0,0), (0,1,0), (0,2,0), (0,3,0)], xcol=5, ycol=1)
 
 # p @ yrel4
-axs_bbbc[0,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,1],
-                   datasets[0,1,1][:,5],datasets[0,1,1][:,1],
-                   datasets[0,2,1][:,5],datasets[0,2,1][:,1],
-                   datasets[0,3,1][:,5],datasets[0,3,1][:,1]
-                   )
+plot_datasets_bbbc(axs_bbbc[0,1], [(0,0,1), (0,1,1), (0,2,1), (0,3,1)], xcol=5, ycol=1)
 
-# ux @yrel0
-axs_bbbc[1,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,2],
-                   datasets[0,1,0][:,5],datasets[0,1,0][:,2],
-                   datasets[0,2,0][:,5],datasets[0,2,0][:,2],
-                   datasets[0,3,0][:,5],datasets[0,3,0][:,2]
-                   )
+# ux @ yrel0
+plot_datasets_bbbc(axs_bbbc[1,0], [(0,0,0), (0,1,0), (0,2,0), (0,3,0)], xcol=5, ycol=2)
 
-# ux @yrel4
-axs_bbbc[1,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,2],
-                   datasets[0,1,1][:,5],datasets[0,1,1][:,2],
-                   datasets[0,2,1][:,5],datasets[0,2,1][:,2],
-                   datasets[0,3,1][:,5],datasets[0,3,1][:,2]
-                   )
+# ux @ yrel4
+plot_datasets_bbbc(axs_bbbc[1,1], [(0,0,1), (0,1,1), (0,2,1), (0,3,1)], xcol=5, ycol=2)
 
-# uy @yrel0
-axs_bbbc[2,0].plot(datasets[0,0,0][:,5],datasets[0,0,0][:,3],
-                   datasets[0,1,0][:,5],datasets[0,1,0][:,3],
-                   datasets[0,2,0][:,5],datasets[0,2,0][:,3],
-                   datasets[0,3,0][:,5],datasets[0,3,0][:,3]
-                   )
+# uy @ yrel0
+plot_datasets_bbbc(axs_bbbc[2,0], [(0,0,0), (0,1,0), (0,2,0), (0,3,0)], xcol=5, ycol=3)
 
-# uy @urel4
-axs_bbbc[2,1].plot(datasets[0,0,1][:,5],datasets[0,0,1][:,3],
-                   datasets[0,1,1][:,5],datasets[0,1,1][:,3],
-                   datasets[0,2,1][:,5],datasets[0,2,1][:,3],
-                   datasets[0,3,1][:,5],datasets[0,3,1][:,3]
-                   )
+# uy @ yrel4
+plot_datasets_bbbc(axs_bbbc[2,1], [(0,0,1), (0,1,1), (0,2,1), (0,3,1)], xcol=5, ycol=3)
+
 
 # x-axis labels
 axs_bbbc[2,0].set_xlabel(r"$x_{LU}$")
 axs_bbbc[2,1].set_xlabel(r"$x_{LU}$")
 
 # y-axis labels
-axs_bbbc[0,0].set_ylabel(r"$p_{LU}$")
-axs_bbbc[1,0].set_ylabel(r"$u_{x,LU}$")
-axs_bbbc[2,0].set_ylabel(r"$u_{y,LU}$")
+axs_bbbc[0,0].set_ylabel(r"$p$")
+axs_bbbc[1,0].set_ylabel(r"$u_{x}$")
+axs_bbbc[2,0].set_ylabel(r"$u_{y}$")
 
 # y-axis limits
 axs_bbbc[0,0].set_ylim([-0.00025,0.00025])
@@ -134,12 +171,12 @@ axs_bbbc[2,0].set_ylim([-0.01,0.01])
 axs_bbbc[2,0].set_xlim([0,80])
 axs_bbbc[2,1].set_xlim([0,80])
 
-axs_bbbc[0,0].set_title(r"at $y_{LU} = 1$")
-axs_bbbc[0,1].set_title(r"at $y_{LU} = 5$")
+axs_bbbc[0,0].set_title(r"Profil bei $y_{LU} = 1$")
+axs_bbbc[0,1].set_title(r"Profil bei $y_{LU} = 5$")
 
-axs_bbbc[2,1].legend(labels=["KBC fwbb i=30000", "KBC fwbb i=30001", "KBC fwbb i=30002", "KBC fwbb i=30003"],fontsize=6)
-plt.suptitle(f"p/ux/uy(x,ti), KBC, FWBB, lowInlet, RES8, i30000+, res8")
-plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_lowInlet_BBBC_KBC_FWBB")
+axs_bbbc[2,1].legend(labels=[r"KBC FWBB $t_{LU}$=30000", "KBC FWBB $t_{LU}$=30001", "KBC FWBB $t_{LU}$=30002", "KBC FWBB $t_{LU}$=30003"],fontsize=7)
+#plt.suptitle(f"p/ux/uy(x,ti), KBC, FWBB, lowInlet, RES8, i30000+, res8")
+plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "tempOsz_KBC_FWBB_at30000_lowInlet")
 plt.close(fig_bbbc_1)
 
 ####################################
@@ -152,62 +189,81 @@ fig_bbbc_2, axs_bbbc = plt.subplots(3,2, sharex='col', sharey='row')
 # 2 positions... yrel -> 2 COLS
 # 4 timesteps (within one plot)
 
+# # p @ yrel0
+# axs_bbbc[0,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,1],
+#                    datasets[1,0,0][:,5],datasets[1,0,0][:,1],
+#                    datasets[1,1,0][:,5],datasets[1,1,0][:,1],
+#                    datasets[1,2,0][:,5],datasets[1,2,0][:,1],
+#                    datasets[1,3,0][:,5],datasets[1,3,0][:,1]
+#                    )
+#
+# # p @ yrel4
+# axs_bbbc[0,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,1],
+#                    datasets[1,0,1][:,5],datasets[1,0,1][:,1],
+#                    datasets[1,1,1][:,5],datasets[1,1,1][:,1],
+#                    datasets[1,2,1][:,5],datasets[1,2,1][:,1],
+#                    datasets[1,3,1][:,5],datasets[1,3,1][:,1]
+#                    )
+#
+# # ux @yrel0
+# axs_bbbc[1,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,2],
+#                    datasets[1,0,0][:,5],datasets[1,0,0][:,2],
+#                    datasets[1,1,0][:,5],datasets[1,1,0][:,2],
+#                    datasets[1,2,0][:,5],datasets[1,2,0][:,2],
+#                    datasets[1,3,0][:,5],datasets[1,3,0][:,2]
+#                    )
+#
+# # ux @yrel4
+# axs_bbbc[1,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,2],
+#                    datasets[1,0,1][:,5],datasets[1,0,1][:,2],
+#                    datasets[1,1,1][:,5],datasets[1,1,1][:,2],
+#                    datasets[1,2,1][:,5],datasets[1,2,1][:,2],
+#                    datasets[1,3,1][:,5],datasets[1,3,1][:,2]
+#                    )
+#
+# # uy @yrel0
+# axs_bbbc[2,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,3],
+#                    datasets[1,0,0][:,5],datasets[1,0,0][:,3],
+#                    datasets[1,1,0][:,5],datasets[1,1,0][:,3],
+#                    datasets[1,2,0][:,5],datasets[1,2,0][:,3],
+#                    datasets[1,3,0][:,5],datasets[1,3,0][:,3]
+#                    )
+#
+# # uy @urel4
+# axs_bbbc[2,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,3],
+#                    datasets[1,0,1][:,5],datasets[1,0,1][:,3],
+#                    datasets[1,1,1][:,5],datasets[1,1,1][:,3],
+#                    datasets[1,2,1][:,5],datasets[1,2,1][:,3],
+#                    datasets[1,3,1][:,5],datasets[1,3,1][:,3]
+#                    )
+
 # p @ yrel0
-axs_bbbc[0,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,1],
-                   datasets[1,0,0][:,5],datasets[1,0,0][:,1],
-                   datasets[1,1,0][:,5],datasets[1,1,0][:,1],
-                   datasets[1,2,0][:,5],datasets[1,2,0][:,1],
-                   datasets[1,3,0][:,5],datasets[1,3,0][:,1]
-                   )
+plot_mixed_dataset(axs_bbbc[0,0], data_reg_fwbb_yrel0, [(1,0,0), (1,1,0), (1,2,0), (1,3,0)], xcol=5, ycol=1)
 
 # p @ yrel4
-axs_bbbc[0,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,1],
-                   datasets[1,0,1][:,5],datasets[1,0,1][:,1],
-                   datasets[1,1,1][:,5],datasets[1,1,1][:,1],
-                   datasets[1,2,1][:,5],datasets[1,2,1][:,1],
-                   datasets[1,3,1][:,5],datasets[1,3,1][:,1]
-                   )
+plot_mixed_dataset(axs_bbbc[0,1], data_reg_fwbb_yrel4, [(1,0,1), (1,1,1), (1,2,1), (1,3,1)], xcol=5, ycol=1)
 
-# ux @yrel0
-axs_bbbc[1,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,2],
-                   datasets[1,0,0][:,5],datasets[1,0,0][:,2],
-                   datasets[1,1,0][:,5],datasets[1,1,0][:,2],
-                   datasets[1,2,0][:,5],datasets[1,2,0][:,2],
-                   datasets[1,3,0][:,5],datasets[1,3,0][:,2]
-                   )
+# ux @ yrel0
+plot_mixed_dataset(axs_bbbc[1,0], data_reg_fwbb_yrel0, [(1,0,0), (1,1,0), (1,2,0), (1,3,0)], xcol=5, ycol=2)
 
-# ux @yrel4
-axs_bbbc[1,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,2],
-                   datasets[1,0,1][:,5],datasets[1,0,1][:,2],
-                   datasets[1,1,1][:,5],datasets[1,1,1][:,2],
-                   datasets[1,2,1][:,5],datasets[1,2,1][:,2],
-                   datasets[1,3,1][:,5],datasets[1,3,1][:,2]
-                   )
+# ux @ yrel4
+plot_mixed_dataset(axs_bbbc[1,1], data_reg_fwbb_yrel4, [(1,0,1), (1,1,1), (1,2,1), (1,3,1)], xcol=5, ycol=2)
 
-# uy @yrel0
-axs_bbbc[2,0].plot(data_reg_fwbb_yrel0[:,5],data_reg_fwbb_yrel0[:,3],
-                   datasets[1,0,0][:,5],datasets[1,0,0][:,3],
-                   datasets[1,1,0][:,5],datasets[1,1,0][:,3],
-                   datasets[1,2,0][:,5],datasets[1,2,0][:,3],
-                   datasets[1,3,0][:,5],datasets[1,3,0][:,3]
-                   )
+# uy @ yrel0
+plot_mixed_dataset(axs_bbbc[2,0], data_reg_fwbb_yrel0, [(1,0,0), (1,1,0), (1,2,0), (1,3,0)], xcol=5, ycol=3)
 
-# uy @urel4
-axs_bbbc[2,1].plot(data_reg_fwbb_yrel4[:,5],data_reg_fwbb_yrel4[:,3],
-                   datasets[1,0,1][:,5],datasets[1,0,1][:,3],
-                   datasets[1,1,1][:,5],datasets[1,1,1][:,3],
-                   datasets[1,2,1][:,5],datasets[1,2,1][:,3],
-                   datasets[1,3,1][:,5],datasets[1,3,1][:,3]
-                   )
+# uy @ yrel4
+plot_mixed_dataset(axs_bbbc[2,1], data_reg_fwbb_yrel4, [(1,0,1), (1,1,1), (1,2,1), (1,3,1)], xcol=5, ycol=3)
+
 
 # x-axis labels
 axs_bbbc[2,0].set_xlabel(r"$x_{LU}$")
 axs_bbbc[2,1].set_xlabel(r"$x_{LU}$")
 
 # y-axis labels
-axs_bbbc[0,0].set_ylabel(r"$p_{LU}$")
-axs_bbbc[1,0].set_ylabel(r"$u_{x,LU}$")
-axs_bbbc[2,0].set_ylabel(r"$u_{y,LU}$")
+axs_bbbc[0,0].set_ylabel(r"$p$")
+axs_bbbc[1,0].set_ylabel(r"$u_{x}$")
+axs_bbbc[2,0].set_ylabel(r"$u_{y}$")
 
 # y-axis limits
 # axs_bbbc[0,0].set_ylim([-0.001,0.001])
@@ -221,10 +277,10 @@ axs_bbbc[2,0].set_ylim([-0.01,0.01])
 axs_bbbc[2,0].set_xlim([0,80])
 axs_bbbc[2,1].set_xlim([0,80])
 
-axs_bbbc[0,0].set_title(r"at $y_{LU} = 1$")
-axs_bbbc[0,1].set_title(r"at $y_{LU} = 5$")
+axs_bbbc[0,0].set_title(r"Profil bei $y_{LU} = 1$")
+axs_bbbc[0,1].set_title(r"Profil bei $y_{LU} = 5$")
 
-axs_bbbc[2,1].legend(labels=["REG fwbb i30000","REG ibbd0.5 i=30000", "REG ibbd0.5 i=30001", "REG ibbd0.5 i=30002", "REG ibbd0.5 i=30003"],fontsize=6)
-plt.suptitle(f"p/ux/uy(x,ti), REG, FWBB/ibbd0.5, lowInlet, RES8, i30000+, res8")
-plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "test_lowInlet_BBBC_REG")
+axs_bbbc[2,1].legend(labels=[r"REG FWBB $t_{LU}$=30000","REG HWBB $t_{LU}$=30000", "REG HWBB $t_{LU}$=30001", "REG HWBB $t_{LU}$=30002", "REG HWBB $t_{LU}$=30003"],fontsize=7)
+#plt.suptitle(f"p/ux/uy(x,ti), REG, FWBB/ibbd0.5, lowInlet, RES8, i30000+, res8")
+plt.savefig(output_base_path + "/" + plot_batch_name + "/" + "tempOsz_REG_BC_at30000_lowInlet")
 plt.close(fig_bbbc_2)
