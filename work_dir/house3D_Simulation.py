@@ -13,21 +13,27 @@ from time import time, sleep
 import datetime
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-#from PIL import Image
+from PIL import Image
 import subprocess  # for mp4 export...
 
 import numpy as np
 import torch
 from OCC.Core.TopoDS import TopoDS_Shape
 from matplotlib import pyplot as plt
+from pyevtk.hl import imageToVTK
 
 # lettuce
 import lettuce as lt
-from lettuce.flows.cornerFlow import CornerFlow
+from lettuce import torch_gradient
+from lettuce.boundary import InterpolatedBounceBackBoundary_occ, BounceBackBoundary
+from lettuce.boundary_mk import EquilibriumExtrapolationOutlet, NonEquilibriumExtrapolationInletU, ZeroGradientOutlet, SyntheticEddyInlet
+# flow
+from lettuce.flows.houseFlow import HouseFlow3D
 
 # helpterCodePS
 from helpterCodePS.geometric_building_model import build_house_max
 from helpterCodePS.helperFunctions.getIBBdata import getIBBdata
+from helpterCodePS.helperFunctions.getInputData import getInputData, getHouse
 from helpterCodePS.helperFunctions.logging import Logger
 from helpterCodePS.obstacleFunctions import overlap_solids, makeGrid
 from helpterCodePS.helperFunctions.plotting import Show2D, plot_intersection_info, print_results
@@ -41,7 +47,7 @@ parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 # (!) action = 'store_false' bedeutet, dass im Fall des GEGEBENEN Arguments, false gespeichert wird, und wenn es NICHT gegeben ist, True... wtf
 
 # Infrastructure and I/O (path, devices, name, walltime, vtk-output,...)
-parser.add_argument("--name", default="3Dcorner", help="name of the simulation, appears in output directory name")
+parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
 parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
 parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime [s] to simulate, default is 72 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
@@ -75,7 +81,7 @@ parser.add_argument("--vtk_slice_y", default=5, type=int, help="y_height of 2D v
 parser.add_argument("--vtk_slice_z", default=0, type=int, help="z location of 2D slice; NOT IMPLEMENTED")
 parser.add_argument("--vtk_slice_intervals", action='store_true', help="toggle vtk-output of 2D slice for specific intervals (hardcoded, see below)")
 
-# SURVEILLANCE reporters
+# SURVEILANCE reporters
 parser.add_argument("--nan_reporter", action='store_true', help="stop simulation if NaN is detected in f field")
 parser.add_argument("--nan_reporter_interval", default=100, type=int, help="interval in which the NaN reporter checks f for NaN")
 parser.add_argument("--high_ma_reporter", action='store_true', help="stop simulation if Ma > 0.3 is detected in u field")
@@ -97,43 +103,42 @@ parser.add_argument("--u_init", default=0, type=int, choices=[0, 1, 2], help="0:
 # char velocity PU will be calculated from Re, viscosity and char_length!
 
 # solver settings
-parser.add_argument("--n_steps_target", default=None, type=int, help="number of steps to simulate, overwritten by t_target, if t_target is >0, end of sim will be step_start+n_steps")
-parser.add_argument("--t_target", default=None, type=float, help="time in PU to simulate, t_start will be calculated by PU/LU-conversion of step_start")
+parser.add_argument("--n_steps", default=100000, type=int, help="number of steps to simulate, overwritten by t_target, if t_target is >0, end of sim will be step_start+n_steps")
+parser.add_argument("--t_target", default=0, type=float, help="time in PU to simulate, t_start will be calculated by PU/LU-conversion of step_start")
 parser.add_argument("--step_start", default=0, type=int, help="stepnumber to start at. Useful if sim. is started from a checkpoint and sim-data should be concatenated later on")
 parser.add_argument("--collision", default="bgk", type=str, choices=["kbc", "bgk", "reg", 'reg', "bgk_reg", 'kbc', 'bgk', 'bgk_reg'], help="collision operator (bgk, kbc, reg)")
 parser.add_argument("--dim", default=3, type=int, help="dimensions: 2D (2), oder 3D (3, default)")
 parser.add_argument("--stencil", default="D3Q27", choices=['D2Q9', 'D3Q15', 'D3Q19', 'D3Q27'], help="stencil (D2Q9, D3Q27, D3Q19, D3Q15), dimensions will be infered from D")
 parser.add_argument("--eqlm", action="store_true", help="use Equilibium LessMemory to save ~20% on GPU VRAM, sacrificing ~2% performance")
 
-# corner geometry (LU, PU)
-parser.add_argument("--corner_position_x_lu", default=0, type=float, help="corner position on xy-plane (x coordinate)")
-parser.add_argument("--corner_position_z_lu", default=0, type=float, help="corner position on xz-plane (z coordinate)")
-parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute coordinates relative to (?) coordinate system")  # characteristic length LU, in flow direction
-parser.add_argument("--reference_height_pu", default=10, type=float, help="reference height for velocity profile where u_char is reached. Can be outside the domain. Default is 10 m , because of the house simulation.")
+# house and domain geometry
+parser.add_argument("--house_length_lu", default=10, type=int, help="house length in LU")  # characteristic length LU, in flow direction
+parser.add_argument("--ground_height_lu", default=0.5, type=float, help="ground height in LU, height ZERO, in absolute LU coordinates relative to (?) coordinate system")
+parser.add_argument("--house_length_pu", default=10, type=float, help="house length in PU")  # characteristic length PU [m]
+parser.add_argument("--house_width_pu", default=0, type=float, help="width of house in crossstream direction. If left default, it will be equal to house_length_pu")  # cross-stream house_width PU [m]
+#house_position  # center of house foundation (corner closest to domain origin?) / erstmal hardcoded, denn man kann als argument wohl kein tupel übergeben
+parser.add_argument("--roof_angle", default=45, type=float, help="roof_angle in degree (0 to <90)")  # angle of roof (incline and decline for symmetric roof) - depending on how the house-polygon is defined, obsolete?
+parser.add_argument("--eg_height_pu", default=0, type=float, help="eg_height in PU")  # if left 0, roof_height is taken. If roof_height is zero as well, eg_height_pu = house_length_pu
+parser.add_argument("--roof_height_pu", default=0, type=float, help="roof_height in PU") # if left 0, roof_height is infered from eg_height and roof_angle
+parser.add_argument("--overhang_pu", default=0, type=float, help="roof overhang in PU")
+parser.add_argument("--domain_length_pu", default=60, type=float, help="flow-direction domain length in PU")
+parser.add_argument("--domain_width_pu", default=40, type=float, help="cross-flow-direction domain width in PU")
+parser.add_argument("--domain_height_pu", default=30, type=float, help="cross-flow domain height in PU")
 
-parser.add_argument("--domain_length_x_lu", default=None, type=int, help="domain length in flow direction (X) in LU (only specify lu OR pu)")
-parser.add_argument("--domain_length_x_pu", default=None, type=float, help="domain length in flow direction (X) in PU (only specify lu OR pu)")
-parser.add_argument("--domain_height_y_lu", default=None, type=int, help="domain height in cross flow direction (Y) in LU (only specify lu OR pu)")
-parser.add_argument("--domain_height_y_pu", default=None, type=float, help="domain height in cross flow direction (Y) in PU (only specify lu OR pu)")
-parser.add_argument("--domain_width_z_lu", default=None, type=int, help="domain width in cross flow direction (Z) in LU (only specify lu OR pu)")
-parser.add_argument("--domain_width_z_pu", default=None, type=float, help="domain width in cross flow direction (Z) in PU (only specify lu OR pu)")
-parser.add_argument("--resolution", default=1, type=float, help="number of gridpoints per meter [LU/PU]")
-
-# WIND SPEED PROFILE
 parser.add_argument("--wsp_shift_up_lu", default=0, type=float, help="how many LU to shift the y_0 and y_ref of u_inlet profile upwards (to mitigate interaction of ground_BC and inlet); shifts whole profile including y0 and y_ref" )
 parser.add_argument("--wsp_y0_lu", default=0, type=float, help="zero-height for wind speed profile below which U(y<y0)=0; only shifts y0 up, thereby squeezes profile between y_0 and y_ref 8y_ref not altered)")
 parser.add_argument("--wsp_alpha", default=0.25, type=float, help="exponent for wind speed profile power law.")
 
-parser.add_argument("--combine_solids", action='store_true', help="combine all solids (corner and ground) into one object for easier prototyping")
+parser.add_argument("--combine_solids", action='store_true', help="combine all solids (house and ground) into one object for easier prototyping")
+parser.add_argument("--no_house", action='store_true', help="if TRUE, removes house from simulation, for debugging of house-independent aspects")
 
 # boundary algorithms
 parser.add_argument("--inlet_bc", default="eqin", help="inlet boundary condition: EQin, NEX, SEI, rampEQin")
 parser.add_argument("--inlet_ramp_steps", default=1, type=int, help="step number over which the velocity of ramped EquilibriumInlet is ramped to 100%")
 parser.add_argument("--outlet_bc", default="eqoutp", help="outlet boundary condition: EQoutP, EQoutU")
 parser.add_argument("--ground_bc", default="fwbb", help="ground boundary condition: fwbb, hwbb, ibb")
-parser.add_argument("--corner_bc", default="fwbb", help="corner boundary condition: fwbb, hwbb, ibb")
-parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo, eq, slip")
-parser.add_argument("--lateral_bc", default="zgo", help="lateral (z direction) boundary condition: zgo, eq, slip")
+parser.add_argument("--house_bc", default="fwbb", help="house boundary condition: fwbb, hwbb, ibb")
+parser.add_argument("--top_bc", default="zgo", help="top boundary condition: zgo, eq")
 
 # plotting and output
 parser.add_argument("--plot_intersection_info", action='store_true', help="plot intersection info to outdir to debug solid-boundary problems")
@@ -144,7 +149,8 @@ parser.add_argument("--animations_fps_pu", default=0, type=int, help="number of 
 parser.add_argument("--animations_fps_mp4", default=0, type=int, help="number of frames per second PU for 2D animations (GIFs). Actual fps of the resulting GIF. (Not the fps at which frames are taken from simulation!")
 parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
 
-# SBD helpterCodePS arguments
+
+
 parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
 parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
 parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
@@ -152,33 +158,32 @@ parser.add_argument("--recalc", action='store_true', help="recalculate solid_bou
 args = vars(parser.parse_args())
 
 # get parameters from args[] dict:
-# name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_data, vtk, vtk_fps, vtk_interval, vtk_step_start, \
-#     nan_reporter, from_cpt, sim_i, write_cpt, re, ma, viscosity_pu, char_density_pu, u_init, n_steps, t_target, \
-#     step_start, collision, dim, stencil, eqlm, house_length_lu, house_length_pu, house_width_pu, roof_angle, \
-#     eg_height_pu, roof_height_pu, overhang_pu, domain_length_pu, domain_width_pu, domain_height_pu, inlet_bc, outlet_bc, \
-#     ground_bc, house_bc, top_bc, combine_solids, verbose = \
-#     [args[_] for _ in ["name", "default_device", "float_dtype", "t_sim_max", "cluster", "outdir", "outdir_data",
-#                        "vtk_3D", "vtk_3D_fps", "vtk_3D_step_interval", "vtk_3D_step_start", "nan_reporter", "from_cpt", "sim_i",
-#                        "write_cpt", "re", "ma", "viscosity_pu", "char_density_pu", "u_init", "n_steps", "t_target",
-#                        "step_start", "collision", "dim", "stencil", "eqlm", "house_length_lu", "house_length_pu",
-#                        "house_width_pu", "roof_angle", "eg_height_pu", "roof_height_pu", "overhang_pu", "domain_length_pu",
-#                        "domain_width_pu", "domain_height_pu", "inlet_bc", "outlet_bc", "ground_bc", "house_bc",
-#                        "top_bc", "combine_solids", "verbose"]]
+name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_data, vtk, vtk_fps, vtk_interval, vtk_step_start, \
+    nan_reporter, from_cpt, sim_i, write_cpt, re, ma, viscosity_pu, char_density_pu, u_init, n_steps, t_target, \
+    step_start, collision, dim, stencil, eqlm, house_length_lu, house_length_pu, house_width_pu, roof_angle, \
+    eg_height_pu, roof_height_pu, overhang_pu, domain_length_pu, domain_width_pu, domain_height_pu, inlet_bc, outlet_bc, \
+    ground_bc, house_bc, top_bc, combine_solids, verbose = \
+    [args[_] for _ in ["name", "default_device", "float_dtype", "t_sim_max", "cluster", "outdir", "outdir_data",
+                       "vtk_3D", "vtk_3D_fps", "vtk_3D_step_interval", "vtk_3D_step_start", "nan_reporter", "from_cpt", "sim_i",
+                       "write_cpt", "re", "ma", "viscosity_pu", "char_density_pu", "u_init", "n_steps", "t_target",
+                       "step_start", "collision", "dim", "stencil", "eqlm", "house_length_lu", "house_length_pu",
+                       "house_width_pu", "roof_angle", "eg_height_pu", "roof_height_pu", "overhang_pu", "domain_length_pu",
+                       "domain_width_pu", "domain_height_pu", "inlet_bc", "outlet_bc", "ground_bc", "house_bc",
+                       "top_bc", "combine_solids", "verbose"]]
 
 # CREATE timestamp, sim-ID, outdir and outdir_data
 timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-sim_id = str(timestamp) + "-" + args["name"]
-os.makedirs(args["outdir"]+"/"+sim_id)
-if args["outdir_data"] is None:
-    outdir_data = args["outdir"]
-else:
-    outdir_data = args["outdir_data"]
-outdir = args["outdir"]+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
-outdir_data = outdir_data+"/"+sim_id
-if (args["vtk_3D"] or args["vtk_slice2D"] or args["save_animations"]) and not os.path.exists(outdir_data):
-    os.makedirs(outdir_data)
+sim_id = str(timestamp) + "-" + name
+os.makedirs(outdir+"/"+sim_id)
 print(f"Outdir/simID = {outdir}/{sim_id}")
-print(f"Outdir_data/simID = {outdir_data}/{sim_id}")
+if outdir_data is None:
+    outdir_data = outdir
+outdir = outdir+"/"+sim_id  # adding individal sim-ID to outdir path to get individual DIR per simulation
+outdir_data = outdir_data+"/"+sim_id
+if (vtk or args["save_animations"]) and not os.path.exists(outdir_data):
+    os.makedirs(outdir_data)
+    print(f"Outdir_DATA/simID = {outdir}/{sim_id}")
+print(f"Outdir/simID = {outdir}/{sim_id}")
 print(f"Input arguments: {args}")
 
 # save input parameters to file
@@ -187,8 +192,7 @@ for key in args:
     output_file.write('{:30s} {:30s}\n'.format(str(key), str(args[key])))
 output_file.close()
 
-# set DPI for figures...
-if args["cluster"]:
+if cluster:
     dpi = 1200
 else:
     dpi = 600
@@ -205,9 +209,49 @@ old_stdout = sys.stdout
 sys.stdout = Logger(outdir)
 
 
+def save_gif(filename: str = "./animation",
+             database: str = None,
+             dataName: str = None,
+             fps: int = 20,
+             loop: int = 0):
+    """
+    Description:
+    The save_gif function is a helper utility designed to create an animated GIF from a series of image files.
+    The images are read from a specified directory and filtered based on a given chart name. The resulting GIF is saved
+    to a specified output file.
 
-#######################
-# AUX. METHODS:
+    Parameters:
+    - filename (str): The path where the output GIF will be saved. Default is ./animation.
+    - database (str): The directory containing the image files. This should be a valid directory path.
+    - dataName (str): A substring to filter the image files in the origin directory. Only files containing this
+      substring in their names will be included in the GIF.
+    - fps (int): Frames per second for the GIF. This determines the speed of the animation. Default is 20.
+    - loop (int): Number of times the GIF will loop. Default is 0, which means the GIF will loop indefinitely.
+    """
+    # Ensure the database path ends with a slash
+    database += '/' if database[-1] != "/" else ''
+
+    # List all files in the database directory
+    filesInOrigin = sorted(os.listdir(database))
+
+    # Filter files based on the dataName substring
+    filesForAnimation = []
+    for file in filesInOrigin:
+        if dataName in file:
+            filesForAnimation.append(file)
+
+    # Print the number of files found
+    print(f"(save_gif): Number of files found: {len(filesForAnimation)}. Creating animation...")
+
+    if len(filesForAnimation) > 1:
+        # Open and compile the images into a GIF
+        imgs = [Image.open(database+file) for file in filesForAnimation]
+        imgs[0].save(fp=filename, format='GIF', append_images=imgs[1:], save_all=True, duration=int(1000/fps), loop=loop)
+
+        # Print a confirmation message
+        print(f"(save_gif): Animation file \"{filename}\" was created with {fps} fps")
+    else:
+        print(f"(save_gif): WARNING: Less than 2 files found for '{dataName}', no GIF created!")
 
 def save_mp4(filename: str = "./animation",
              database: str = None,
@@ -305,190 +349,179 @@ class Slice2dReporter:
             self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {self.simulation.i}) LIM99",f"lim99_p_i{self.simulation.i:08}_t{int(t)}", vlim=(np.percentile(p[0].flatten(), 1), np.percentile(p[0].flatten(), 99)), cmap=self.cmap)
             self.show2d_slice_reporter(p[0], f"p (t = {t:.3f} s, step = {self.simulation.i}) LIMfix",f"limfix_p_i{self.simulation.i:08}_t{int(t)}", vlim=self.p_lim, cmap=self.cmap)
 
-#### AUX METHODS (end)
+
+
+
+
+
 
 # ***************************************************************************************************
 
 ### ANALYSE and PROCESS PARAMETERS
 
-# resolution and domain geometry (from given values of domain_length_x_lu, domain_length_x_pu and resolution. Two of which can be provided
-if args["domain_length_x_lu"] is not None and args["domain_length_x_pu"] is not None:  # calculate resolution
-    domain_length_x_lu = args["domain_length_x_lu"]
-    domain_length_x_pu = args["domain_length_x_pu"]
-    resolution = args["domain_length_x_lu"] / args["domain_length_x_pu"]
-
-    domain_height_y_lu = args["domain_height_y_lu"]
-    domain_height_y_pu = args["domain_height_y_pu"]
-    domain_width_z_lu = args["domain_width_z_lu"]
-    domain_width_z_pu = args["domain_width_z_pu"]
-elif args["domain_length_x_lu"] is not None and args["resolution"] is not None:  # calculate PU
-    domain_length_x_lu = args["domain_length_x_lu"]
-    resolution = args["resolution"]
-    domain_length_x_pu = args["domain_length_x_lu"] / args["resolution"]
-
-    domain_height_y_lu = args["domain_height_y_lu"]
-    domain_height_y_pu = args["domain_height_y_lu"] / args["resolution"]
-    domain_width_z_lu = args["domain_width_z_lu"]
-    domain_width_z_pu = args["domain_width_z_lu"] / args["resolution"]
-elif args["domain_length_x_pu"] is not None and args["resolution"] is not None:  # calculate LU
-    domain_length_x_pu = args["domain_length_x_pu"]
-    resolution = args["resolution"]
-    domain_length_x_lu = args["domain_length_x_pu"] * args["resolution"]
-
-    domain_height_y_lu = args["domain_height_y_pu"] * args["resolution"]
-    domain_height_y_pu = args["domain_height_y_pu"]
-    domain_width_z_lu = args["domain_width_z_pu"] * args["resolution"]
-    domain_width_z_pu = args["domain_width_z_pu"]
-else:
-    print("ERROR: domain geometry could not be determined!")
-    resolution = 1
-    domain_length_x_lu, domain_length_x_pu, domain_width_z_lu, domain_width_z_pu, domain_height_y_lu, domain_height_y_pu = (1, 1, 1, 1, 1, 1)
-
-# typcast LU-domain shape to integer, otherwise all the shape- and grid-stuff doesn't work...
-domain_length_x_lu, domain_width_z_lu, domain_height_y_lu = (int(domain_length_x_lu), int(domain_width_z_lu), int(domain_height_y_lu))
-
-# CORNER FLOW (geometry)
-if args["corner_position_x_lu"] == 0:
-    corner_position_x_lu = domain_length_x_lu/2
-else:
-    corner_position_x_lu = args["corner_position_x_lu"]
-corner_position_x_pu = corner_position_x_lu/resolution
-if args["corner_position_z_lu"] == 0:
-    corner_position_z_lu = domain_width_z_lu/2
-else:
-    corner_position_z_lu = args["corner_position_z_lu"]
-corner_position_z_pu = corner_position_z_lu/resolution
-char_length_pu = args["reference_height_pu"] # FOR STANDALONE take this, but for house-comparison takt ref_height. domain_length_x_pu - corner_position_x_pu  # charakteristische Länge ist der Abstand zwischen der Kante und dem Auslass in x- (Fluss) Richtung
-
-# flow physics
-viscosity_pu = args["viscosity_pu"]
-char_density_pu = args["char_density_pu"]
-ma = args["ma"]
-re = args["re"]
-
 # calc. characteristic velocity from re, viscosity and char_length
-char_velocity_pu = re * viscosity_pu / char_length_pu
+char_velocity_pu = re * viscosity_pu / house_length_pu
+
+# calculate resolution LU/m
+res = house_length_lu/house_length_pu
 
 # TODO: make n_steps / target, reached and t_start / target / reached consistent!
 # - args, NAME als variable, Berechnung, checkpointing, Nutzung durch sim.step(...)
 
-# steps and time
-
-t_start = 0  # TODO: add t_start argument, add t_end output
-n_steps_start = 0
-n_steps_duration = args["n_steps_target"]
-if args["t_target"] is not None:  # calculate steps LU
-    # t_start, t_target
-    t_target = args["t_target"]
-    t_duration = args["t_target"] - t_start
-    n_steps_duration = int(t_duration * domain_length_x_lu/domain_length_x_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
-    n_steps_target = n_steps_duration + n_steps_start
-elif args["n_steps_target"] is not None:
-    n_steps_target = args["n_steps_target"]
-    n_steps_duration = args["n_steps_target"] - n_steps_start
-    t_duration = n_steps_target / (domain_length_x_lu/domain_length_x_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
-    t_target = t_start + t_duration
+n_start = step_start
+n_stop_target = step_start+n_steps
+t_start = 0
+t_stop_target = t_target
+# infer step number from target PU-time
+if t_target > 0:  # if t_target (PU) is given, calculate n_stop_target from LU/PU length and velocity coefficients
+    n_stop_target = int(t_stop_target * house_length_lu/house_length_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
+    n_steps = n_stop_target - n_start
 else:
-    print("ERROR: could not determine steps and time!")
-    n_steps_duration = 0
-    n_steps_target = 0
-    t_duration = 0
-    t_target = 0
-
-
-#################################################
-print(f"(INFO) Trying to simulate {n_steps_target} ({n_steps_start} to {n_steps_target}) steps, representing {t_duration:.3f} seconds [PU]!")
-
-#################################################
-
+    t_target = n_stop_target / (house_length_lu/house_length_pu * char_velocity_pu/(ma*1/np.sqrt(3)))
+    t_stop_target = t_target
+print(f"(INFO) Trying to simulate {n_steps} ({n_start} to {n_stop_target}) steps, representing {t_stop_target:.3f} seconds [PU]!")
 
 ### SIMULATOR SETUP
 print("STATUS: Simulator setup started...")
 # ceate objects, link and assemble
 
 # STENCIL
-if args["stencil"] == "D2Q9":
+if dim == 2:
+    if stencil == "D2Q9":
+        stencil_class = lt.D2Q9
+    else:
+        print("WARNING: wrong stencil choice for 2D simulation, D2Q9 is used")
+        stencil_class = lt.D2Q9
+elif dim == 3:
+    if stencil == "D3Q15":
+        stencil_class = lt.D3Q15
+    elif stencil == "D3Q19":
+        stencil_class = lt.D3Q19
+    elif stencil == "D3Q27":
+        stencil_class = lt.D3Q27
+    else:
+        print("WARNING: wrong stencil choice for 3D simulation, D3Q27 is used")
+        stencil_class = lt.D3Q27
+else:
+    print("WARNING: wrong dimension choise. Using 2D simulation and D2Q9")
     stencil_class = lt.D2Q9
-elif args["stencil"] == "D3Q15":
-    stencil_class = lt.D3Q15
-elif args["stencil"] == "D3Q19":
-    stencil_class = lt.D3Q19
-elif args["stencil"] == "D3Q27":
-    stencil_class = lt.D3Q27
-else:
-    print(f"ERROR: could not interpret stencil argument: {args['stencil']}...")
-    stencil_class = None
+    dim = 2
 
-# precision
-if args["float_dtype"] == "float32" or args["float_dtype"] == "single":
+if float_dtype == "float32" or float_dtype == "single":
     float_dtype = torch.float32
-elif args["float_dtype"] == "half" or args["float_dtype"] == "float16":
+elif float_dtype == "double" or float_dtype == "float64":
+    float_dtype = torch.float64
+elif float_dtype == "half" or float_dtype == "float16":
     float_dtype = torch.float16
-elif args["float_dtype"] == "double" or args["float_dtype"] == "float64":
-    float_dtype = torch.float64
-else:
-    print(f"ERROR: could not interpret float_dtype argument: {args['float_dtype']}. Using double precision.")
-    float_dtype = torch.float64
 
 # LATTICE
-lattice = lt.Lattice(stencil_class, device=torch.device(args["default_device"]), dtype=float_dtype)
-if args["eqlm"]:  # use EQLM with 20% less memory usage and 2% less performance
+lattice = lt.Lattice(stencil_class, device=torch.device(default_device), dtype=float_dtype)
+if eqlm:  # use EQLM with 20% less memory usage and 2% less performance
     print("(INFO) Using Equilibrium_LessMemory (saving ~20% VRAM on GPU, but ~2% slower)")
     lattice.equilibrium = lt.QuadraticEquilibrium_LessMemory(lattice)
 
-# DOMAIN CONSTRAINTS [PU]
-print("Defining domain constraints...")
-xmin_pu, ymin_pu, zmin_pu = 0, 0, 0 if lattice.D == 3 else None
-xmax_pu, ymax_pu, zmax_pu = domain_length_x_pu, domain_height_y_pu, domain_width_z_pu if lattice.D == 3 else None
-domain_constraints = ([xmin_pu, ymin_pu], [xmax_pu, ymax_pu]) if lattice.D == 2 else ([xmin_pu, ymin_pu, zmin_pu], [xmax_pu, ymax_pu, zmax_pu])  # Koordinatensystem abh. von der stl und deren ursprung
-shape = (domain_length_x_lu, domain_height_y_lu, domain_width_z_lu) if lattice.D == 3 else (domain_length_x_lu, domain_height_y_lu)
+# HOUSE FLOW and DOMAIN
+print("Defining house geometry and position...")
+house_position = (domain_length_pu/3, domain_width_pu/2) if dim == 3 else domain_length_pu/3
+if house_width_pu == 0:
+    print(f"(INFO) house_width_pu == 0: implies house_width = house_length!")
+    house_width_pu = house_length_pu
 
-ground_height_pu = args["ground_height_lu"] * 1/resolution
+roof_length_pu = house_length_pu
+if overhang_pu != 0:
+    roof_length_pu = house_length_pu + 2*overhang_pu
+
+# infer roof_height and eg_height from another and determine reference height, for u_char and wind speed profile
+if roof_height_pu == 0: # if roof_height ist not given infer it from eg_height
+    if eg_height_pu == 0: # if nothing is given house is square/cube shaped plus roof
+        eg_height_pu = house_length_pu
+        print(f"(INFO) roof_height == eg_height == 0: implies eg_height = house_length (char. length) -> cubic EG-XY-shape")
+    roof_height_pu = eg_height_pu * (1 + 0) + np.tan(roof_angle*np.pi/180) * roof_length_pu/2 #0.01*house_length_pu/house_length_lu
+    print(f"(INFO) roof_height == 0: calculating roof_height from eg_height: eg_height_pu = {eg_height_pu}, roof_angle = {roof_angle}, roof_length_pu = {roof_length_pu}")
+    reference_height_pu = eg_height_pu
+    print(f"(INFO) Setting reference_height = eg_height")
+else:
+    eg_height_pu = roof_height_pu - np.tan(roof_angle*np.pi/180) * roof_length_pu/2
+    print(f"(INFO) eg_height == 0: calculating eg_height from roof_height: roof_height_pu = {roof_height_pu}, roof_angle = {roof_angle}")
+    reference_height_pu = roof_height_pu
+    print(f"(INFO) Setting reference_height = roof_height")
+
+
+# TODO: auslagern von "CreateSBD...", damit ich das nicht an zwei verschiedenen Stellen anpassen muss...
+#   an sich wäre es gut diesen code "einfach" zu haben und dann von hier nur extern aufzurufen, damit ich nicht copy-paste und versions-fehler bekomme
+
+# DOMAIN constraints in PU
+print("Defining domain constraints...")
+xmin, ymin, zmin = 0, 0, 0 if dim == 3 else None
+xmax, ymax, zmax = domain_length_pu, domain_height_pu, domain_width_pu if dim == 3 else None
+minz_house, maxz_house = (domain_width_pu/2.-house_width_pu/2., domain_width_pu/2.+house_width_pu/2.) if dim == 3 else (-1, 1)
+ground_height_pu = args["ground_height_lu"] * house_length_pu/house_length_lu  # height of ZERO-height or ground level in PU at 0.5 LU
+
+domain_constraints = ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem abh. von der stl und deren ursprung
+lx, ly, lz = xmax-xmin, ymax-ymin, zmax-zmin  # das sind die PU-Domänengrößen
+shape = (int(round(lx*res)), int(round(ly*res))) if dim == 2 else (int(round(lx*res)), int(round(ly*res)), int(round(lz*res))) # LU-Domänengröße
 
 print(f"-> Domain PU constraints = {domain_constraints}")
 print(f"-> Domain LU shape = {shape}")
 
-print("Defining corner and ground 2D polygon for OCC solid generation...")
-min_z_corner, max_z_corner = (-1.5/resolution ,corner_position_z_pu-1/resolution)  # MIN/MAX z in PU
-corner_polygon = [[corner_position_x_pu, ground_height_pu*0.999],  # bottom left
-                  [corner_position_x_pu, domain_height_y_pu*1.1],  # top left
-                  [domain_length_x_pu*1.1, domain_height_y_pu*1.1],  # top right
-                  [domain_length_x_pu*1.1, ground_height_pu*0.999]]  # bottom right
-ground_polygon = [[xmin_pu-0.1*domain_length_x_pu, ground_height_pu],  # top left
-                  [xmax_pu+0.1*domain_length_x_pu, ground_height_pu],  # top right
-                  [xmax_pu+0.1*domain_length_x_pu, ymin_pu-0.1*domain_height_y_pu],  # bottom right
-                  [xmin_pu-0.1*domain_length_x_pu, ymin_pu-0.1*domain_height_y_pu]]  # bottom left
+#TODO: passe house_position (PU!) in Abh. der Länge und Breite der Domain so an, dass das Zentrum MITTIG ZWISCHEN, oder genau AUF Knoten liegt => SYMMETRIE (!)
+#  u.u. muss dafür anders aus domain_length etc. gerechnet werden. -> siehe nochmal Zylinder
+
+# house_polygon = [[15, 0+ground_height_pu], [15, 10+ground_height_pu], [14, 10+ground_height_pu], [20, 15.5+ground_height_pu],
+#                      [26, 10+ground_height_pu], [25, 10+ground_height_pu], [25, 0+ground_height_pu]]
+print("Defining house and ground 2D polygon for OCC solid generation...")
+# INFO: the house_foundation is slightly lowered into the ground, so that solid_combination etc. works well. Ground ist still precise by itself!
+house_polygon = [[house_position[0]-house_length_pu/2, ground_height_pu*0.999],  # bottom left (slightly lowered into ground for easy combination)
+                 [house_position[0]-house_length_pu/2, eg_height_pu+ground_height_pu],  # top left eg
+                 [house_position[0]-house_length_pu/2-overhang_pu, eg_height_pu+ground_height_pu],  # top left roof
+                 [house_position[0], roof_height_pu+ground_height_pu],  # center rooftop
+                 [house_position[0]+house_length_pu/2+overhang_pu, eg_height_pu+ground_height_pu],  # top right roof
+                 [house_position[0]+house_length_pu/2, eg_height_pu+ground_height_pu],  # top right eg
+                 [house_position[0]+house_length_pu/2, ground_height_pu*0.999]]  # bottom right (slightly lowered into ground for easy combination)
+#house_polygon = [[15, 0.16666666666666666], [15, 10.166666666666666], [14, 10.166666666666666], [20, 15.666666666666666], [26, 10.166666666666666], [25, 10.166666666666666], [25, 0.16666666666666666]]  # TEST with consts
+# ground_polygon (rectangle, with corners outside the domain, to ease neighbor-search over domain borders
+ground_polygon = [[xmin-0.1*domain_length_pu, ground_height_pu],  # top left
+                  [xmax+0.1*domain_length_pu, ground_height_pu],  # top right
+                  [xmax+0.1*domain_length_pu, ymin-0.1*domain_length_pu],  # bottom right
+                  [xmin-0.1*domain_length_pu, ymin-0.1*domain_length_pu]]  # bottom left
+                # alles außer der Höhe "außerhalb" der boundary setzen ("ich setze der Nachbarsuche, dort etwas hin, was er findet")
+
 
 # create unique ID of geometry parameters:
-combine_solids = args["combine_solids"]
-geometry_hash = hashlib.md5(f"{combine_solids}{domain_constraints}{shape}{corner_position_x_pu}{corner_position_z_pu}{ground_height_pu}{corner_position_x_lu}{corner_position_z_lu}".encode()).hexdigest()
-corner_bc_name = "corner_BC_"+ str(geometry_hash)
+geometry_hash = hashlib.md5(f"{combine_solids}{args['no_house']}{domain_constraints}{shape}{house_position}{ground_height_pu}{house_length_pu}{house_length_lu}{eg_height_pu}{house_width_pu}{roof_height_pu}{overhang_pu}".encode()).hexdigest()
+house_bc_name = "house_BC_"+ str(geometry_hash)
 ground_bc_name = "ground_BC_" + str(geometry_hash)
 
 # SAVE geometry input to file:
 output_file = open(outdir+"/geometry_pu.txt", "a")
 output_file.write(f"\nGEOMETRY of house and ground, after inference of missing lengths (see log):\n")
 output_file.write("\n{:30s} = {}".format(str("combine_solids"),str(combine_solids)))
-output_file.write("\n{:30s} = {}".format(str("dx_pu [m]"),f"{(corner_position_x_pu/corner_position_x_pu):.4f}"))
+output_file.write("\n{:30s} = {}".format(str("no_house"),args['no_house']))
+output_file.write("\n{:30s} = {}".format(str("dx_pu [m]"),f"{(house_length_pu/house_length_lu):.4f}"))
 output_file.write("\n{:30s} = {}".format(str("domain_constraints PU"),str(domain_constraints)))
 output_file.write("\n{:30s} = {}".format(str("domain shape LU"),str(shape)))
-output_file.write("\n{:30s} = {}".format(str("corner_position_PU (on XZ ground plane)"),str((corner_position_x_pu, corner_position_z_pu))))
+output_file.write("\n{:30s} = {}".format(str("house_position_PU (on XZ ground plane)"),str(house_position)))
 output_file.write("\n{:30s} = {}".format(str("ground_height PU"),f"{ground_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house_length LU"),str(house_length_lu)))
+output_file.write("\n{:30s} = {}".format(str("house_length PU"),f"{house_length_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("house width PU"),f"{house_width_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("eg height PU"),f"{eg_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof height PU"),f"{roof_height_pu:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("roof angle"),f"{roof_angle:.4f}"))
+output_file.write("\n{:30s} = {}".format(str("overhangs PU"),f"{overhang_pu:.4f}"))
 output_file.write(f"\n")
 output_file.write(f"\ngeometry hash: {geometry_hash}")
 output_file.write(f"\n")
-output_file.write(f"\nCORNER & GROUND corner coordinates (2D):")
-output_file.write(f"\ncorner polygon PU: \n{np.array(corner_polygon)}")
-output_file.write(f"\nmin/max z house PU: {(min_z_corner, max_z_corner)}")
+output_file.write(f"\nHOUSE & GROUND corner coordinates (2D):")
+output_file.write(f"\nhouse polygon PU: \n{np.array(house_polygon)}")
+output_file.write(f"\nmin/max z house PU: {(minz_house, maxz_house)}")
 output_file.write(f"\n")
 output_file.write(f"\nground polygon PU: \n{np.array(ground_polygon)}")
-output_file.write(f"\nmin/max z ground PU: {(zmax_pu, zmax_pu)}")
 output_file.write(f"\n")
-output_file.write(f"\ncorner polygon LU: \n{resolution * np.array(corner_polygon)}")
-output_file.write(f"\nmin/max z house LU: {(resolution*min_z_corner, resolution*max_z_corner)}")
+output_file.write(f"\nhouse polygon LU: \n{res * np.array(house_polygon)}")
+output_file.write(f"\nmin/max z house LU: {(res*minz_house, res*maxz_house)}")
 output_file.write(f"\n")
-output_file.write(f"\nground polygon LU: \n{resolution * np.array(ground_polygon)}")
-output_file.write(f"\nmin/max z ground LU: {(resolution*zmin_pu, resolution*zmax_pu)}")
+output_file.write(f"\nground polygon LU: \n{res * np.array(ground_polygon)}")
 output_file.write(f"\n")
 # res = LU/m
 output_file.close()
@@ -496,64 +529,73 @@ output_file.close()
 ## CALCULATE SOLID BOUNDARY DATA
 print("Calculating 3D TopoDS_Shapes...")
 
-corner_prism_shape = build_house_max(corner_polygon, minz=min_z_corner, maxz=max_z_corner)  #TopoDS_Shape als Rückgabe
-ground_prism_shape = build_house_max(ground_polygon, minz=zmin_pu-0.1*domain_width_z_pu, maxz=zmax_pu+0.1*domain_width_z_pu)
+house_prism_shape = build_house_max(house_polygon, minz=minz_house, maxz=maxz_house)  #TopoDS_Shape als Rückgabe
+ground_prism_shape = build_house_max(ground_polygon, minz=zmin-0.1*domain_width_pu, maxz=zmax+0.1*domain_width_pu)
 if combine_solids:
-    print("(INFO) combine_solids==True -> Combining Shapes of corner and ground...")
-    corner_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(corner_prism_shape, ground_prism_shape).Shape())
+    print("(INFO) combine_solids==True -> Combining Shapes of house and ground...")
+    house_prism_shape = TopoDS_Shape(BRepAlgoAPI_Fuse(house_prism_shape, ground_prism_shape).Shape())
 
-print("(INFO) Calculating corner_solid_boundary_data...")
-corner_solid_boundary_data = getIBBdata(corner_prism_shape, makeGrid(domain_constraints, shape), periodicity=(False, False, False), # TODO: clean the tensor(array() stuff with stack/cat etc.
-                                       lattice=lattice, no_store_solid_boundary_data=False, res=resolution, dim=args["dim"], name=corner_bc_name,
-                                       solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],
-                                       parallel=False,  # TODO: eliminate parallelism
-                                       device=args["default_device"],
-                                       cluster=args["cluster"],
-                                       verbose=args["verbose"]
-                                       )
+# (opt.) combine house and ground solid objects to single object
+
+# TODO: passe no_store_coll und solid_boundary_data_path und recalc und parallel an...
+house_solid_boundary_data = None
+if not args["no_house"]:
+    print("(INFO) Calculating house_solid_boundary_data...")
+    house_solid_boundary_data = getIBBdata(house_prism_shape, makeGrid(domain_constraints, shape), periodicity=(False, False, True), # TODO: clean the tensor(array() stuff with stack/cat etc.
+                                           lattice=lattice, no_store_solid_boundary_data=False, res=res, dim=dim, name=house_bc_name,
+                                           solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],  # TODO: redo_calc as parameter of house3D script
+                                           parallel=False,  # TODO: eliminate parallelism
+                                           device=default_device,
+                                           cluster=cluster,
+                                           verbose=verbose
+                                           )
+else:
+    print("(!) (INFO) no_house == True, no house geometry will be included in the simulation")
+
 ground_solid_boundary_data = None
 if not combine_solids:
     print("(INFO) Calculating ground_solid_boundary_data...")
-    ground_solid_boundary_data = getIBBdata(ground_prism_shape, makeGrid(domain_constraints, shape),  periodicity=(False, False, False), # TODO: clean the tensor(array() stuff with stack/cat etc.
-                                            lattice=lattice, no_store_solid_boundary_data=False, res=resolution, dim=args["dim"], name=ground_bc_name,
-                                            solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],
+    ground_solid_boundary_data = getIBBdata(ground_prism_shape, makeGrid(domain_constraints, shape),  periodicity=(False, False, True), # TODO: clean the tensor(array() stuff with stack/cat etc.
+                                            lattice=lattice, no_store_solid_boundary_data=False, res=res, dim=dim, name=ground_bc_name,
+                                            solid_boundary_data_path=args["solid_boundary_data_path"], redo_calculations=args["recalc"],  # TODO: redo_calc as parameter of house3D script
                                             parallel=False,  # TODO: eliminate parallelism
-                                            device=args["default_device"],
-                                            cluster=args["cluster"],
-                                            verbose=args["verbose"]
+                                            device=default_device,
+                                            cluster=cluster,
+                                            verbose=verbose
                                             )
 
 # inspect solid_boundary/IBB-data
 if args["plot_intersection_info"]:
-    print("(INFO) plotting intersection info...")
-    plot_intersection_info(corner_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, corner_solid_boundary_data.solid_mask, outdir, name=corner_bc_name, show=not args["cluster"])
-    if not combine_solids:
-        plot_intersection_info(ground_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, ground_solid_boundary_data.solid_mask, outdir, name=ground_bc_name, show=not args["cluster"])
+    if not args["no_house"]:
+        print("(INFO) plotting intersection info...")
+        plot_intersection_info(house_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, house_solid_boundary_data.solid_mask, outdir, name=house_bc_name, show=not cluster)
+        if not combine_solids:
+            plot_intersection_info(ground_solid_boundary_data, makeGrid(domain_constraints, shape), lattice, ground_solid_boundary_data.solid_mask, outdir, name=ground_bc_name, show=not cluster)
+
 
 
 ## FLOW Class
 print("Initializing flow class...")
-flow = CornerFlow(shape, re, ma, lattice, domain_constraints, domain_length_x_lu, domain_length_x_pu,
-                  char_velocity_pu, char_density_pu=char_density_pu, u_init=args["u_init"],
-                  reference_height_pu=args["reference_height_pu"],
-                  corner_position_lu=(corner_position_x_lu, corner_position_z_lu),
-                  ground_height_pu=ground_height_pu,
-                  inlet_bc=args["inlet_bc"], outlet_bc=args["outlet_bc"],
-                  inlet_ramp_steps=args["inlet_ramp_steps"],
-                  lateral_bc=args["lateral_bc"], top_bc=args["top_bc"],
-                  ground_bc=args["ground_bc"] if not combine_solids else None,
-                  corner_bc=args["corner_bc"],
-                  corner_solid_boundary_data=corner_solid_boundary_data,
-                  ground_solid_boundary_data=ground_solid_boundary_data,  # will be None for combine_solids == True
-                  K_Factor=10,  # K_factor for SEI boundary inlet
-                  L=3,  # L for SEI
-                  N=34,  # N number of random voctices for SEI
-                  wsp_shift_up_pu=args["wsp_shift_up_lu"] * 1 / resolution,
-                  # how many PU to shift the u_inlet profile upwards, without altering the ground_height
-                  wsp_y0=args["wsp_y0_lu"] * 1 / resolution,
-                  wsp_alpha=args["wsp_alpha"],
-                  )
-# TODO: complete flow-initialization...
+flow = HouseFlow3D(shape, re, ma, lattice, domain_constraints,
+                   char_length_lu=house_length_lu,
+                   char_length_pu=house_length_pu,
+                   char_velocity_pu=char_velocity_pu,
+                   char_density_pu=char_density_pu,
+                   u_init=u_init,
+                   reference_height_pu=reference_height_pu, ground_height_pu=ground_height_pu,
+                   inlet_bc=inlet_bc, outlet_bc=outlet_bc,
+                   ground_bc=ground_bc if not combine_solids else None,
+                   house_bc=house_bc, top_bc=top_bc,
+                   inlet_ramp_steps=args["inlet_ramp_steps"],
+                   house_solid_boundary_data=house_solid_boundary_data,
+                   ground_solid_boundary_data=ground_solid_boundary_data,  # will be None for combine_solids == True
+                   K_Factor=10,  # K_factor for SEI boundary inlet
+                   L=3,  # L for SEI
+                   N=34,  # N number of random voctices for SEI
+                   wsp_shift_up_pu=args["wsp_shift_up_lu"] * 1 / res,  #how many PU to shift the u_inlet profile upwards, without altering the ground_height
+                   wsp_y0=args["wsp_y0_lu"] * 1 / res,
+                   wsp_alpha=args["wsp_alpha"],
+                   )
 
 # export flow physics to file:
 output_file = open(outdir+"/flow_physics_parameters.txt", "a")
@@ -576,46 +618,53 @@ output_file.write('\n{:30s} {:30s}'.format("p_char_PU", str(flow.units.character
 output_file.write('\n{:30s} {:30s}'.format("rho_char_PU", str(flow.units.characteristic_density_pu)))
 output_file.write('\n')
 output_file.write('\n{:30s} {:30s}'.format("grid reynolds number Re_g", str(flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5)))))
-output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_x_pu/char_velocity_pu)))
+output_file.write('\n{:30s} {:30s}'.format("flow through time PU", str(domain_length_pu/char_velocity_pu)))
 output_file.write('\n{:30s} {:30s}'.format("flow through time LU", str(flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu)))
 output_file.write('\n')
 output_file.close()
 
+
 # COLLISION
 print("Initializing collision operator...")
 collision_obj = None
-if args["collision"].casefold() == "reg" or args["collision"].casefold() == "bgk_reg":
+if collision.casefold() == "reg" or collision.casefold() == "bgk_reg":
     collision_obj = lt.RegularizedCollision(lattice, tau=flow.units.relaxation_parameter_lu)
-elif args["collision"].casefold() == "kbc":
-    if lattice.D == 2:
+elif collision.casefold() == "kbc":
+    if dim == 2:
         collision_obj = lt.KBCCollision2D(lattice, tau=flow.units.relaxation_parameter_lu)
     else:
         collision_obj = lt.KBCCollision3D(lattice, tau=flow.units.relaxation_parameter_lu)
 else:  # default to bgk
-    print("(!) could not determine collision, using default BGK collision operator")
     collision_obj = lt.BGKCollision(lattice, tau=flow.units.relaxation_parameter_lu)
 
-# STREAMING
 print("Initializing streaming object...")
 streaming = lt.StandardStreaming(lattice)
-
-# SIMULATION
 print("Initializing simulation object...")
 simulation = lt.Simulation(flow, lattice, collision_obj, streaming)
-if args["t_sim_max"] > 0:
-    simulation.t_max = args["t_sim_max"]
+if t_sim_max > 0:
+    simulation.t_max = t_sim_max
 
 # OPTIONAL
 #simulation.initialize_f_neq()
 
 # OPTIONAL initialization process with reynolds *1/100
-# to be written...
+initialize_low_re = False
+if initialize_low_re:
+    # adjust re and tau for initialization of simulation with lower Re -> influences more dissipative tau
+    re_original = re
+    re_init = 1/100*re
+    flow.units.reynolds_number = re_init
+    collision_obj.tau = flow.units.relaxation_parameter_lu
 
-#############################################################################
+    #TODO: export checkpoint after initialization that can be imported...
+    #TODO: "from_init_cpt" Option mit Pfad..., dann wird die Initialisierung übersprungen
 
-### PLOT VELOCITY PROFILE AND GRADIENT OF VELOCITY PROFILE ON INLET
+    # reinitialize simulation with correct Re
+    simulation.i = n_start
+    flow.units.reynolds_number = re_original
+    collision_obj.tau = flow.units.relaxation_parameter_lu
 
-# PLOT VELOCITY PROFILE over central slice in XY-plane at z=int(Z/2)
+## PLOT VELOCITY PROFILE over central slice in XY-plane at z=int(Z/2)
 fig, ax = plt.subplots(constrained_layout=True)
 ux_profile_lu = flow.units.convert_velocity_to_lu(flow.wind_speed_profile_power_law(np.where(flow.solid_mask, 0, flow.grid[1]),
                                                       y_ref=flow.reference_height_pu,
@@ -623,11 +672,12 @@ ux_profile_lu = flow.units.convert_velocity_to_lu(flow.wind_speed_profile_power_
                                                       y_0=flow.wsp_y0,
                                                       u_ref=flow.units.characteristic_velocity_pu,
                                                       # characteristic velocity at reference height (EG or ROOF)
-                                                      alpha=flow.wsp_alpha)[0, np.newaxis,...][0, :, int(shape[2] / 2)]) # (!) lattice.u gibt LU, flow.initial_solution gibt PU; flow hat ux_profile auch in PU
-y_values_lu = np.arange(len(ux_profile_lu))
-ux_profile_table = np.stack([y_values_lu, ux_profile_lu])
+                                                      alpha=flow.wsp_alpha)[0, np.newaxis,...][0, :, int(shape[2] / 2)])
+                                          #lattice.convert_to_numpy(lattice.u(simulation.f)[0, 0, :, int(shape[2] / 2)])  # (!) lattice.u gibt LU, flow.initial_solution gibt PU
+y_values = np.arange(len(ux_profile_lu))
+ux_profile_table = np.stack([y_values, ux_profile_lu])
 np.savetxt(outdir + f"/velocity_profile_ux_inlet.txt", ux_profile_table, header="y_value (LU) |  ux (LU)")
-ax.plot(ux_profile_lu, y_values_lu, marker ="x", linestyle =":")
+ax.plot(ux_profile_lu, y_values, marker ="x", linestyle =":")
 ax.set_xlabel("ux [LU]")
 ax.set_ylabel("y [LU]")
 secax = ax.secondary_yaxis('right', functions=(flow.units.convert_length_to_pu, flow.units.convert_length_to_lu))
@@ -635,18 +685,18 @@ secax.set_ylabel("y [PU]")
 secax2 = ax.secondary_xaxis('top', functions=(flow.units.convert_velocity_to_pu, flow.units.convert_velocity_to_lu))
 secax2.set_xlabel("ux [PU]")
 plt.grid()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "velocity inlet profile")
+fig.suptitle(str(timestamp) + "\n" + name + "\n" + "velocity inlet profile")
 plt.savefig(outdir+"/velocity_profile_ux_inlet.png")
-if not args["cluster"]:
+if not cluster:
     plt.show()
 
-# determine ux-velocity profile gradients...
+## determine ux-velocity profile gradients...
 fig, ax = plt.subplots(constrained_layout=True)
-ux_profile_deltas_lu_per_lu = ux_profile_lu[1:] - ux_profile_lu[:-1]
-y_values_lu = np.arange(len(ux_profile_deltas_lu_per_lu)) + 0.5
-ux_profie_deltas_table = np.stack([y_values_lu, ux_profile_deltas_lu_per_lu])
+ux_profile_lu_deltas = ux_profile_lu[1:] - ux_profile_lu[:-1]
+y_values = np.arange(len(ux_profile_lu_deltas)) + 0.5
+ux_profie_deltas_table = np.stack([y_values, ux_profile_lu_deltas])
 np.savetxt(outdir + f"/velocity_profile_ux_deltas_inlet.txt", ux_profie_deltas_table, header="y_value (LU)  |  dux/dy (LU)")
-ax.plot(ux_profile_deltas_lu_per_lu, y_values_lu, marker ="x", linestyle =":")
+ax.plot(ux_profile_lu_deltas, y_values, marker ="x", linestyle =":")
 ax.set_xlabel("dux/dy [LU]")
 ax.set_ylabel("y [LU]")
 secax = ax.secondary_yaxis('right', functions=(flow.units.convert_length_to_pu, flow.units.convert_length_to_lu))
@@ -654,12 +704,13 @@ secax.set_ylabel("y [PU]")
 secax2 = ax.secondary_xaxis('top', functions=(flow.units.convert_velocity_to_pu, flow.units.convert_velocity_to_lu))
 secax2.set_xlabel("dux/dy [PU]")
 plt.grid()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + f"velocity inlet profile deltas (grad)\ndUXmaxLU = {max(ux_profile_deltas_lu_per_lu):.5f}, dUXmaxPU = {flow.units.convert_velocity_to_pu(max(ux_profile_deltas_lu_per_lu)):.5f}")
+fig.suptitle(str(timestamp) + "\n" + name + "\n" + f"velocity inlet profile deltas (grad)\nUXmaxLU = {max(ux_profile_lu_deltas):.5f}, UXmaxPU = {flow.units.convert_velocity_to_pu(max(ux_profile_lu_deltas)):.5f}")
 plt.savefig(outdir+"/velocity_profile_ux_deltas_inlet.png")
-if not args["cluster"]:
+if not cluster:
     plt.show()
 
-print(f"(!) maximum velocity gradient on inlet is dux/dy = {max(ux_profile_deltas_lu_per_lu)} [LU], {flow.units.convert_velocity_to_pu(max(ux_profile_deltas_lu_per_lu))} [PU]")
+print(f"(!) maximum velocity gradient on inlet is dux/dy = {max(ux_profile_lu_deltas)} [LU], {flow.units.convert_velocity_to_pu(max(ux_profile_lu_deltas))} [PU]")
+
 
 ## CHECK INITIALISATION AND 2D DOMAIN
 print(f"Initializing Show2D instances for 2d plots...")
@@ -667,21 +718,19 @@ if args["save_animations"]:
     observable_2D_plots_path = outdir_data + "/observable_2D_plots"
 else:
     observable_2D_plots_path = outdir + "/observable_2D_plots"
+if args["plot_sbd_2d"]:
+    boundary_masks_2D_plots_path = outdir + "/boundary_data_2D_plots"
+
 if not os.path.isdir(observable_2D_plots_path):
     os.makedirs(observable_2D_plots_path)
-
-show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not args["cluster"], figsize=(4,4), dpi=dpi)
+if args["plot_sbd_2d"] and not os.path.isdir(boundary_masks_2D_plots_path):
+    os.makedirs(boundary_masks_2D_plots_path)
+show2d_observables = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=observable_2D_plots_path, show=not cluster, figsize=(4,4), dpi=dpi)
+if args["plot_sbd_2d"]:
+    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not cluster, figsize=(8,8), dpi=dpi/2)
 
 # plot initial u_x velocity field as 2D slice
 show2d_observables(lattice.convert_to_numpy(flow.units.convert_velocity_to_pu(lattice.u(simulation.f))[0]), "u_x_INIT(t=0)", "u_x_t0")
-
-#TODO: (opt.) add "plot_sbd_2d" from house3D flow simulation...
-if args["plot_sbd_2d"]:
-    boundary_masks_2D_plots_path = outdir + "/boundary_data_2D_plots"
-if args["plot_sbd_2d"] and not os.path.isdir(boundary_masks_2D_plots_path):
-    os.makedirs(boundary_masks_2D_plots_path)
-if args["plot_sbd_2d"]:
-    show2d_boundaries = Show2D(lattice, flow.solid_mask, domain_constraints, outdir=boundary_masks_2D_plots_path, show=not args["cluster"], figsize=(8,8), dpi=dpi/2)
 
 # PRINT ALL boundary.mask(s) to check positioning...
 if args["plot_sbd_2d"]:
@@ -690,7 +739,7 @@ if args["plot_sbd_2d"]:
     for boundary in simulation.boundaries:
         print(f"Analyzing and plotting masks and f_indices for simulation.boundary[{baguette}]...")
         if hasattr(boundary, "mask"):
-            show2d_boundaries(lattice.convert_to_numpy(boundary.mask) if not isinstance(boundary.mask, np.ndarray) else boundary.mask, title=f"boundary.mask of boundary[{baguette}]:\n"+str(boundary), name="boundary_mask_"+str(baguette))
+            show2d_boundaries(lattice.convert_to_numpy(boundary.mask) if not isinstance(boundary.mask, np.ndarray) else boundary.mask, title="boundary.mask of boundary[{baguette}]:\n"+str(boundary), name="boundary_mask_"+str(baguette))
         # FWBB
         if hasattr(boundary, "f_index_fwbb"):
             temp_q_mask = np.zeros_like(lattice.convert_to_numpy(simulation.f), dtype=bool)
@@ -742,11 +791,13 @@ if args["plot_sbd_2d"]:
                 temp_mask[idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
                 temp_q_mask[idx_numpy[:, 0], idx_numpy[:, 1], idx_numpy[:, 2], idx_numpy[:, 3] if len(boundary.mask.shape) == 3 else None] = True
             show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in XY:\n" + str(boundary), name="f_index_ltgt_" + str(baguette))
-            show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in YZ:\n" + str(boundary), name="f_index_ltgt_" + str(baguette) + "YZ", position=int(flow.units.convert_length_to_lu(corner_position_x_pu)), normal_dir=0)
+            show2d_boundaries(temp_mask, title=f"f_index_ltgt of boundary[{baguette}] in YZ:\n" + str(boundary), name="f_index_ltgt_" + str(baguette) + "YZ", position=int(flow.units.convert_length_to_lu(house_position[0])), normal_dir=0)
 
         # TODO: (OPT) Schleife über alle q in temp_q_mask und dann alle in ein DIR ausgeben, sodass man sieht, wo jeweils hingezeigt wird.
         #  Das könnte dann noch mit d_lt und d_gt auf den d-Wert gesetzt werden, sodass man eine heatmap der ds hat!
         baguette += 1
+
+
 
 ## REPORTER
 # create and append reporters
@@ -764,14 +815,30 @@ max_p_pu_observable = lt.MaxMinPressure(lattice, flow)
 min_max_p_pu_reporter = lt.ObservableReporter(max_p_pu_observable, interval=1, out=None)
 simulation.reporters.append(min_max_p_pu_reporter)
 
-#TODO: add point observable reporter (obervable timeseries at specific coordinates in space... (from house3D flow simulation)
-#TODO: add non-free-flow mask (oder mindestens non-fluid-mask) zu den Reportern, die aus dem ganzen Feld Durchschnitte,
-# Maxima, Minima bzw. "Statistik" machen, denn sonst wird z.B. Zeug auf FWBB.Knoten mit einbezogen, oder auch Ecken der Randbedingungen...
-# (opt.): man könnte auch jeweils zwei Werte ausgeben: nur free-flow und nur fluid (also ohne Solid). Was auf der FWBB abgeht,
-# ist an sich erstmal nicht so relevant und kann theoratisch noch im VTK "betrachtet" werden, falls relevant
+# POINT obs reporters
+os.makedirs(outdir+"/PU_point_report")
+# mit meshgrid:
+x_positions_lu = np.array([1,2,3,  # inlet
+                           int(shape[0]*0.25), int(shape[0]*0.5), int(shape[0]*0.75),  # domain
+                           shape[0]-3, shape[0]-2, shape[0]-1])  # outlet
+y_positions_lu = np.array([0,1,2,3,  # ground and above
+                           int(shape[1]*0.25), int(shape[1]*0.5)])  # 25% and 50% height of domain
+z_position_lu = int(shape[2]/2)  # center plane in z-direction (cross stream)
+
+# OPT: make 2D list of the reporters...
+up_point_reporters = [None] * x_positions_lu.shape[0]
+laufvariable_x = 0
+for x_position_lu in x_positions_lu:
+    up_point_reporters[laufvariable_x] = [None] * y_positions_lu.shape[0]
+    laufvariable_y = 0
+    for y_position_lu in y_positions_lu:
+        up_point_reporters[laufvariable_x][laufvariable_y] = lt.UPpointReporter(lattice, flow, index_lu=(x_position_lu,y_position_lu,z_position_lu), interval=1, out=None)
+        simulation.reporters.append(up_point_reporters[laufvariable_x][laufvariable_y])
+        laufvariable_y += 1
+    laufvariable_x += 1
+
 
 # VTK REPORTER
-
 # 3D
 if args["vtk_3D"]:
     if args["vtk_3D_t_start"] is not None:
@@ -788,7 +855,7 @@ if args["vtk_3D"]:
     elif args["vtk_3D_step_end"] is not None:
         vtk_3d_i_end = args["vtk_3D_step_end"]
     else:
-        vtk_3d_i_end = n_steps_duration  # must this be target?
+        vtk_3d_i_end = n_steps  # must this be target?
 
     if args["vtk_3D_t_interval"] is not None and args["vtk_3D_t_interval"] > 0:
         vtk_3d_interval = int(flow.units.convert_time_to_lu(args["vtk_3D_t_interval"]))
@@ -807,14 +874,20 @@ if args["vtk_3D"]:
                                   filename_base=outdir_data + "/vtk/out",
                                   imin=vtk_3d_i_start, imax=vtk_3d_i_end)
     simulation.reporters.append(vtk_3d_reporter)
-    vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)  # point data is good for masking/calculation with data-fields in paraview, because u/p-are exported as point-data!
-    #??? vtk_3d_reporter.output_mask(ground_solid_boundary_data.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)
+    vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)
     if not combine_solids:
-        vtk_3d_reporter.output_mask(flow.corner_mask, outdir_data + "/vtk", "corner_mask", point=True)
+        vtk_3d_reporter.output_mask(flow.house_mask, outdir_data + "/vtk", "house_mask", point=True)
         vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask", point=True)
 
+    ## REPROTER for last 4 frames in steps
+    vtk_3d_end_reporter = lt.VTKReporter(lattice, flow,
+                                     interval=1,
+                                     filename_base=outdir_data + "/vtk/out",
+                                     imin=vtk_3d_i_end-3, imax=vtk_3d_i_end)
+    simulation.reporters.append(vtk_3d_end_reporter)
+
 # slice2D
-if args["vtk_slice2D"]:
+if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"] or args["vtk_slice_intervals"]:
     if args["vtk_slice2D_t_start"] is not None and args["vtk_slice2D_t_start"] > 0:
         #print("(vtk) overwriting vtk_step_start with {}, because vtk_t_start = {}")
         vtk_slice2d_i_start = int(round(flow.units.convert_time_to_lu(args["vtk_slice2D_t_start"])))
@@ -829,7 +902,7 @@ if args["vtk_slice2D"]:
     elif args["vtk_slice2D_step_end"] is not None and args["vtk_slice2D_step_end"] > 0:
         vtk_slice2d_i_end = int(args["vtk_slice2D_step_end"])
     else:
-        vtk_slice2d_i_end = n_steps_duration  # Q: must this be target?
+        vtk_slice2d_i_end = n_steps  # Q: must this be target?
 
     if args["vtk_slice2D_t_interval"] is not None and args["vtk_slice2D_t_interval"] > 0:
         vtk_slice2d_interval = int(flow.units.convert_time_to_lu(args["vtk_slice2D_t_interval"]))
@@ -843,55 +916,94 @@ if args["vtk_slice2D"]:
     if vtk_slice2d_interval < 1:
         vtk_slice2d_interval = 1
 
-    vtk_domainSliceVertical_reporter = lt.VTKsliceReporter3D(lattice, flow,
-                                                             interval=int(vtk_slice2d_interval),
-                                                             filename_base=outdir_data + "/vtk/slice_domain/slice_domain_vertical_flow",
-                                                             slice_region=([0,shape[0]-1],[0,shape[1]-1], [int(corner_position_z_lu), int(corner_position_z_lu)]),
-                                                             imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-    simulation.reporters.append(vtk_domainSliceVertical_reporter)
-    print("(!) VTK_domain_slice3D: corner_position_z_lu = ", corner_position_z_lu, "flow.shape = ", flow.shape)
+    if args["vtk_slice2D"]:
+        vtk_domainSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                       interval=int(vtk_slice2d_interval),
+                                                       filename_base=outdir_data + "/vtk/slice_domain/slice_domain",
+                                                       sliceXY=([0,shape[0]-1],[0,shape[1]-1]),
+                                                       sliceZ=int(shape[2]/2),
+                                                       imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
+        simulation.reporters.append(vtk_domainSlice_reporter)
 
-    vtk_domainSliceHorizontal_reporter = lt.VTKsliceReporter3D(lattice, flow,
-                                                               interval=int(vtk_slice2d_interval),
-                                                               filename_base=outdir_data + "/vtk/slice_domain/slice_domain_horizontal",
-                                                               slice_region=([0, shape[0] - 1], [int(shape[1]/2), int(shape[1]/2)], [0, shape[1] - 1]),
-                                                               imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-    simulation.reporters.append(vtk_domainSliceHorizontal_reporter)
+    # vtk_slices for specific intervals
+    if args["vtk_slice_intervals"]:
+        #i_intervals_vtk_domain_slice = np.array([[0, 1000],
+        #                                          [5000, 5050],
+        #                                          [20000, 20050],
+        #                                          [40000, 40050],
+        #                                          [60000, 60050],
+        #                                          [80000, 80050],
+        #                                          [99950, 100000]])
+        t_starts_vtk_domain_slice = np.array([0, 1000, 5000, 10000, 15000, 19000])
+        i_intervals_vtk_domain_slice = np.array([[0, 1000],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5])+50]
+                                                 ], dtype=int)
+        vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
+        for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
+            print(
+                f"(INFO): Adding vtk_slice_domain_2D reporter for interval [{i_intervals_vtk_domain_slice[interval_min_max, 0]}, {i_intervals_vtk_domain_slice[interval_min_max, 1]}]")
+            vtk_domainSliceInterval_reporters[interval_min_max] = lt.VTKsliceReporter(lattice, flow,
+                                                                                      interval=1,
+                                                                                      filename_base=outdir_data + "/vtk/slice_domain_intervals/slice_domain_intervals",
+                                                                                      sliceXY=(
+                                                                                      [0, flow.shape[0] - 1],
+                                                                                      [0, flow.shape[1] - 1]),
+                                                                                      sliceZ=int(shape[2] / 2),
+                                                                                      imin=
+                                                                                      i_intervals_vtk_domain_slice[
+                                                                                          interval_min_max, 0],
+                                                                                      imax=
+                                                                                      i_intervals_vtk_domain_slice[
+                                                                                          interval_min_max, 1])
+            simulation.reporters.append(vtk_domainSliceInterval_reporters[interval_min_max])
 
-    vtk_domainSliceSolidDownstream_reporter = lt.VTKsliceReporter3D(lattice, flow,
-                                                               interval=int(vtk_slice2d_interval),
-                                                               filename_base=outdir_data + "/vtk/slice_domain/slice_domain_solid_downstream",
-                                                               slice_region=([0, shape[0] - 1],
-                                                                             [0, shape[1] - 1],
-                                                                             [int(shape[1] / 4)-1, int(shape[1] / 4)-1]),
-                                                               imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-    simulation.reporters.append(vtk_domainSliceSolidDownstream_reporter)
+    if args["vtk_slice_inlet"] or args["vtk_slice_outlet"]:
+        # inlet slice [0 to Xindex] [0 to Yindex]
+        inlet_sliceXY = ([0, args["vtk_slice_x"]], [0, args["vtk_slice_y"]])  # inlet_sliceXY = ([0, 100], [0, 50])
+        inlet_sliceZ = int(shape[2] / 2)  # "--vtk_slice_z" not implemented
 
-    vtk_domainSliceSolidCrossstream_reporter = lt.VTKsliceReporter3D(lattice, flow,
-                                                               interval=int(vtk_slice2d_interval),
-                                                               filename_base=outdir_data + "/vtk/slice_domain/slice_domain_solid_crossstream",
-                                                               slice_region=([int(shape[1]*0.75)-1, int(shape[1]*0.75)-1],
-                                                                             [0, shape[0] - 1],
-                                                                             [0, shape[1] - 1]),
-                                                               imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
-    simulation.reporters.append(vtk_domainSliceSolidCrossstream_reporter)
+        # outlet slice [Xmax-len to Xmax] [0 to Yindex]
+        outlet_sliceXY = ([shape[0] - args["vtk_slice_x"], shape[0]], [0, args[
+            "vtk_slice_y"]])  # outlet_sliceXY = ([shape[0]-101,shape[0]], [shape[1]-51,shape[1]])
+        outlet_sliceZ = inlet_sliceZ
 
-# TODO add vtk_slice_ für inlet und outlet reporter...
-# SEE house3D_....py
-# PROBLEM: der flow ist weniger z-Spiegel-Symmetrisch... - wo nehme ich den Slice? brauche ich zwei? z_normal und y-Normal?
+        # INLET VTK SLICE 2D
+        if args["vtk_slice_inlet"]:
+            vtk_inletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                          interval=int(vtk_interval),
+                                                          filename_base=outdir_data + "/vtk/slice_inlet/slice_inlet",
+                                                          sliceXY=inlet_sliceXY,
+                                                          sliceZ=inlet_sliceZ,
+                                                          imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
+            simulation.reporters.append(vtk_inletSlice_reporter)
+
+        # OUTLET VTK SLICE 2D
+        if args["vtk_slice_outlet"]:
+            vtk_outletSlice_reporter = lt.VTKsliceReporter(lattice, flow,
+                                                           interval=int(vtk_interval),
+                                                           filename_base=outdir_data + "/vtk/slice_outlet/slice_outlet",
+                                                           sliceXY=outlet_sliceXY,
+                                                           sliceZ=outlet_sliceZ,
+                                                           imin=vtk_slice2d_i_start, imax=vtk_slice2d_i_end)
+            simulation.reporters.append(vtk_outletSlice_reporter)
+
 
 # WATCHDOG-REPORTER (reports runtime, estimated end etc.)
 if args["watchdog"]:
     if args["watchdog_interval"] < 1:
-        baguette = int(n_steps_duration/100)
+        baguette = int(n_steps/100)
     else:
         baguette = int(args["watchdog_interval"])
-    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=baguette, i_start=n_steps_start, i_target=n_steps_target, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not args["cluster"])
+    watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=baguette, i_start=0, i_target=n_steps, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not args["cluster"])
     simulation.reporters.append(watchdog_reporter)
 
 # NAN REPORTER (stops sim if NaN is detected)
 if args["nan_reporter"]:
-    nan_reporter = lt.NaNReporter(flow, lattice, n_steps_target, t_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_data+"/vtk", vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
+    nan_reporter = lt.NaNReporter(flow, lattice, n_steps, t_target, interval=args["nan_reporter_interval"], simulation=simulation, vtk_dir=outdir_data+"/vtk", vtk=True, outdir=outdir)  # omitting outdir leads to no extra file with coordinates being created. With a resolution of >100.000.000 Gridpoints, torch gets confused otherwise...
     simulation.reporters.append(nan_reporter)
 
 # HIGH MA REPORTER (reports high Ma positions (Ma>0.3))
@@ -899,39 +1011,34 @@ if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps_target, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
-# 2D SLICE PNG reporter:
+# slice2dReporter for u_mag and p fields:
 if args["save_animations"]:
     if args["animations_number_of_frames"] > 0:  # number of 2D frames to take for animations
-        interval = int(n_steps_target/args["animations_number_of_frames"])
+        interval = int(n_steps/args["animations_number_of_frames"])
     elif args["animations_fps_pu"] > 0:  # if no number of frames given, calculate it from fps
         number_of_frames = t_target * args["animations_fps_pu"]
-        interval = int(n_steps_target/number_of_frames)
+        interval = int(n_steps/number_of_frames)
     else:  #neither number of frames, nor fps are given, take 1000 frames...
-        interval = int(n_steps_target / 1000)
+        interval = int(n_steps / 1000)
 
     slice2dReporter = Slice2dReporter(lattice, simulation, domain_constraints=domain_constraints, interval=interval, start=0, outdir=observable_2D_plots_path, show = False)
     simulation.reporters.append(slice2dReporter)
-
-
 
 ## WRITE PARAMETERS to file in outdir
 # TODO: write parameters to file (ähnlich zu mdout.mdp)
 #  siehe auch oben, args wird rausgeschrieben als "input_parameters". Die konkrete ÄNDERUNG aller inputs für die Sim müsste ich dann nochmal hier händisch schreiben
 
 
-
 ## LOAD CHECKPOINT FILE
 # TODO: load checkpoint file and adjust sim.i
 
-
 # (TEMP) FLOW THROUGH TIME
-print(f"INFO: flow through time (time a particle takes to travel from input to output unobstructed at u_char): T_ft_PU = {domain_length_x_pu/flow.units.characteristic_velocity_pu} s")
+print(f"flow through time (time a particle takes to travel from input to output unobstructed at u_char): T_ft_PU = {domain_length_pu/char_velocity_pu} s")
 print(f"(debug) flow through time (calc. as grid.shape[0]/u_char_lu) T_ft_LU = {flow.grid[0].shape[0]/flow.units.characteristic_velocity_lu} steps")
-print(f"(debug) flow through time (calc. as convert_PU_to_LU(T_ft_PU) T_ft_LU = {flow.units.convert_time_to_lu(domain_length_x_pu/flow.units.characteristic_velocity_pu)} steps")
-
+print(f"(debug) flow through time (calc. as convert_PU_to_LU(T_ft_PU) T_ft_LU = {flow.units.convert_time_to_lu(domain_length_pu/char_velocity_pu)} steps")
 
 
 ### RUN SIMULATION
@@ -939,7 +1046,7 @@ print(f"(debug) flow through time (calc. as convert_PU_to_LU(T_ft_PU) T_ft_LU = 
 t_start = time()
 
 print(f"\n\n***** SIMULATION STARTED AT {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} *****\n")
-mlups = simulation.step(n_steps_duration)
+mlups = simulation.step(n_steps)
 
 t_end = time()
 runtime = t_end-t_start
@@ -956,11 +1063,11 @@ print(f"number of gridpoints = {flow.shape[0]*flow.shape[1]*flow.shape[2] if len
 grid_reynolds_number = flow.units.characteristic_velocity_lu/(lattice.stencil.cs**2 * (flow.units.relaxation_parameter_lu - 0.5))  # RE_grid as a measure for free flow resolution (should be ~O(10) )
 print(f"-> Grid Reynolds number Re_grid = {grid_reynolds_number:.3f}")
 
-print("\n")
+
 # TODO: change output to f-string
 print("\n*** HARDWARE UTILIZATION ***\n")
-print(f"current GPU VRAM (MB) usage: {torch.cuda.memory_allocated(device=args['default_device'])/1024/1024:.3f}")
-print(f"max. GPU VRAM (MB) usage: {torch.cuda.max_memory_allocated(device=args['default_device'])/1024/1024:.3f}")
+print(f"current GPU VRAM (MB) usage: {torch.cuda.memory_allocated(device=default_device)/1024/1024:.3f}")
+print(f"max. GPU VRAM (MB) usage: {torch.cuda.max_memory_allocated(device=default_device)/1024/1024:.3f}")
 
 [cpuLoad1,cpuLoad5,cpuLoad15] = [x / psutil.cpu_count() * 100 for x in psutil.getloadavg()]
 print("CPU LOAD AVG.-% over last 1 min, 5 min, 15 min; ", round(cpuLoad1,2), round(cpuLoad5,2), round(cpuLoad15,2))
@@ -970,7 +1077,6 @@ print("Current total (CPU) RAM usage [MB]: " + str(round(ram.used/(1024*1024),2)
 print("maximum total (CPU) RAM usage ('MaxRSS') [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 
 print("\n")
-
 
 ### export stats
 output_file = open(outdir+"/stats.txt", "a")
@@ -994,6 +1100,11 @@ output_file.write(torch.cuda.memory_summary(device=lattice.device))
 output_file.close()
 
 
+### *** PLOTTING OF FINAL OBSERVABLE FIELDS ***
+
+# TODO: make plotting parametrisierbar
+# TODO: vorticity and nicht-periodische Randbedingungen anpassen. denn torch_gradient rechnet so, als ob ALLES free flow wäre...!!!
+
 ### WRITE CHECKPOINT
 # TODO: write checkpointfile, if write_cpt=True and save sim.i to it / should be on correct device! or CPU to be save
 
@@ -1003,9 +1114,7 @@ output_file.close()
 ### OUTPUT RESULTS
 # TODO: output results to human-readable file AND to copy-able file (or csv)
 
-
-## 2D png-slices and mp4-movie
-if args["save_animations"]:  # takes images from slice2dReporter and created mp4
+if args["save_animations"]:  # takes images from slice2dReporter and created GIF
     t0 = time()
     print(f"(INFO) creating animations from slice2dRepoter Data...")
     os.makedirs(outdir_data+"/animations")
@@ -1024,7 +1133,7 @@ if args["save_animations"]:  # takes images from slice2dReporter and created mp4
     save_mp4(outdir_data+"/animations/nolim_p", observable_2D_plots_path, "nolim_p", fps=fps)
     t1 = time()
     print(f"Creating animations from slice2dRepoter Data took {floor((t1 - t0) / 60):02d}:{floor((t1- t0) % 60):02d} [mm:ss]")
-else:  # only plots final u_mag and p fields
+else:  # plots final u_mag and p fields
     print(f"(INFO) plotting final u_mag and p fields...")
     t0 = time()
     t = flow.units.convert_time_to_pu(simulation.i)
@@ -1050,7 +1159,7 @@ else:  # only plots final u_mag and p fields
                                f"lim2uchar_u_mag_i{simulation.i:08}_t{int(t)}",
                                vlim=u_lim)
     t1 = time()
-    if not args["cluster"]:
+    if not cluster:
         print("(INFO) Waiting for 6.5 seconds to avoid 'HTTP Error 429: Too Many Requests'...")
         sleep(max(7 - (t1 - t0), 0))
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) noLIM",
@@ -1061,59 +1170,41 @@ else:  # only plots final u_mag and p fields
     show2d_observables(p[0], f"p (t = {t:.3f} s, step = {simulation.i}) LIMFIX",
                                f"limfix_p_i{simulation.i:08}_t{int(t)}",
                                vlim=p_lim)
-####
 
-## PLOTTING of max.Ma, max.u_mag, min/max p over time:
-
-max_u_lu = np.array(max_u_lu_reporter.out)
-np.savetxt(outdir + f"/max_u_lu_timeseries.txt", max_u_lu, header="stepLU  |  timePU  |  u_mag_max_LU")
 
 # PLOT max. Ma in domain over time...
 fig, ax = plt.subplots(constrained_layout=True)
+max_u_lu = np.array(max_u_lu_reporter.out)
+np.savetxt(outdir + f"/max_u_lu_timeseries.txt", max_u_lu, header="stepLU  |  timePU  |  u_mag_max_LU")
 ax.plot(max_u_lu[:, 1], max_u_lu[:, 2]/lattice.convert_to_numpy(lattice.cs))
 ax.set_xlabel("physical time / s")
 ax.set_ylabel("maximum Ma")
 ax.set_ylim([0,0.3])
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. Mach")
+fig.suptitle(str(timestamp) + "\n" + name)
 plt.savefig(outdir+"/max_Ma.png")
-if not args["cluster"]:
+if not cluster:
     plt.show()
 
-# PLOT max. u_mag for abs. anaylsis (y_limits from first part of sim)
+# PLOT max. u_mag for abs. anaylsis
 fig, ax = plt.subplots(constrained_layout=True)
 ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
 ax.set_xlabel("physical time / s")
 ax.set_ylabel("maximum momentary velocity magnitude (PU)")
-y_lim_50_first = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
-ax.set_ylim([0, y_lim_50_first*1.1])  # show 10% more than u_mag_max
+y_lim_50 = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0]/1.3), 2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+ax.set_ylim([0, y_lim_50*1.1])  # show 10% more than u_mag_max
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0-0.75 T)")
-plt.savefig(outdir+"/max_u_mag_lim_start.png")
-if not args["cluster"]:
-    plt.show()
-
-# ...(y_limits from last part of sim)
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(max_u_lu[:, 1], flow.units.convert_velocity_to_pu(max_u_lu[:, 2]))
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("maximum momentary velocity magnitude (PU)")
-y_lim_50_second = flow.units.convert_velocity_to_pu(max_u_lu[int(max_u_lu.shape[0]*0.25):int(max_u_lu.shape[0]*0.95), 2].max())  # max u_mag of first part of the data (excludes crash, if present, includes settling period)
-ax.set_ylim([0, y_lim_50_second*1.1 if abs(y_lim_50_second)<1000 else 1])  # show 10% more than u_mag_max
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max. u_mag (ylim from 0.25-1 T)")
-plt.savefig(outdir+"/max_u_mag_lim_end.png")
-if not args["cluster"]:
+fig.suptitle(str(timestamp) + "\n" + name)
+plt.savefig(outdir+"/max_u_mag.png")
+if not cluster:
     plt.show()
 
 # PLOT max/min p for abs. analysis
+fig, ax = plt.subplots(constrained_layout=True)
 min_max_p_pu = np.array(min_max_p_pu_reporter.out)
 np.savetxt(outdir + f"/min_max_p_pu_timeseries.txt", min_max_p_pu, header="stepLU  |  timePU  |  p_min_PU  |  p_max_PU")
-# y_lim from first part of sim...
-fig, ax = plt.subplots(constrained_layout=True)
 ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
 ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
 ax.set_xlabel("physical time / s")
@@ -1124,27 +1215,55 @@ ax.set_ylim([y_lim_50_min-0.1*abs(y_lim_50_min), y_lim_50_max+0.1*abs(y_lim_50_m
 secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
 secax.set_xlabel("timesteps (simulation time / LU)")
 ax.legend()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0-0.75 T)")
-plt.savefig(outdir+"/min_max_p_lim_start.png")
-if not args["cluster"]:
+fig.suptitle(str(timestamp) + "\n" + name)
+plt.savefig(outdir+"/min_max_p.png")
+if not cluster:
     plt.show()
 
-# y_lim from last part half of sim...
-fig, ax = plt.subplots(constrained_layout=True)
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 2], label='min. Pressure')
-ax.plot(min_max_p_pu[:, 1], min_max_p_pu[:, 3], label='max. Pressure')
-ax.set_xlabel("physical time / s")
-ax.set_ylabel("min. and max. momentary pressure (PU)")
-y_lim_50_min_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 2].min()
-y_lim_50_max_second = min_max_p_pu[int(min_max_p_pu.shape[0]*0.25):int(min_max_p_pu.shape[0]*0.95), 3].max()
-ax.set_ylim([y_lim_50_min_second-0.1*abs(y_lim_50_min_second), y_lim_50_max_second+0.1*abs(y_lim_50_max_second)])  # show 10% more above and below
-secax = ax.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
-secax.set_xlabel("timesteps (simulation time / LU)")
-ax.legend()
-fig.suptitle(str(timestamp) + "\n" + args["name"] + "\n" + "max./min. p (ylim from 0.25-1 T)")
-plt.savefig(outdir+"/min_max_p_lim_end.png")
-if not args["cluster"]:
-    plt.show()
+# TODO: make list of points. Create point-reporter for each entry in list. Plot for each point in list...
+
+# PRESSURE and VELOCITY at points
+for i in range(len(x_positions_lu)):
+    fig_pressure, ax_pressure = plt.subplots(constrained_layout=True)
+    fig_velocity, ax_velocity = plt.subplots(constrained_layout=True)
+    for j in range(len(y_positions_lu)):
+        data = np.array(up_point_reporters[i][j].out)
+        np.savetxt(outdir + f"/PU_point_report/up_xyz{up_point_reporters[i][j].index_lu}.txt", data, header="stepLU  |  timePU  |  p  |  ux  | uy  |  uz  (obs. in PU)")
+        ax_pressure.plot(data[:,1], data[:,2], label=f"p at {up_point_reporters[i][j].index_lu}")
+        ax_velocity.plot(data[:, 1], np.sqrt(np.square(data[:, 3]) + np.square(data[:, 4]) + np.square(data[:, 5])), label=f"u_mag at {up_point_reporters[i][j].index_lu}")
+    ax_pressure.set_xlabel("physical time / s")
+    ax_velocity.set_xlabel("physical time / s")
+    ax_pressure.set_ylabel("p_PU")
+    ax_velocity.set_ylabel("u_mag_PU")
+
+    y_max_velocity = flow.units.convert_velocity_to_pu(max_u_lu[:int(max_u_lu.shape[0] / 1.3),2].max())  # max u_mag of first 50% of the data (excludes crash, if present, includes settling period)
+    ax_velocity.set_ylim([0, y_max_velocity * 1.1])  # show 10% more than u_mag_max
+    y_min_pressure = min_max_p_pu[:int(min_max_p_pu.shape[0] / 1.3), 2].min()
+    y_max_pressure = min_max_p_pu[:int(min_max_p_pu.shape[0] / 1.3), 3].max()
+    ax_pressure.set_ylim([y_min_pressure - 0.1 * abs(y_min_pressure),
+                 y_max_pressure + 0.1 * abs(y_max_pressure)])  # show 10% more above and below
+
+    ax_velocity.axhline(y=flow.units.characteristic_velocity_pu, color='tab:green', ls=":", label="characteristic velocity")
+    ax_velocity.axhline(y=flow.units.convert_velocity_to_pu(lattice.convert_to_numpy(lattice.cs) * 0.3), color='tab:red', ls=":",
+               label="Ma = 0.3")
+
+    secax_u = ax_velocity.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax_u.set_xlabel("timesteps (simulation time / LU)")
+    secax_p = ax_pressure.secondary_xaxis('top', functions=(flow.units.convert_time_to_lu, flow.units.convert_time_to_pu))
+    secax_p.set_xlabel("timesteps (simulation time / LU)")
+
+    fig_pressure.suptitle(str(timestamp) + "\n" + name + " \n" + f"p(y,t) at x = {up_point_reporters[i][j].index_lu[0]}")
+    ax_pressure.legend()
+    fig_pressure.savefig(outdir + f"/PU_point_report/p_xlu{up_point_reporters[i][j].index_lu[0]:03d}.png")
+    if not cluster:
+        fig_pressure.show()
+
+    fig_velocity.suptitle(
+        str(timestamp) + "\n" + name + " \n" + f"u_mag(y,t) at x = {up_point_reporters[i][j].index_lu[0]}")
+    ax_velocity.legend()
+    fig_velocity.savefig(outdir + f"/PU_point_report/u_mag_xlu{up_point_reporters[i][j].index_lu[0]:03d}.png")
+    if not cluster:
+        fig_velocity.show()
 
 
 print("\nmaximum total (CPU) RAM usage ('MaxRSS') (including optional PNG and GIF post-processing [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
@@ -1152,4 +1271,3 @@ print("\nmaximum total (CPU) RAM usage ('MaxRSS') (including optional PNG and GI
 ## END OF SCRIPT
 print(f"\n♬ THE END ♬")
 sys.stdout = old_stdout
-

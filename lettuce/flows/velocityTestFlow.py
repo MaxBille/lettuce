@@ -12,7 +12,7 @@ from lettuce.boundary import EquilibriumBoundaryPU, \
     HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, HalfwayBounceBackBoundary_occ, \
     HalfwayBounceBackBoundary_compact_v3, PartiallySaturatedBoundary, RampedEquilibriumBoundaryPU
 from lettuce.boundary_mk import NonEquilibriumExtrapolationInletU, SyntheticEddyInlet, ZeroGradientOutlet
-from pspelt.obstacleFunctions import makeGrid
+from helpterCodePS.obstacleFunctions import makeGrid
 import time
 
 # "Keil" Flow, to test response of flow field and boundary conditions to velocity gradients in the inflow or field

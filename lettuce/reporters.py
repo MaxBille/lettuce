@@ -153,17 +153,6 @@ class VTKReporter:
             spacing=(1.0, 1.0, 1.0)
         )
 
-        # OLD Martin Kliemank: >>>
-        # if self.lattice.D == 2:
-        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
-        # else:
-        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
-        # vtk.gridToVTK(self.filename_base + "_mask",
-        #               np.arange(0, mask_dict["mask"].shape[0]),
-        #               np.arange(0, mask_dict["mask"].shape[1]),
-        #               np.arange(0, mask_dict["mask"].shape[2]),
-        #               pointData=mask_dict)
-        # <<<
 
 
 class VTKsliceReporter:
@@ -193,11 +182,7 @@ class VTKsliceReporter:
 
         self.point_dict = dict()
 
-        #comment: area = ([xmin, xmax], [ymin, ymax], [zmin, zmax])
-        #comment: sliceXY = ([xmin, xmax], [ymin,ymax])
-        #comment: sliceZ = zi
-        #comment: f = f[xmin:xmax, ymin:ymax, zi]  # selektiert nur die benötigten f-Werte, sodass kleinere Slices entstehen
-        # x = [0:50], y = [0:100], z=[int(zmax/2)
+
         if sliceXY is not None:
             if sliceZ is None:
                 sliceZ = 0
@@ -293,17 +278,6 @@ class VTKsliceReporter:
             spacing=(1.0, 1.0, 1.0)
         )
 
-        # OLD Martin Kliemank: >>>
-        # if self.lattice.D == 2:
-        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
-        # else:
-        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
-        # vtk.gridToVTK(self.filename_base + "_mask",
-        #               np.arange(0, mask_dict["mask"].shape[0]),
-        #               np.arange(0, mask_dict["mask"].shape[1]),
-        #               np.arange(0, mask_dict["mask"].shape[2]),
-        #               pointData=mask_dict)
-        # <<<
 
 class VTKsliceReporter3D:
     '''reports a certain specified area portion of the domain as vtk-file, at the moment, only from 3D simulation
@@ -331,12 +305,6 @@ class VTKsliceReporter3D:
             os.makedirs(directory)
 
         self.point_dict = dict()
-
-        #comment: area = ([xmin, xmax], [ymin, ymax], [zmin, zmax])
-        #comment: sliceXY = ([xmin, xmax], [ymin,ymax])
-        #comment: sliceZ = zi
-        #comment: f = f[xmin:xmax, ymin:ymax, zi]  # selektiert nur die benötigten f-Werte, sodass kleinere Slices entstehen
-        # x = [0:50], y = [0:100], z=[int(zmax/2)
 
         # OPTIONAL: Abfrage, welche schaut ob xmin == xmax (und y... und z...) und falls das der Fall ist, dann dort entsprechend eine "None" Dimension anhängt und nur einen Wert nimmt, also ein "slice"
         #   Wahrscheinlich am sinnvollsten direkt unten im Call dann abzufragen aus einem ([xmin, xmax],[ymin, ymax],[zmin, zmax]) tupel, in dem dann Werte gleich sind, wenn in dieser Ebne geslicet werden soll.
@@ -633,9 +601,7 @@ class NaNReporter:
             self.vtk_dir = self.outdir
         else:
             self.vtk_dir = vtk_dir
-        #TMP vtk_dir = os.path.dirname(vtk_dir)
-        #TMP if not os.path.isdir(directory):
-        #TMP     os.mkdir(directory)
+
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
@@ -682,8 +648,6 @@ class NaNReporter:
                 else:
                     self.simulation.abort_condition = 2  # telling simulation to abort simulation
                     self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f in step {i} (NaNReporter.interval = {self.interval}). See NaNReporter.txt log for details!'
-                    # print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
-                    # print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
 
                 # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
                 if self.vtk_dir is not None and self.vtk:

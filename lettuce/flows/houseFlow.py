@@ -10,11 +10,10 @@ from lettuce.boundary import EquilibriumBoundaryPU, \
     SlipBoundary, FullwayBounceBackBoundary_compact, FullwayBounceBackBoundary_occ, HalfwayBounceBackBoundary_compact_v1, HalfwayBounceBackBoundary_compact_v2, HalfwayBounceBackBoundary_occ, \
     HalfwayBounceBackBoundary_compact_v3, PartiallySaturatedBoundary, RampedEquilibriumBoundaryPU
 from lettuce.boundary_mk import NonEquilibriumExtrapolationInletU, SyntheticEddyInlet, ZeroGradientOutlet
-from pspelt.obstacleFunctions import makeGrid
+from helpterCodePS.obstacleFunctions import makeGrid
 import time
 
 
-# houseFlow3D by M.Kliemank, from MA-Thesis-CD-ROM "simulation_code.py"
 class HouseFlow3D(object):
     shape: tuple[int, int, int] or tuple[int, int]
 
@@ -82,7 +81,6 @@ class HouseFlow3D(object):
             characteristic_velocity_pu=char_velocity_pu,  # reminder: u_char_lu = Ma * cs_lu = Ma * 1/sqrt(3)
             characteristic_density_pu=char_density_pu
         )
-        #self.parallel = parallel
 
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)  # marks all solid nodes (obstacle, walls, ...)
         #if inlet_bc.casefold() == 'eqin':

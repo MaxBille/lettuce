@@ -40,9 +40,7 @@ class EquilibriumExtrapolationOutlet(lt.AntiBounceBackOutlet):
 class ZeroGradientOutlet(object):
 
     def __init__(self, lattice, direction):
-        # assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
-        #     LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
-        #                         f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
+
         self.direction = np.array(direction)
         self.lattice = lattice
 
@@ -74,20 +72,15 @@ class ZeroGradientOutlet(object):
         return no_stream_mask
 
 
-## STAND 29.05.24 läuft die NEX-Boundary MIT no_sreaming (alle pops. besser als > nur velocity_in),OHNE no_collision und OHNE Filter am stabilsten (Re2000 test, s.oneNote MK Code 13./14./15.5.24)
 class NonEquilibriumExtrapolationInletU(object):
     """ Guo's boundary condition
         https://www.researchgate.net/publication/230963379_Non-equilibrium_extrapolation_method_for_velocity_and_boundary_conditions_in_the_lattice_Boltzmann_method
         and LBM book page 189
         """
-    # (!) MLK hatte KEINE NSM und KEINE NCM in seiner MPInew Implementierung. Jedoch war eine NSM geschrieben und auskommentiert, mit der Frage, ob sie nicht "sein müsste".
-    #   Da herrschte offenbar Unklarheit.
+
 
     def __init__(self, lattice, units, direction, u_w):
-        # assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
-        #     LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
-        #                         f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
-        # print("start nonEQ_init")
+
         self.direction = np.array(direction)
         self.lattice = lattice
         self.u_w = units.convert_velocity_to_lu(self.lattice.convert_to_tensor(u_w))
@@ -121,10 +114,7 @@ class NonEquilibriumExtrapolationInletU(object):
         Tc = 100
         here = [slice(None)] + self.index  # q Platzhalter und Koordinaten der RB-Knoten
         other = [slice(None)] + self.neighbor  # q Platzhalter und Koordinaten der RB-Nachbarn
-        # print("other in NEQEIU.call(): ", other)
-        # print("here in NEQEIU.call(): ", here)
-        # print("index in NEQEIU.call(): ", self.index)
-        # print("f.shape:", f.shape, "f[others].shape:", f[other].shape)
+
 
         ## rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other]))
         rho = self.lattice.convert_to_tensor(
@@ -143,11 +133,7 @@ class NonEquilibriumExtrapolationInletU(object):
             list[0] = len(self.u_w)  # erstes Listen-Objekt wird durch die Dimensionszahl von u_w ersetzt
             # print("self.u_w.view(list):", self.u_w.view(list))
             u_w = self.u_w.view(list).expand_as(u)
-            # print("list:", list)
-            # print("u_w.shape:", self.u_w.shape)
-            # u_w = self.u_w.view(list)
-            # print("u_w.shape:", self.u_w.shape)
-            # [3, 80, 60] -> [3, 120, 80, 60]
+
 
         rho_self = (1 / (1 - u_w[np.argwhere(self.direction != 0).item()]
                          * self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()])
@@ -163,12 +149,7 @@ class NonEquilibriumExtrapolationInletU(object):
         else:
             rho_w = rho_self
             self.rho_old = rho_w
-        # print("rho_w.shape:", rho_w.shape)
-        # print("u_w.shape:", u_w.shape)
-        # print("f[other].shape:", f[other].shape)
-        # print("rho.shape", rho.shape)
-        # print("rho_self.shape:", rho_self.shape)
-        # print("u.shape", u.shape)
+
 
         ## f[here] = self.lattice.equilibrium(rho_w, u_w) + (f[other] - self.lattice.equilibrium(rho, u))  ## EQLM ist anders mit torch.einsum bzw. lattice.einsum definiert... bruh // hier spielt mir die Definition von lettuce.einsum in die Quere, zwischen Martins branch und dem aktuellen Lettuce!
         f[here] = (torch.einsum("q,q...->q...", self.lattice.w, (rho_w * (
@@ -184,88 +165,13 @@ class NonEquilibriumExtrapolationInletU(object):
                     )
                    )
 
-        ## >>> VON MIR FALSCH IN AKTUELLES LETTUCE ÜBERSETZT: HIER FEHLTE DAS "_w" AN U UND RHO IM ERSTEN EQUILIBRIUM!
-        # f[here] = (torch.einsum("q,q...->q...",self.lattice.w, (rho * ((2 * torch.tensordot(self.lattice.e, u, dims=1) - torch.einsum("d...,d...->...", u, u)) / (2 * self.lattice.cs ** 2) + 0.5 * (torch.tensordot(self.lattice.e, u, dims=1) / (self.lattice.cs ** 2)) ** 2 + 1)))
-        #            + (f[other] - torch.einsum("q,q...->q...", self.lattice.w, (rho * ((2 * torch.tensordot(self.lattice.e, u, dims=1) - torch.einsum("d...,d...->...", u, u)) / (2 * self.lattice.cs ** 2) + 0.5 * (torch.tensordot(self.lattice.e, u, dims=1) / (self.lattice.cs ** 2)) ** 2 + 1)))))
-        ## <<<
         return f
 
-    nsm_type = 'all'  # 'all', 'q_index', 'None',...
-    # Welche relevanten "Arten" Populationen gibt's
-    #   - alle, die eine positive x-Komponente haben (velocities_in)  // sollten sowieso überschrieben werden, haben aber im Zweifel für die Berechnung von rho, rho_old, rho_self einen Einfluss?
-    #   - alle, die eine negative x-Komponente haben (velocities_out)  // sollten höchstens einen Einfluss auf die Berechnung von rho, rho_old, rho_self haben...
-    #   - alle, ohne x-Komponente ("velocities_orthogonal" existiert noch nicht)  // sollten höchstens "Unschärfe" reinbringen...
-    #   - alle, die "nur" eine positive oder negative x-Komponente haben ? <- ergibt wenig Sinn
-
-    if nsm_type == 'all':  # alle Pops auf der Inlet-Ebene
-        # "hardcore" Variante
-        # war in Vortests zusammen mit q_index_in die zweitstabilste in Kombination mit q_index_in
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[:, 0, :, :] = 1  # alle Pop auf der ersten Ebene
-            return no_stream_mask
-    elif nsm_type == 'q_index_in':  # nur velocities_in+index (s.u.) // ZeroGradientOutlet, KineticBoudnaryOutlet, ConvectiveBoundaryOutlet in MK/CD/lettuce Branch (dort ohne "_in")
-        # entspricht auch dem auskommentierten im lettuceMPI_new Branch
-        ## (!) war in Vortests eine der stabilsten Varianten in Kombination OHNE NCM
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[self.velocities_in] + self.index] = 1
-            return no_stream_mask
-    # TESTS
-    elif nsm_type == 'ABB_outlet_in':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[np.array(self.lattice.stencil.opposite)[self.velocities_in]] + self.index] = 1
-            return no_stream_mask
-    elif nsm_type == 'ABB_outlet_out':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[np.array(self.lattice.stencil.opposite)[self.velocities_out]] + self.index] = 1
-            return no_stream_mask
-    elif nsm_type == 'EQ_outlet_P_in':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[np.setdiff1d(np.arange(self.lattice.Q), self.velocities_in)] + self.index] = 1
-            return no_stream_mask
-    elif nsm_type == 'EQ_outlet_P_out':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[np.setdiff1d(np.arange(self.lattice.Q), self.velocities_out)] + self.index] = 1
-            return no_stream_mask
-    elif nsm_type == 'q_index_out':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[[self.velocities_out] + self.index] = 1
-            return no_stream_mask
-
-    elif nsm_type == 'SEI':
-        def make_no_stream_mask(self, f_shape):
-            no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-            no_stream_mask[
-                [np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, [-1, 0, 0]) < -1 + 1e-6), axis=0)] + [0,
-                                                                                                                    ...]] = 1  # entspricht bis auf das letzte [0,...] quasi dem, was für die velocities_in für die NEEQInlet rauskommt...
-            return no_stream_mask
-
-    ncm_type = False  # 'True', 'False', Collision seams to stabilize the boundary...
-    # collision könnte einen abschwächenden Effekt auf die Boundary haben.
-    if ncm_type:  # toggle no_collision_mask usage
-        def make_no_collision_mask(self, f_shape):
-            no_collision_mask = torch.zeros(size=f_shape[1:], dtype=torch.bool, device=self.lattice.device)
-            no_collision_mask[self.index] = 1
-            return no_collision_mask
 
 
 class SyntheticEddyInlet(object):
     # according to description in https://doi.org/10.1016/j.jweia.2021.104560 ONLY 3D only in x direction so far
 
-    # NOTES: isotropic fluctuating field is produced on the inlet plane
-    # as sum of different made up vorteces
-
-    # fluctuating velocity field that fits prescribed reynolds stree tensor is computed using Cholesky decomposition
-
-    # isotropic gaussian shape function does something?!
-
-    # dann u mit freeflow windspeed addiert
 
     def __init__(self, lattice, units, grid, L, K, N, R, rho, u_0, velocityProfile, direction=[1, 0, 0]):
         self.lattice = lattice
@@ -340,7 +246,7 @@ class SyntheticEddyInlet(object):
             # 4. f_eq aus U und rho nach Buffa_Eq.15
             #    - cs
             #    - omega_i (Gewichte von D3Q19 (!)
-            #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (kronneker delta? -> nur diagonal?)
+            #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (kronker delta? -> nur diagonal?)
             # 4.2. f_neq über Dichte und Geschwindigkeitsgradienten (und der Relaxationskonstante
             # 5. f_i = f_eq + f_neq ( (!) unten ist das Minus in die Endrechnung verschoben, sollte aber stimmen?)
 

@@ -14,12 +14,6 @@ The no-stream mask has the same dimensions as the distribution functions (Q, x, 
 The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 """
-
-# To Do:
-#  - the inits for Halfway and Fullway Bounce Back with force calculation (neighbor search) can be outsourced to a function taking mask and lattice and returning tensor(f_mask)
-#  - same for the calc_force_on_boundary method
-#  - fullway and halfway bounce back could be fitted into one class and specified by parameter (hw/fw) determining the use of how call acts and if no_stream is used (hw)
-
 import torch
 import numpy as np
 import time
@@ -608,6 +602,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
                                                                   size=f_collided.size()))
 
 
+# THIS IS THE IBB in compact implementation
 class InterpolatedBounceBackBoundary_compact_v2:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
@@ -934,6 +929,7 @@ class InterpolatedBounceBackBoundary_compact_v2:
         self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
         # TODO: this is copy-paste from IBBc2.init. IBBc2 and the BBBC in general should be cleaned up and adjusted to new OCC-stuff...
 
+# THIS IS THE IBB in compact implementation WITH OCC-support
 class InterpolatedBounceBackBoundary_occ:
     """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.
         (2017)
@@ -1163,222 +1159,6 @@ class SlipBoundary:
     #     # alle Pops., die genau orthogonal zur direction sind sollen nicht gestreamt werden.
 
 
-
-# class HalfwaySlipBoundary:
-#     """
-#         bounce back in direction, but normal propagation in orthogonal direction; based on halfway bounce back algorithm
-#     """
-#
-#     def __init__(self, lattice, flow, direction, periodicity: tuple[bool,...] = None, global_solid_mask = None):
-#         self.lattice = lattice
-#         self.flow = flow
-#         self.bb_direction = direction
-#
-#         if periodicity is None:
-#             periodicity = (False, False, False if lattice.D == 3 else None)
-#
-#         # TODO: correct periodicity and solid-to-solid contact: periodicity attribute and global solid mask! in neighbor search
-#         # global_solid_mask to filter out all "fake" fluid neighbors, which are outside the FWBB but not in the fluid region
-#         if global_solid_mask is None:
-#             global_solid_mask = np.zeros(self.flow.shape, dtype=bool)
-#
-#         # create f_mask of populations that must be created through HWSB
-#             # für alle dieser "Domänengrenze" nahen Knoten.
-#                 # für alle Populationen
-#                     # wenn die Population aus der Domäne raus zeigt...
-#                         # markiere die umgekehrte Population auf dem Knoten als "durch HWSB zu ersetzen"
-#                         # finde die Herkunfts post-collision-Population (wand-parallelem geschwindigkeitsanteil folgen und diesen Eintrag im e-vektor umkehren(x,y,z))
-#
-#         # Diskussion/Planung mit Ben
-#             # für alle Randknoten in Richtung der Direction
-#                 # Alle c, welche den +1 oder -1 Eintrag mit dem direction-Tupel identisch haben, sind die, die raus zeigen!
-#                     # - der identische Eintrag muss im Endeffekt von from nach to invertiert werden
-#                     # - die beiden (oder in 2D einer) anderen Einträge des c-Vektors, werden auf den Koordinatenindex (x,y,z) draufgerechnet, um den Zielpunkt herauszufinden.
-#                 # Periodizität: andere Zielkoordinaten bzw. in der Periodizitätsrichtung um n Stellen den Index ändern
-#                 #
-#
-#         self.f_index = []
-#
-#         self.f_index_from = []  # stores list of indexes (q,x,y,z) to get pop. from
-#         self.f_index_to = []    # stores list of indexes (q,x,y,z) to put pops. on (order corresponding to f_index_from)
-#
-#         if self.lattice.D == 2:
-#             nx, ny = self.flow.shape  # domain size in x and y
-#
-#             border_points = []
-#             # Iterate over the grid points
-#             for x in range(nx):
-#                 for y in range(ny):
-#                     #for z in range(nz):
-#                         # Check if the point is on the border according to the direction
-#                         if direction[0] != 0 and (x == 0 if direction[0] == -1 else x == nx - 1):
-#                             border_points.append((x, y))#, z))
-#                         elif direction[1] != 0 and (y == 0 if direction[1] == -1 else y == ny - 1):
-#                             border_points.append((x, y))#, z))
-#                         # elif direction[2] != 0 and (z == 0 if direction[2] == -1 else z == nz - 1):
-#                         #     border_points.append((x, y, z))
-#
-#             # get stencil-vectors that point in slip boundary direction
-#             direction_index = np.argmax(np.abs(direction))  # which coordinate is relevant?
-#             relevant_velocity_vectors = []
-#             relevant_velocity_vectors_mirrored = []
-#             for i in range(0, self.lattice.Q):
-#                if self.lattice.stencil.e[i,direction_index] == direction[direction_index]:
-#                    relevant_velocity_vectors.append(i)  # all c_i index in stencil, pointing out of domain through mirror
-#                    relevant_velocity_vectors_mirrored.append(np.where(self.lattice.stencil.e[:, direction_index] == -direction[direction_index]))  # all c_i index in stencil, with invard facing normal part, corresponding to relevant_velocity_vectors (order)
-#             # ODER: q_relevant = np.where(self.lattice.stencil.e[i,direction_index] == direction[direction_index])[0]
-#
-#             # for p in range(0, len(border_points)):  # for all border points
-#             #     for i in relevant_velocity_vectors:  # for all stencil-directions c_i (lattice.stencil.e in lettuce)
-#             #         # check for boundary-nodes neighboring the domain-border.
-#             #         # ...they have to take the periodicity into account...
-#             #         border = np.zeros(self.lattice.D, dtype=int)
-#             #
-#             #         if border_points[p][0] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[0] and not np.abs(direction[0]):  # searching border on left [x]
-#             #             border[0] = -1
-#             #         elif border_points[p][0] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[0] and not np.abs(direction[0]):  # searching border on right [x]
-#             #             border[0] = 1
-#             #
-#             #         if border_points[p][1] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[1] and not np.abs(direction[1]):  # searching border on left [y]
-#             #             border[1] = -1
-#             #         elif border_points[p][1] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[1] and not np.abs(direction[1]):  # searching border on right [y]
-#             #             border[1] = 1
-#             #
-#             #         try:  # try in case the neighboring cell does not exist (= an f pointing out of the simulation domain)
-#             #             self.f_index_from.append([i, border_points[p][0], border_points[p][1]])
-#             #             self.f_index_to.append([])
-#             #
-#             #             if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#             #             b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]
-#             #                     and not global_solid_mask[
-#             #                         a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#             #                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny]):
-#             #                 # if the neighbour of p is False in the boundary.mask, p is a solid node, neighbouring a fluid node:
-#             #                 # ...the direction pointing from the fluid neighbour to solid p is marked on the neighbour
-#             #
-#             #                 self.f_index.append([self.lattice.stencil.opposite[i],
-#             #                                      a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#             #                                      b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny])
-#             #         except IndexError:
-#             #             pass  # just ignore this iteration since there is no neighbor there
-#
-#             for p in range(0, len(border_points)):  # for all border points
-#                 for i in range(0, len(relevant_velocity_vectors)):
-#                     # where to take population from in post_collision_population...
-#                     self.f_index_from.append([relevant_velocity_vectors[i], border_points[p][0], border_points[p][1]])
-#                     # where to put population in f
-#                     if direction[0] != 0:  # mirror in x-direction, don't alter x-coordinate
-#                         self.f_index_to.append([relevant_velocity_vectors_mirrored[i], border_points[p][0], border_points[p][1]+self.lattice.stencil.e[relevant_velocity_vectors[i],1]])
-#                         # PERIODICITY: if am rand und periodisch in x Richtung, go to other side of domain
-#                     elif direction[1] !=0:  # mirror in y-direction, don't alter y-coordinate
-#                         self.f_index_to.append([relevant_velocity_vectors_mirrored[i], border_points[p][0] + self.lattice.stencil.e[relevant_velocity_vectors[i], 0], border_points[p][1]])
-#                         # PERIODICITY: if am rand und periodisch in y Richtung, go to other side of domain
-#
-#
-#
-#         if self.lattice.D == 3:  # like 2D, but in 3D...guess what...
-#             nx, ny, nz = mask.shape
-#             a, b, c = np.where(mask)
-#
-#             for p in range(0, len(a)):
-#                 for i in range(0, self.lattice.Q):
-#                     border = np.zeros(self.lattice.D, dtype=int)
-#                     # x - direction
-#                     if a[p] == 0 and self.lattice.stencil.e[i, 0] == -1 and periodicity[
-#                         0]:  # searching border on left
-#                         border[0] = -1
-#                     elif a[p] == nx - 1 and self.lattice.e[i, 0] == 1 and periodicity[
-#                         0]:  # searching border on right
-#                         border[0] = 1
-#                     # y - direction
-#                     if b[p] == 0 and self.lattice.stencil.e[i, 1] == -1 and periodicity[
-#                         1]:  # searching border on left
-#                         border[1] = -1
-#                     elif b[p] == ny - 1 and self.lattice.e[i, 1] == 1 and periodicity[
-#                         1]:  # searching border on right
-#                         border[1] = 1
-#                     # z - direction
-#                     if c[p] == 0 and self.lattice.stencil.e[i, 2] == -1 and periodicity[
-#                         2]:  # searching border on left
-#                         border[2] = -1
-#                     elif c[p] == nz - 1 and self.lattice.e[i, 2] == 1 and periodicity[
-#                         2]:  # searching border on right
-#                         border[2] = 1
-#
-#                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
-#                         if (not mask[a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#                         b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
-#                         c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]
-#                                 and not global_solid_mask[
-#                                     a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#                                     b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
-#                                     c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz]):
-#                             self.f_index.append([self.lattice.stencil.opposite[i],
-#                                                  a[p] + self.lattice.stencil.e[i, 0] - border[0] * nx,
-#                                                  b[p] + self.lattice.stencil.e[i, 1] - border[1] * ny,
-#                                                  c[p] + self.lattice.stencil.e[i, 2] - border[2] * nz])
-#                     except IndexError:
-#                         pass  # just ignore this iteration since there is no neighbor there
-#
-#         # convert relevant tensors:
-#         self.f_index = torch.tensor(np.array(self.f_index), device=self.lattice.device,
-#                                     dtype=torch.int64)  # the batch-index has to be integer
-#         self.opposite_tensor = torch.tensor(self.lattice.stencil.opposite, device=self.lattice.device,
-#                                             dtype=torch.int64)  # batch-index has to be a tensor
-#         # f_collided = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
-#         # f_collided_opposite = torch.zeros_like(self.f_index[:, 0], dtype=self.lattice.dtype)
-#         # self.f_collided = torch.stack((f_collided, f_collided_opposite), dim=1)
-#
-#
-#     def __call__(self, f):
-#         pass
-#         # an allen betroffenen Zielknoten-Populationen, werden die post_collision Populationen genommen,
-#         # ...welche entgegen der Populationsrichtung einen knoten weiter liegen, jedoch bei dieser Suche bei
-#         # ...Überschreiten der Domänengrenze in direction-Richtung nicht in genau diese Richtung auf den nächsten Knoten gegangen wird
-#         # ...und in genau dieser Teilrichtung die umgekehrte Populationsrichtung verwendet wird.
-#
-#
-#     def make_no_stream_mask(self, f_shape):
-#         # überall, wo pops. während der Boundary.call() gesetzt werden?
-#         # - das sollte für die HalfwaySlipBoundary selbst nicht relevant sein, da sie genau diese Populationen
-#         #   ...sofort nach dem Streaming sowieso durch die passenden post_collision_populationen ersetzt.
-#         # - (?) was ist mit anderen Boundaries, die auf diese Populationen vielleicht VORHER zugreifen? (IN, OUT,...)
-#         pass
-
-# class HalfWayBounceBackWall:
-#     # THIS IS A HALFWAY BBBC ohne Solid_knoten
-#     """Halfway Bounce-Back Boundary on side of the domain (0 thickness)"""
-#     #TODO;: diese MK Implementierung beinhaltet nicht die post_collision Populationen! Diese sollten anstelle von outgoing genutzt werden...
-#
-#     # DAS sollte auf post_collision umgeschrieben werden. Es kann jedoch keine Periodizität abgebildet werden...
-#     def __init__(self, direction, lattice):
-#         self.lattice = lattice
-#         direction = np.array(direction)
-#
-#         # select velocities to be bounced (the ones pointing in "direction")
-#         velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0)
-#         index = []
-#         for i in direction:
-#             if i == 0:
-#                 index.append(slice(None))
-#             if i == 1:
-#                 index.append(-1)
-#             if i == -1:
-#                 index.append(0)
-#
-#         self.bounced = [np.array(self.lattice.stencil.opposite)[velocities]] + index
-#         self.outgoing = [velocities] + index
-#
-#     def __call__(self, f):
-#         f[self.bounced] = f[self.outgoing]
-#         return f
-#
-#     def make_no_stream_mask(self, f_shape):
-#         mask = np.zeros(f_shape, dtype=bool)
-#         mask[tuple(self.bounced)] = 1
-#         mask = self.lattice.convert_to_tensor(mask)
-#         return mask
-
 class BounceBackBoundary:
     """Fullway Bounce-Back Boundary"""
 
@@ -1493,24 +1273,6 @@ class FullwayBounceBackBoundary:
         #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
         #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
         self.force_sum = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
-            # explanation for 2D:
-                # sums forces in x and in y (and z) direction,
-                # tmp: all f, that are marked in f_mask
-                    # tmp.size: 9 x nx x ny (for 2D)
-                # self.lattice.e: 9 x 2 (for 2D)
-                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
-                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
-                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
-                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
-                    # theoretically DELTA P (difference in momentum density) is calculated
-                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
-                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
-
-        # # calculate Force on all boundary nodes individually:
-        # if self.lattice.D == 2:
-        #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
-        # if self.lattice.D == 3:
-        #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
 
 
 class FullwayBounceBackBoundary_compact:
@@ -1845,20 +1607,12 @@ class HalfwayBounceBackBoundary:
 
     def __call__(self, f):
         # HALFWAY-BB: overwrite all populations (on fluid nodes) which came from boundary with pre-streaming populations (on fluid nodes) which pointed at boundary
-            #print("f_mask:\n", self.f_mask)
-            #print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
-            #print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
-            #print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
+
         # calc force on boundary:
         self.calc_force_on_boundary()
         # bounce (invert populations on fluid nodes neighboring solid nodes)
         f = torch.where(self.f_mask[self.lattice.stencil.opposite], self.f_collided[self.lattice.stencil.opposite], f)
-        # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
-        # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
-        # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
-        # (?) es wird keine no_stream_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
-        # ...ist das so, oder entsteht dadurch "Strömung" innerhalb des Obstacles? Diese hat zwar keinen direkten Einfluss auf die Größen im Fluidbereich,
-        # ... lässt aber in der Visualisierung Werte ungleich Null innerhalb von Objekten entstehen und Mittelwerte etc. könnten davon beeinflusst werden. (?)
+
         return f
 
     def make_no_stream_mask(self, f_shape):
@@ -1884,25 +1638,6 @@ class HalfwayBounceBackBoundary:
         #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
         #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
         self.force_sum = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
-            # explanation for 2D:
-                # sums forces in x and in y (and z) direction,
-                # tmp: all f, that are marked in f_mask
-                    # tmp.size: 9 x nx x ny (for 2D)
-                # self.lattice.e: 9 x 2 (for 2D)
-                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
-                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
-                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
-                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
-                    # theoretically DELTA P (difference in momentum density) is calculated
-                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
-                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
-
-        # # calculate Force on all boundary nodes individually:
-        # if self.lattice.D == 2:
-        #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp,
-        #                                   self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
-        # if self.lattice.D == 3:
-        #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
 
     def store_f_collided(self, f_collided):
         self.f_collided = torch.clone(f_collided)

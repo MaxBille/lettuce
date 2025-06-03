@@ -16,11 +16,11 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 
 import lettuce as lt
 
-from pspelt.geometric_building_model import build_house_max
-from pspelt.helperFunctions.getIBBdata import getIBBdata
-from pspelt.helperFunctions.plotting import plot_intersection_info
-from pspelt.helperFunctions.logging import Logger
-from pspelt.obstacleFunctions import makeGrid
+from helpterCodePS.geometric_building_model import build_house_max
+from helpterCodePS.helperFunctions.getIBBdata import getIBBdata
+from helpterCodePS.helperFunctions.plotting import plot_intersection_info
+from helpterCodePS.helperFunctions.logging import Logger
+from helpterCodePS.obstacleFunctions import makeGrid
 
 ### ARGUMENTS
 
