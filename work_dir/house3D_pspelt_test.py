@@ -1075,7 +1075,7 @@ if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=False)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:

@@ -748,9 +748,10 @@ class HighMaReporter:
         else:
             self.vtk_dir = vtk_dir
         self.stop_simulation = stop_simulation
-        if not self.stop_simulation:
+        if not self.stop_simulation and self.vtk_full:
             self.vtk_full = False
             print("(HighMaReporter) because stop_simulation == False, setting vtk = False, otherwise too many vtk files could be created! Use NaNReporter to write 'last' vtk file on crash.")
+            print("(HighMaReporter) will still store HighMa-points in vtk-folder/HighMa (!) as .vtu")
 
         self.outdir_exists = False
         if os.path.exists(self.outdir):
