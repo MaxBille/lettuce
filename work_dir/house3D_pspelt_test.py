@@ -50,7 +50,7 @@ parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
 parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
-parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime [s] to simulate, default is 72 h for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
+parser.add_argument("--t_sim_max", default=(72*60*60), type=float, help="max. walltime [s] to simulate, default is 72 h = 259200 s for cluster use. sim stops at 0.99*t_max_sim")  # andere max.Zeit? wie lange braucht das "drum rum"? kann cih simulation auch die scho vergangene Zeit übergeben? dann kann ich mit nem größeren Wert rechnen und sim ist variabel darin, wie viel Zeit es noch hat
 
 parser.add_argument("--cluster", action='store_true', help="if you don't want pngs etc. to open, please use this clsuter-flag")
 parser.add_argument("--outdir", default=os.getcwd(), type=str, help="directory to save output files to; vtk-files will be saved in seperate dir, if outputdir_vtk is specified")
@@ -997,13 +997,14 @@ if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"] or
         #                                          [60000, 60050],
         #                                          [80000, 80050],
         #                                          [99950, 100000]])
-        t_starts_vtk_domain_slice = np.array([0, 1000, 5000, 10000, 15000, 19000])
-        i_intervals_vtk_domain_slice = np.array([[0, 1000],
+        t_starts_vtk_domain_slice = np.array([0, 100, 200, 500, 1000, 10000, 19000])
+        i_intervals_vtk_domain_slice = np.array([[0, 50],
                                                  [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[1])+50],
                                                  [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[2])+50],
                                                  [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[3])+50],
                                                  [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[4])+50],
-                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5])+50]
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[5])+50],
+                                                 [flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[6]), flow.units.convert_time_to_lu(t_starts_vtk_domain_slice[6])+50]
                                                  ], dtype=int)
         vtk_domainSliceInterval_reporters = [None] * i_intervals_vtk_domain_slice.shape[0]
         for interval_min_max in range(i_intervals_vtk_domain_slice.shape[0]):
@@ -1058,7 +1059,7 @@ if args["vtk_slice2D"] or args["vtk_slice_inlet"] or args["vtk_slice_outlet"] or
 # WATCHDOG-REPORTER (reports runtime, estimated end etc.)
 if args["watchdog"]:
     if args["watchdog_interval"] < 1:
-        baguette = int(n_steps/100)
+        baguette = int(n_steps/1000)
     else:
         baguette = int(args["watchdog_interval"])
     watchdog_reporter = lt.Watchdog(lattice, flow, simulation, interval=baguette, i_start=0, i_target=n_steps, t_max=simulation.t_max, filebase=outdir+"/watchdog", show=not args["cluster"])
@@ -1074,7 +1075,7 @@ if args["high_ma_reporter"]:
     high_ma_reporter_path = outdir+"/HighMaReporter"
     # if not os.path.exists(high_ma_reporter_path):
     #     os.makedirs(high_ma_reporter_path)
-    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=True)  # stop_simulation overwrites vtk output of HighMaReporter with False
+    high_ma_reporter = lt.HighMaReporter(flow, lattice, n_steps, t_target, interval=args["high_ma_reporter_interval"], simulation=simulation, outdir=high_ma_reporter_path, vtk_dir=outdir_data+"/vtk/HighMa", stop_simulation=False, vtk_highma_points=False)  # stop_simulation overwrites vtk output of HighMaReporter with False
     simulation.reporters.append(high_ma_reporter)
 
 # slice2dReporter for u_mag and p fields:
