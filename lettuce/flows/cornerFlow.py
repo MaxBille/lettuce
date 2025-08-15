@@ -15,6 +15,11 @@ from lettuce.boundary_mk import NonEquilibriumExtrapolationInletU, SyntheticEddy
 from pspelt.obstacleFunctions import makeGrid
 import time
 
+"""
+(!) This FLOW is NOT functional! (!)
+- this is the first implementation of a flow around a corner, to check interactions of solid boundary conditions with themselves...
+- this flow is not finished and production ready (Summer 2025) 
+"""
 
 class CornerFlow:
 
@@ -46,8 +51,8 @@ class CornerFlow:
         self.shape = shape  # LU-indices
         self.ndim = lattice.D
         res = domain_length_x_lu / domain_length_x_pu
-        self.char_length_pu = reference_height_pu# MAYBE for stand-aline flow this,
-                                # but for comparison with house we have to relate to corresponding hosue # domain_length_x_pu - (corner_position_lu[0]/res)  # characteristic length
+        self.char_length_pu = reference_height_pu# MAYBE for stand-alone flow this,
+                                # but for comparison with house we have to relate to corresponding house # domain_length_x_pu - (corner_position_lu[0]/res)  # characteristic length
         self.domain_constraints = domain_constraints  # ([xmin, ymin], [xmax, ymax]) if dim == 2 else ([xmin, ymin, zmin], [xmax, ymax, zmax])  # Koordinatensystem in PU, abh. von der stl und deren ursprung
         self.reference_height_pu = reference_height_pu #domain_constraints[1][1] * res - 0.01  # height at which u_char is reached in velocity profile (just below FWBB slip boundary)
         self.ground_height_pu = ground_height_pu
@@ -350,18 +355,6 @@ class CornerFlow:
         # (2/2) overlap solid masks
         self.overlap_all_solid_masks()
         self.calculate_non_free_flow_mask()
-
-        # >>>
-        # ÜBERLEGUNGEN ZUR REIHENFOLGE VON BCs
-        # - EQin hat keine NSM, d.h. dort wird durch das streaming regulär der "outlet" rübergeströmt -> PROBLEM
-        # - EQ_outP hat NSM -> dort bleibt einfach ein konstanter Wert, des letzten Durchlaufs, im Zweifel also auch die Geschwindigkeit des Nachbarknotens von letztem Step...
-        # (!) DENKE: wo kommen Populationen her und wo SOLLTEN sie herkommen?
-        # - EQ_out + HWBB -> EQ_out "nimmt" sich Populationen vom Nachbarknoten. welcher diagonal ja ein SOLID Knoten ist! Und dort ist "Null" Geschwindigkeit -> d.h. von dort strömt ETWAS mehr zurück, als erwartbar wäre...
-        # - EQ_in + HWBB -> das sollte durch NCM und NSM behebbar sein, weil dann die Pops. des vorherigen Steps einfach "bleiben" / ABER die EQ_in müsste nach hinten, damit "VOR dem Reporter und Streaming die korrekten Pops. stehen"
-        #   -> EQ_in hinten: die Pops. werden zwischen Streaming und EQ nochmal kurz von der HWBB angefasst, dann aber wieder überschrieben
-        # - vermutlich ist das mit FWBB halt getestet...und damit liefs... weils "IN" der boundary trotzdem "sinnvolle" Fluidpopulationen gibt.
-        # (!) aus der Boden-Boundary alle f_index rausnehmen, welche in ihren LU-Koordinaten auf der EQ_in.mask liegen
-        # <<<
 
         # LIST OF BOUNDARIES
         if (ground_boundary_condition is not None) and (corner_boundary_condition is not None):

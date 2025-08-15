@@ -241,19 +241,7 @@ class VelocityTestFlow:
     def overlap_all_solid_masks(self):
         print("overlap_all_solid_masks")
         time0 = time.time()
-        ###assert self.boundary_objects is not None
-            # boundaries_list = [_ for _ in self.boundary_objects
-            #                    if _.unique_boundary and _.boundary_type is not PartiallySaturatedBoundary]
-        #boundaries_list = self.boundaries
-        # for boundary in boundaries_list:
-        #     if not hasattr(boundary.collision_data, 'solid_mask'):
-        #         boundary.calculate_points_inside()
-        # COMBINE ALL SOLID-Masks to single mask
-        # self._solid_mask = torch.zeros_like(boundaries_list[0].solid_mask, dtype=torch.bool, device=self.lattice.device)
-        # for boundary in boundaries_list:
-        #     self._solid_mask = self.solid_mask | boundary.solid_mask.to(self.lattice.device)
 
-        # TODO: geht das irgendwie anders? ich kann nicht self.boundaries aufrufen, weil die boundaries dann komplett neu initialisiert werden und das Zeit kostet!
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)
         if self.bound_flow:
             self._solid_mask = self.solid_mask | self.top_mask | self.bottom_mask
