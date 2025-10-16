@@ -43,7 +43,6 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
-# (!) action = 'store_false' bedeutet, dass im Fall des GEGEBENEN Arguments, false gespeichert wird, und wenn es NICHT gegeben ist, True... wtf
 parser.add_argument("--name", default="velocity3D", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
 parser.add_argument("--float_dtype", default="float64", choices=["float32", "float64", "single", "double", "half"], help="data type for floating point calculations in torch")
@@ -132,10 +131,10 @@ parser.add_argument("--animations_number_of_frames", default=None, type=int, hel
 parser.add_argument("--animations_fps_pu", default=None, type=int, help="number of frames per second PU for 2D animations (mp4s). Not the fps for the mp4, but the rate at which frames are taken from simulation (relative to it's simulated PU-time)")
 parser.add_argument("--animations_fps_mp4", default=None, type=int, help="number of frames per second PU for 2D animations (mp4s). Actual fps of the resulting mp4. (Not the fps at which frames are taken from simulation!")
 
-parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
+parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")
 parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
 # parser.add_argument("--double_precision", action='store_true', help="") # ist bei mir als float_dtype hinterlegt (s.o.)
-parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
+parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data")
 parser.add_argument("--verbose", action='store_true', help="display more information in console (for example about neighbour search)")
 
 args = vars(parser.parse_args())
@@ -603,7 +602,7 @@ show2d_observables(lattice.convert_to_numpy(flow.units.convert_velocity_to_pu(la
 # create and append reporters
 print("Initializing reporters...")
 
-#TODO: experiment with larger interval for obs_reportes...
+#TODO: experiment with larger interval for obs_reporters...
 #TODO: measure impact of interval=1 obs_reporters...
 
 # OBSERVABLE REPORTERS
@@ -1015,6 +1014,7 @@ try:
 except:
     pass
 
+# >>>OPTIONAL
 # PRESSURE and VELOCITY at points
 # only for ground and house sims...
 # for i in range(len(x_positions_lu)):
@@ -1058,6 +1058,7 @@ except:
 #     fig_velocity.savefig(outdir + f"/PU_point_report/u_mag_xlu{up_point_reporters[i][j].index_lu[0]:03d}.png")
 #     if not cluster:
 #         fig_velocity.show()
+# <<<OPTIONAL
 
 print("\nmaximum total (CPU) RAM usage ('MaxRSS') (including optional PNG and GIF post-processing [MB]: " + str(round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, 2)) + " MB")
 

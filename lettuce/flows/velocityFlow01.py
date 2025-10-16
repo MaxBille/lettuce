@@ -173,6 +173,7 @@ class VelocityFlow:
         wedge_area = (y >= y_0) * (y <= y_0+profile_height)
         u_profile = np.where(wedge_area, wedge_function, 0)
 
+        # OLD >>>
         #print("KEIL_PROFIL: y.shape:", y.shape)
         # if len(y.shape) == 1:
         #     u_profile[int(np.floor(y_half)):] = u_profile[:int(np.ceil(y_half))][::-1]
@@ -183,6 +184,7 @@ class VelocityFlow:
         # elif len(y.shape) == 3:
         #     u_profile[:, int(np.floor(y_half)):, :] = u_profile[:, :int(np.ceil(y_half)), :][::-1]
         #     u_diff = u_profile[0, 1:, 0] - u_profile[0, :-1, 0]
+        # <<< OLD
 
         u_profile = np.zeros_like(y)
         ux_delta = keil_u_max/self.units.convert_length_to_lu(profile_height/2)  # PU-velocity-difference per NODE
@@ -190,6 +192,6 @@ class VelocityFlow:
         u_profile[:, int(y.shape[1]*0.1):int(y.shape[1]*0.5), :] = self.keil_steigung
 
         # TODO: test if keil-Profil works for INIT, EQ_in, EQ_out, because it might require 3xXxYxZ dims...
-      # print("(!) Keil Profil: max. delta_u is:", u_diff)
+        # print("(!) Keil Profil: max. delta_u is:", u_diff)
         return u_profile
 

@@ -38,7 +38,6 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
-# (!) action = 'store_false' bedeutet, dass im Fall des GEGEBENEN Arguments, false gespeichert wird, und wenn es NICHT gegeben ist, True... wtf
 
 # Infrastructure and I/O (path, devices, name, walltime, vtk-output,...)
 parser.add_argument("--name", default="3Dcorner", help="name of the simulation, appears in output directory name")
@@ -145,12 +144,13 @@ parser.add_argument("--animations_fps_mp4", default=0, type=int, help="number of
 parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices of boundary masks, solid_boundary f_indices etc.")
 
 # SBD helpterCodePS arguments
-parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
+parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")
 parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
-parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
+parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data")
 
 args = vars(parser.parse_args())
 
+### >>>OLD
 # get parameters from args[] dict:
 # name, default_device, float_dtype, t_sim_max, cluster, outdir, outdir_data, vtk, vtk_fps, vtk_interval, vtk_step_start, \
 #     nan_reporter, from_cpt, sim_i, write_cpt, re, ma, viscosity_pu, char_density_pu, u_init, n_steps, t_target, \
@@ -163,7 +163,8 @@ args = vars(parser.parse_args())
 #                        "step_start", "collision", "dim", "stencil", "eqlm", "house_length_lu", "house_length_pu",
 #                        "house_width_pu", "roof_angle", "eg_height_pu", "roof_height_pu", "overhang_pu", "domain_length_pu",
 #                        "domain_width_pu", "domain_height_pu", "inlet_bc", "outlet_bc", "ground_bc", "house_bc",
-#                        "top_bc", "combine_solids", "verbose"]]
+#                        "top_bc", "combine_solids", "verbose"]]#
+### <<<OLD
 
 # CREATE timestamp, sim-ID, outdir and outdir_data
 timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
@@ -768,7 +769,7 @@ simulation.reporters.append(min_max_p_pu_reporter)
 #TODO: add non-free-flow mask (oder mindestens non-fluid-mask) zu den Reportern, die aus dem ganzen Feld Durchschnitte,
 # Maxima, Minima bzw. "Statistik" machen, denn sonst wird z.B. Zeug auf FWBB.Knoten mit einbezogen, oder auch Ecken der Randbedingungen...
 # (opt.): man könnte auch jeweils zwei Werte ausgeben: nur free-flow und nur fluid (also ohne Solid). Was auf der FWBB abgeht,
-# ist an sich erstmal nicht so relevant und kann theoratisch noch im VTK "betrachtet" werden, falls relevant
+# ist an sich erstmal nicht so relevant und kann theoretisch noch im VTK "betrachtet" werden, falls relevant
 
 # VTK REPORTER
 
@@ -808,7 +809,6 @@ if args["vtk_3D"]:
                                   imin=vtk_3d_i_start, imax=vtk_3d_i_end)
     simulation.reporters.append(vtk_3d_reporter)
     vtk_3d_reporter.output_mask(flow.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)  # point data is good for masking/calculation with data-fields in paraview, because u/p-are exported as point-data!
-    #??? vtk_3d_reporter.output_mask(ground_solid_boundary_data.solid_mask, outdir_data + "/vtk", "solid_mask", point=True)
     if not combine_solids:
         vtk_3d_reporter.output_mask(flow.corner_mask, outdir_data + "/vtk", "corner_mask", point=True)
         vtk_3d_reporter.output_mask(flow.ground_mask, outdir_data + "/vtk", "ground_mask", point=True)

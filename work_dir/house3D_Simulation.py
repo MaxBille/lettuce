@@ -44,8 +44,6 @@ from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 
-# (!) action = 'store_false' bedeutet, dass im Fall des GEGEBENEN Arguments, false gespeichert wird, und wenn es NICHT gegeben ist, True... wtf
-
 # Infrastructure and I/O (path, devices, name, walltime, vtk-output,...)
 parser.add_argument("--name", default="3Dhouse", help="name of the simulation, appears in output directory name")
 parser.add_argument("--default_device", default="cuda", type=str, help="run on cuda or cpu")
@@ -151,9 +149,9 @@ parser.add_argument("--plot_sbd_2d", action='store_true', help="plot 2d_slices o
 
 
 
-parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")  # DAS BRAUCH ICH...
+parser.add_argument("--solid_boundary_data_path", default=os.path.join(os.getcwd(), 'solid_boundary_data'), type=str, help="")
 parser.add_argument("--no_store_solid_boundary_data", action='store_true', help="") # ob coll_data gespeichert wird, oder nicht... -> ohne, wirds zwar verwendet, aber nicht gespeichert
-parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data") # DAS BRAUCHE ICH AUCH
+parser.add_argument("--recalc", action='store_true', help="recalculate solid_boundary_data")
 
 args = vars(parser.parse_args())
 

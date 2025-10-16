@@ -230,13 +230,13 @@ class InterpolatedBounceBackBoundary:
         if self.interpolation_order == 2:
             print("warning: not implemented")
         else:  # interpolation_order==1:
-            # f_tmp = f_collided[i,x_b]_interpolation before bounce
+            # DESCRIPTION: f_tmp = f_collided[i,x_b]_interpolation before bounce
             f_tmp = torch.where(self.d <= 0.5,  # if d<=1/2
                                 2 * self.d * self.f_collided + (1 - 2 * self.d) * f, # interpolate from second fluid node
                                 (1 / (2 * self.d)) * self.f_collided + (1 - 1 / (2 * self.d)) * self.f_collided[self.lattice.stencil.opposite])  # else: interpolate from opposing populations on x_b
-            # (?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
-            # f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
-            # ... d.h. f_collided[i,x_f] entspricht f[i,x_b]
+            #  DESCRIPTION:(?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
+            #  DESCRIPTION:f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
+            #  DESCRIPTION:... d.h. f_collided[i,x_f] entspricht f[i,x_b]
             f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_tmp[self.lattice.stencil.opposite], f)
             # HWBB: f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
 
@@ -1138,7 +1138,7 @@ class SlipBoundary:
         self.lattice = lattice
         self.bb_direction = direction  # scalar {0,1,2} specifying x,y or z as the direction to "bounce"
         e = self.lattice.stencil.e  # numpy-typed velocity vectors
-        bb_direction = self.bb_direction  # wtf?
+        bb_direction = self.bb_direction # ???
 
         # from all velocity vectors, invert the component pointing in direction (?)
         opposite_stencil = np.array(e)
@@ -1156,7 +1156,7 @@ class SlipBoundary:
         return self.mask
 
     # def make_no_stream_mask(self, f_shape):
-    #     # alle Pops., die genau orthogonal zur direction sind sollen nicht gestreamt werden.
+    #     # all populations that are orthogonal to direction should NOT be streamed!
 
 
 class BounceBackBoundary:
@@ -2281,6 +2281,8 @@ class HalfwayBounceBackBoundary_compact_v3:
                                                                  self.f_index_solid[:, 2],
                                                                  self.f_index_solid[:, 3]],
                                               self.lattice.e[self.f_index_solid[:, 0]])
+
+            ### THE COMMENTED CODE MIGHT BE WRONG!
             # self.force_sum = 2 * torch.einsum('i..., id -> d', f_collided.to_dense()[self.f_index_fluid[:, 0],
             #                                                                          self.f_index_fluid[:, 1],
             #                                                                          self.f_index_fluid[:, 2],
@@ -2318,7 +2320,7 @@ class HalfwayBounceBackBoundary_compact_v3:
             #                                     self.f_index_solid[:, 3]],
             #                                   self.lattice.e[self.f_index_solid[:, 0]])
 
-        # HIER BRAUCHE ICH VIELLEICHT NOCH EIN MINUS VOR DER BERECHNUNG...
+        ### THE COMMENTED CODE MIGHT BE WRONG!
 
 
 class EquilibriumBoundaryPU:
@@ -2331,10 +2333,12 @@ class EquilibriumBoundaryPU:
         # parameter input (u, p) in PU!
         # u can be a field (individual ux, uy, (uz) for all boundary nodes) or vector (uniform ux, uy, (uz)))
         self.mask = lattice.convert_to_tensor(mask)
+
         # temp >>>
         # self._no_stream_mask = np.zeros((lattice.Q, mask.shape[0], mask.shape[1], mask.shape[2] if len(mask.shape)==3 else None), dtype=bool)
         # self._no_stream_mask = self._no_stream_mask | mask
         # <<< temp
+
         self.lattice = lattice
         self.units = units
         self.velocity = lattice.convert_to_tensor(velocity)

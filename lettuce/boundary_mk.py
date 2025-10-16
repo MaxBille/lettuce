@@ -7,6 +7,13 @@ from lettuce import LettuceException
 from lettuce import torch_gradient
 from lettuce.lattices import Lattice
 
+'''
+    These are based on the boundaries implemented by Martin L. Kliemank (MLK) in his masters thesis and the proceeding paper.
+    
+    WORK IN PROGRESS and potentially unfinished here! use/read with caution
+'''
+
+
 __all__ = ["EquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "SyntheticEddyInlet", "ZeroGradientOutlet"]
 
 class EquilibriumExtrapolationOutlet(lt.AntiBounceBackOutlet):
@@ -151,7 +158,7 @@ class NonEquilibriumExtrapolationInletU(object):
             self.rho_old = rho_w
 
 
-        ## f[here] = self.lattice.equilibrium(rho_w, u_w) + (f[other] - self.lattice.equilibrium(rho, u))  ## EQLM ist anders mit torch.einsum bzw. lattice.einsum definiert... bruh // hier spielt mir die Definition von lettuce.einsum in die Quere, zwischen Martins branch und dem aktuellen Lettuce!
+        ## f[here] = self.lattice.equilibrium(rho_w, u_w) + (f[other] - self.lattice.equilibrium(rho, u))  ## EQLM ist anders mit torch.einsum bzw. lattice.einsum definiert... bruh // hier kommt mir die Änderung der Definition von lettuce.einsum in die Quere, zwischen Martins branch und dem aktuellen Lettuce!
         f[here] = (torch.einsum("q,q...->q...", self.lattice.w, (rho_w * (
                     (2 * torch.tensordot(self.lattice.e, u_w, dims=1) - torch.einsum("d...,d...->...", u_w, u_w)) / (
                         2 * self.lattice.cs ** 2) + 0.5 * (
@@ -246,7 +253,7 @@ class SyntheticEddyInlet(object):
             # 4. f_eq aus U und rho nach Buffa_Eq.15
             #    - cs
             #    - omega_i (Gewichte von D3Q19 (!)
-            #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (kronker delta? -> nur diagonal?)
+            #    - Q_kij = c_ki * c_kj - c_s^2 * delta_ij (k.delta? -> nur diagonal?)
             # 4.2. f_neq über Dichte und Geschwindigkeitsgradienten (und der Relaxationskonstante
             # 5. f_i = f_eq + f_neq ( (!) unten ist das Minus in die Endrechnung verschoben, sollte aber stimmen?)
 

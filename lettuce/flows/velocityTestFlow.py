@@ -253,12 +253,11 @@ class VelocityTestFlow:
         # for boundary in boundaries_list:
         #     self._solid_mask = self.solid_mask | boundary.solid_mask.to(self.lattice.device)
 
-        # TODO: geht das irgendwie anders? ich kann nicht self.boundaries aufrufen, weil die boundaries dann komplett neu initialisiert werden und das Zeit kostet!
+        # TODO: this is somehow clunky... - find better way
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)
         if self.bound_flow:
             self._solid_mask = self.solid_mask | self.top_mask | self.bottom_mask
-        # TODO: falls hier weitere solids hinzugefügt werden (in diesem flow), dann müssen deren Masken nach Erstellung noch entsprechend verschnitten werden...
-        #  alternativ: man könnte ein "update solid mask" oderso machen, in dem man dann alle True Punkte hinzufügt... und das wird von einer boundary selbst bei initialisierung aufgerufen
+        # TODO: in current form, all masks have to be intersected/combined correctly
         time1 = time.time() - time0
         print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return

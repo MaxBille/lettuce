@@ -126,7 +126,7 @@ class HouseFlow3D(object):
                                            alpha=self.wsp_alpha)
         elif self.u_init == 2:  # 2: u-profile adjusted to obstacle-geometry  # "profile that is attenuated up to 1/5 of domain length
             # PHILIPPS version with height-shift
-            # TODO: implement semi-simple global velocity profile by broadcasting simple WSP-inlet-profile and adjusting height to max. Solid-Height at each XZ-position
+            # TODO: implement semi-simple global velocity profile by broadcasting simple WSP-inlet-profile and adjusting height to maximum solid-height at each XZ-position
 
             one_fifth_length_index = int(round(self.shape[0]/5))
             k_factor = np.zeros_like(x[0], dtype=float)
@@ -150,10 +150,10 @@ class HouseFlow3D(object):
     @property
     def grid(self):
         return makeGrid(self.domain_constraints, self.shape)
-        # minx, maxx = self.domain_constraints
-        # xyz = tuple(self.units.convert_length_to_pu(torch.linspace(minx[_], maxx[_], self.shape[_]))
-        #             for _ in range(self.ndim))  # tuple of lists of x,y,(z)-values/indices
-        # return torch.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
+        # OLD minx, maxx = self.domain_constraints
+        # OLD xyz = tuple(self.units.convert_length_to_pu(torch.linspace(minx[_], maxx[_], self.shape[_]))
+        # OLD              for _ in range(self.ndim))  # tuple of lists of x,y,(z)-values/indices
+        # OLD  return torch.meshgrid(*xyz, indexing='ij')  # meshgrid of x-, y- (und z-)values/indices
 
     @property
     def boundaries(self):
@@ -189,10 +189,7 @@ class HouseFlow3D(object):
                                                       # characteristic velocity at reference height (EG or ROOF)
                                                       alpha=self.wsp_alpha)[0, np.newaxis,...]
         u_inlet_y = np.zeros_like(u_inlet_x)
-        #print(f"u_inlet_x.shape = {u_inlet_x.shape}")
-       # print("u_inlet_x:\n", u_inlet_x)
         u_inlet = np.stack([u_inlet_x, u_inlet_y, u_inlet_y], axis=0)
-        #print("u_inlet:\n", u_inlet[0,0,:,0])
 
         # INLET
         print("initializing inlet boundary condition...")
@@ -206,7 +203,7 @@ class HouseFlow3D(object):
             # inlet_boundary_condition = lt.EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units, u[:, 0, ...], p[0, 0, ...])
         elif self.inlet_bc.casefold() == 'nex':
             inlet_boundary_condition = NonEquilibriumExtrapolationInletU(self.units.lattice, self.units, [-1, 0, 0],
-                                                                         np.array(self.initial_solution(self.grid)[1]))  # original aus der Arbeit, Übergibt die y-Koordinaten aller grid-Punkte und erzeugt so die von y abhängige initial solution für das komplette Feld. Wird für MLKs Rechnung in Feld-Größe benötigt
+                                                                         np.array(self.initial_solution(self.grid)[1])) # from MLKs master thesis
         elif self.inlet_bc.casefold() == 'sei':
             inlet_boundary_condition = SyntheticEddyInlet(self.units.lattice,
                                                           self.units,
@@ -261,7 +258,7 @@ class HouseFlow3D(object):
 
         else:
             print(f"(INFO) no ground_solid_boundary_data available to flow.boundaries but ground_bc appears to be wanted. Using self.ground_mask[:, 0, :] = True as ground_mask")
-            self.ground_mask[:, 0, :] = True  # TODO: diese Anpassung hier ist irgendwie hässlich, weil ich dann jeweils vorher die global_solid_mask anders habe...
+            self.ground_mask[:, 0, :] = True  # TODO: this is ugly. related to global_solid_mask...
             if self.ground_bc is not None:  # if ground BC is specified for regular SBB
                 if self.ground_bc.casefold() == 'hwbb':
                     ground_boundary_condition = HalfwayBounceBackBoundary_occ(self.ground_mask, self.units.lattice, periodicity=(False, False, True))
@@ -291,17 +288,9 @@ class HouseFlow3D(object):
         self.overlap_all_solid_masks()
         self.calculate_non_free_flow_mask()
 
-        #>>>
-            # ÜBERLEGUNGEN ZUR REIHENFOLGE VON BCs
-            # - EQin hat keine NSM, d.h. dort wird durch das streaming regulär der "outlet" rübergeströmt -> PROBLEM
-            # - EQ_outP hat NSM -> dort bleibt einfach ein konstanter Wert, des letzten Durchlaufs, im Zweifel also auch die Geschwindigkeit des Nachbarknotens von letztem Step...
-            # (!) DENKE: wo kommen Populationen her und wo SOLLTEN sie herkommen?
-            # - EQ_out + HWBB -> EQ_out "nimmt" sich Populationen vom Nachbarknoten. welcher diagonal ja ein SOLID Knoten ist! Und dort ist "Null" Geschwindigkeit -> d.h. von dort strömt ETWAS mehr zurück, als erwartbar wäre...
-            # - EQ_in + HWBB -> das sollte durch NCM und NSM behebbar sein, weil dann die Pops. des vorherigen Steps einfach "bleiben" / ABER die EQ_in müsste nach hinten, damit "VOR dem Reporter und Streaming die korrekten Pops. stehen"
-            #   -> EQ_in hinten: die Pops. werden zwischen Streaming und EQ nochmal kurz von der HWBB angefasst, dann aber wieder überschrieben
-            # - vermutlich ist das mit FWBB halt getestet...und damit liefs... weils "IN" der boundary trotzdem "sinnvolle" Fluidpopulationen gibt.
-            # (!) aus der Boden-Boundary alle f_index rausnehmen, welche in ihren LU-Koordinaten auf der EQ_in.mask liegen
-        #<<<
+        # IMPORTANT: think about the order of boundary conditions in this list (the order in which they will be called in simulation.step()),
+        #   ...some lattice sites will be altered by more than one BC (especially at domain edges and corners, intersection points of obstacles and domain walls etc.)
+        #   (!) might affect accuracy and stability!
 
         # LIST OF BOUNDARIES
         if (ground_boundary_condition is not None) and (house_boundary_condition is not None):
@@ -380,23 +369,11 @@ class HouseFlow3D(object):
     def overlap_all_solid_masks(self):
         print("overlap_all_solid_masks")
         time0 = time.time()
-        ###assert self.boundary_objects is not None
-            # boundaries_list = [_ for _ in self.boundary_objects
-            #                    if _.unique_boundary and _.boundary_type is not PartiallySaturatedBoundary]
-        #boundaries_list = self.boundaries
-        # for boundary in boundaries_list:
-        #     if not hasattr(boundary.collision_data, 'solid_mask'):
-        #         boundary.calculate_points_inside()
-        # COMBINE ALL SOLID-Masks to single mask
-        # self._solid_mask = torch.zeros_like(boundaries_list[0].solid_mask, dtype=torch.bool, device=self.lattice.device)
-        # for boundary in boundaries_list:
-        #     self._solid_mask = self.solid_mask | boundary.solid_mask.to(self.lattice.device)
 
-        # TODO: geht das irgendwie anders? ich kann nicht self.boundaries aufrufen, weil die boundaries dann komplett neu initialisiert werden und das Zeit kostet!
+        # TODO: this is somehow clunky... - find better way
         self._solid_mask = np.zeros(shape=self.shape, dtype=bool)
         self._solid_mask = self.solid_mask | self.house_mask | self.ground_mask
-        # TODO: falls hier weitere solids hinzugefügt werden (in diesem flow), dann müssen deren Masken nach Erstellung noch entsprechend verschnitten werden...
-        #  alternativ: man könnte ein "update solid mask" oderso machen, in dem man dann alle True Punkte hinzufügt... und das wird von einer boundary selbst bei initialisierung aufgerufen
+        # TODO: in current form, all masks have to be intersected/combined correctly
         time1 = time.time() - time0
         print(f"overlap_all_solid_masks took {floor(time1 / 60):02d}:{floor(time1 % 60):02d} [mm:ss].")
         return
@@ -406,7 +383,7 @@ class HouseFlow3D(object):
         time0 = time.time()
         self._non_free_flow_mask = np.zeros(shape=self.shape, dtype=bool)
 
-        # (!) outlet is currently defined through "direction" and not mask, this is why this is "ghetto-style" implemented locally like this
+        # (!) outlet is currently defined through "direction" and not mask, this is why this is implemented locally like this
         out_mask = np.zeros_like(self.solid_mask)
         out_mask[-1, 1:, :] = True
 
@@ -417,9 +394,6 @@ class HouseFlow3D(object):
 
     def wind_speed_profile(self, y, y_ref=None, y_0=None, u_ref=None, alpha=0.25):
         # exponential wind speed profile from QUELLE, with ZERO velocity at y_0 and u_ref at y_ref+y_0
-        # alle Angaben in PU, y in absolute PU relative to (0,0,0)
-        # FRAGE: soll y_ref die Höhe vom Boden oder die Absoluthöhe sein?
-            # - erstmal vom Boden, d.h. ich muss da y_0 noch draufrechnen, für absolute PU-Koordinaten, welche ja in y übergeben werden!
         if y_ref == None:
             y_ref = self.reference_height_pu
 
@@ -427,13 +401,12 @@ class HouseFlow3D(object):
             y_0 = self.ground_height_pu
 
         # TODO: y_0 is the ground_height and reference ZERO-height for profile. add u_0_height at which the profile starts and is stretched, u_ref at y_ref stays relative to y_0
-        #return torch.where(y < y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha)
-        #print("y_0, y_ref, alpha:", y_0, y_ref, alpha)
-        # print("y:", y)
-       # print("WSP is:\n", np.where(y <= y_0, 0, u_ref * ((y - y_0) / y_ref) ** alpha))
         return np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / y_ref) ** alpha)
 
     def wind_speed_profile_power_law(self, y, y_ref=None, y_0=None, u_ref=None, alpha=0.25):
+
+        # >>> CLARIFICATION AND THOUGHT PROCESS FOR power-law equation in GERMAN:
+
         # INPUTS REF: z_0, z_min, z_max, c_0, v_b, kat.,
         # WIND SPEED Power law: u(height)/u_ref = (height/height_ref)^alpha
         # known reference speed u_ref at height y_ref. Extrapolates wind speed u at y (in m)
@@ -471,12 +444,14 @@ class HouseFlow3D(object):
         #   v_b Basisgeschwindigkeit in Abh. der Windzone in m/s:
         #       Windzone 1: 22.5 m/s, Kat. 2: 25 m/s, Kat. 3: 27.5 m/s, Kat. 4: 30 m/s
 
+        # <<<
+
 
         # (!) all units in PU
         # y is absolute PU-coordinates relative to grid
 
         ### c_r_min = 0.19*(y_0/0.05)^0.07 * np.log(10/y_0) * (y_min/10)^alpha
-        ### c_r = 0.19*(y_0/0.05)^0.07 * np.log(10/y_0) * (y/10)^alpha       # SOLLTE übereinstimmen mit: v_m... oben für DE
+        ### c_r = 0.19*(y_0/0.05)^0.07 * np.log(10/y_0) * (y/10)^alpha       # should fit for  v_m... see above for DE
         # TODO: plot Kat 1, Kat2, Kat3 against MLK Parameters...
         #       for Kat-Formulas, use formula and condensed formula respectively and compare.
 
@@ -507,27 +482,29 @@ class HouseFlow3D(object):
         # elif len(u_profile.shape) == 3:
         #     u_profile_deltas = u_profile[0, :, 0][1:] - u_profile[0, :, 0][:-1]
 
-        #print("(!) (WSP_powerLaw): max. dux/dy gradient in inflow-profile is:", max(abs(u_profile_deltas)))
-        # POWER LAW: from u(y<=y_0)=0 to u(y=y_ref)=u_ref with exponent alpha
         return u_profile #np.where(y <= y_0, 0, u_ref * (np.where(y <= y_0, 0, (y - y_0)) / (y_ref-y_0)) ** alpha)
 
 
     def wind_speed_profile_turb(self, y, u_0):
-        ## entspricht 3D_literature_neue_Boundary "wsp" und TestSEMBoundary/Empty/...
-        ## hält den Minimalwert auf z_min fest und lässt ihn nicht für z=0 auf 0 abfallen!
-        # based on DIN Onstwaswindprofil
-        # all inputs in PU
-        # return 0.77 * u_max * (z / 10) ** (alpha)
+        ## @MLK-version: entspricht 3D_literature_neue_Boundary "wsp" und TestSEMBoundary/Empty/...
+        ## @MLK-version:  hält den Minimalwert auf z_min fest und lässt ihn nicht für z=0 auf 0 abfallen!
+        # @MLK-version:  based on DIN Onstwaswindprofil
+        # @MLK-version:  all inputs in PU
+        # @MLK-version:  return 0.77 * u_max * (z / 10) ** (alpha)
+
         roughness_length = y_0 = 0.02  # meter
         k_r = 0.19 * (y_0 / 0.05) ** 0.07
         y_min = 1.2
 
-        ##(MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
+        ##OLD (MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
         return np.where(y < y_min,
                            u_0 * k_r * np.log(y_min / y_0) * 1,
                            u_0 * k_r * np.log(y / y_0) * 1)
 
     def wind_speed_profile_log_law(self, y, u_0, y_min=1.2, y_0=0.02, kat=2):
+
+        # >>> CLARIFICATION AND THOUGHT PROCESS FOR log-law equation in GERMAN:
+
         # INPUTS Literatur: v_b, c_0=1, z_0, z_min, z_max, Kat.
         # INPUTS hier:      u_0, -    , y_0, y_min, -    , kat
 
@@ -569,7 +546,7 @@ class HouseFlow3D(object):
         z_0_kat2 = 0.05
         k_r = 0.19 * (y_0 / z_0_kat2) ** 0.07  # hier k_r ~ 0.1782, das ist zw. Kapt. I und II // 0.05 ist z_0,II für Kat.2
 
-        ##(MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
+        ##OLD: (MK_torch-Version): return torch.where(y < y_min, u_0 * k_r * torch.log(torch.tensor(y_min / y_0, device=self.units.lattice.device)) * 1, u_0 * k_r * torch.log(y / y_0) * 1)
         return np.where(y < y_min,
                            u_0 * k_r * np.log(y_min / y_0),  # const. unterhalb der Mindeshöhe
                            u_0 * k_r * np.log(y / y_0)       # log-Profil oberhalb der Mindeshöhe (streng genommen bis zur max-Höhe)
