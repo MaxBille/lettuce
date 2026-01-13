@@ -62,7 +62,7 @@ literature = [1.4,1.31,1.19,1.31,1.33,1.172,1.29,1.45,1.26,1.36,1.4087]
 #     plt.axhline(y=lit, color="r", ls="-.", lw=0.5)
 for lit in literature:
     plt.axhline(y=lit, color="r", ls="", marker="", lw=0.5)
-ylim_lock = ax1.set_ylim()
+ylim_lock = ax1.set_ylim() # HERE
 plt.axhline(y=100, color="r", ls="", marker="_",lw=0.5, label="literature")
 ax2 = ax1.twinx()
 ax2.set_yticks(literature, labels=[" "]*len(literature))
@@ -71,7 +71,7 @@ ax2.tick_params(color='r', direction='in', width=1.2)
 
 ax1.yaxis.set_major_formatter(FormatStrFormatter('%.1f  '))
 
-ax1.legend(fontsize=6, ncol=2)
-plt.savefig(folder+"/plots/"+name+"_legend.png")
+ax1.legend(fontsize=6, ncol=2) # HERE
+plt.savefig(folder+"/plots/"+name+"_legend.png") # HERE
 plt.show()
 
