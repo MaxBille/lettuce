@@ -682,8 +682,6 @@ class NaNReporter:
                 else:
                     self.simulation.abort_condition = 2  # telling simulation to abort simulation
                     self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f in step {i} (NaNReporter.interval = {self.interval}). See NaNReporter.txt log for details!'
-                    # print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
-                    # print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
 
                 # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
                 if self.vtk_dir is not None and self.vtk:

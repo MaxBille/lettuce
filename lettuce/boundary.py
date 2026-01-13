@@ -14,12 +14,6 @@ The no-stream mask has the same dimensions as the distribution functions (Q, x, 
 The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 """
-
-# To Do:
-#  - the inits for Halfway and Fullway Bounce Back with force calculation (neighbor search) can be outsourced to a function taking mask and lattice and returning tensor(f_mask)
-#  - same for the calc_force_on_boundary method
-#  - fullway and halfway bounce back could be fitted into one class and specified by parameter (hw/fw) determining the use of how call acts and if no_stream is used (hw)
-
 import torch
 import numpy as np
 import time
@@ -236,13 +230,13 @@ class InterpolatedBounceBackBoundary:
         if self.interpolation_order == 2:
             print("warning: not implemented")
         else:  # interpolation_order==1:
-            # f_tmp = f_collided[i,x_b]_interpolation before bounce
+            # DESCRIPTION: f_tmp = f_collided[i,x_b]_interpolation before bounce
             f_tmp = torch.where(self.d <= 0.5,  # if d<=1/2
                                 2 * self.d * self.f_collided + (1 - 2 * self.d) * f, # interpolate from second fluid node
                                 (1 / (2 * self.d)) * self.f_collided + (1 - 1 / (2 * self.d)) * self.f_collided[self.lattice.stencil.opposite])  # else: interpolate from opposing populations on x_b
-            # (?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
-            # f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
-            # ... d.h. f_collided[i,x_f] entspricht f[i,x_b]
+            #  DESCRIPTION:(?) 1-1/(2d) ODER (2d-1)/2d, welches ist numerisch exakter?
+            #  DESCRIPTION:f_collided an x_f entspricht f_streamed an x_b, weil entlang des links ohne collision gestreamt wird!
+            #  DESCRIPTION:... d.h. f_collided[i,x_f] entspricht f[i,x_b]
             f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_tmp[self.lattice.stencil.opposite], f)
             # HWBB: f = torch.where(self.f_mask[self.lattice.stencil.opposite], f_collided[self.lattice.stencil.opposite], f)
 
@@ -608,6 +602,7 @@ class InterpolatedBounceBackBoundary_compact_v1:
                                                                   size=f_collided.size()))
 
 
+# THIS IS THE IBB in compact implementation
 class InterpolatedBounceBackBoundary_compact_v2:
 
     def __init__(self, mask, lattice, x_center, y_center, radius, interpolation_order=1):
@@ -934,6 +929,7 @@ class InterpolatedBounceBackBoundary_compact_v2:
         self.f_collided_gt = torch.stack((f_collided_gt, f_collided_gt_opposite), dim=1)
         # TODO: this is copy-paste from IBBc2.init. IBBc2 and the BBBC in general should be cleaned up and adjusted to new OCC-stuff...
 
+# THIS IS THE IBB in compact implementation WITH OCC-support
 class InterpolatedBounceBackBoundary_occ:
     """Interpolated Bounce Back Boundary Condition first introduced by Bouzidi et al. (2001), as described in Kruger et al.
         (2017)
@@ -1142,7 +1138,7 @@ class SlipBoundary:
         self.lattice = lattice
         self.bb_direction = direction  # scalar {0,1,2} specifying x,y or z as the direction to "bounce"
         e = self.lattice.stencil.e  # numpy-typed velocity vectors
-        bb_direction = self.bb_direction  # wtf?
+        bb_direction = self.bb_direction # ???
 
         # from all velocity vectors, invert the component pointing in direction (?)
         opposite_stencil = np.array(e)
@@ -1160,7 +1156,8 @@ class SlipBoundary:
         return self.mask
 
     # def make_no_stream_mask(self, f_shape):
-    #     # alle Pops., die genau orthogonal zur direction sind sollen nicht gestreamt werden.
+    #     # all populations that are orthogonal to direction should NOT be streamed!
+
 
 class BounceBackBoundary:
     """Fullway Bounce-Back Boundary"""
@@ -1276,24 +1273,6 @@ class FullwayBounceBackBoundary:
         #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
         #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
         self.force_sum = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
-            # explanation for 2D:
-                # sums forces in x and in y (and z) direction,
-                # tmp: all f, that are marked in f_mask
-                    # tmp.size: 9 x nx x ny (for 2D)
-                # self.lattice.e: 9 x 2 (for 2D)
-                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
-                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
-                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
-                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
-                    # theoretically DELTA P (difference in momentum density) is calculated
-                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
-                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
-
-        # # calculate Force on all boundary nodes individually:
-        # if self.lattice.D == 2:
-        #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
-        # if self.lattice.D == 3:
-        #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
 
 
 class FullwayBounceBackBoundary_compact:
@@ -1628,20 +1607,12 @@ class HalfwayBounceBackBoundary:
 
     def __call__(self, f):
         # HALFWAY-BB: overwrite all populations (on fluid nodes) which came from boundary with pre-streaming populations (on fluid nodes) which pointed at boundary
-            #print("f_mask:\n", self.f_mask)
-            #print("f_mask(q2,x1,y1):\n", self.f_mask[2, 1, 1])
-            #print("f_mask(q2,x1,y3):\n", self.f_mask[2, 1, 3])
-            #print("f_mask(opposite):\n", self.f_mask[self.lattice.stencil.opposite])
+
         # calc force on boundary:
         self.calc_force_on_boundary()
         # bounce (invert populations on fluid nodes neighboring solid nodes)
         f = torch.where(self.f_mask[self.lattice.stencil.opposite], self.f_collided[self.lattice.stencil.opposite], f)
-        # ersetze alle "von der boundary kommenden" Populationen durch ihre post-collision_pre-streaming entgegengesetzten Populationen
-        # ...bounce-t die post_collision/pre-streaming Populationen an der Boundary innerhalb eines Zeitschrittes
-        # ...von außen betrachtet wird "während des streamings", innerhalb des gleichen Zeitschritts invertiert.
-        # (?) es wird keine no_stream_mask benötigt, da sowieso alles, was aus der boundary geströmt käme hier durch pre-Streaming Populationen überschrieben wird.
-        # ...ist das so, oder entsteht dadurch "Strömung" innerhalb des Obstacles? Diese hat zwar keinen direkten Einfluss auf die Größen im Fluidbereich,
-        # ... lässt aber in der Visualisierung Werte ungleich Null innerhalb von Objekten entstehen und Mittelwerte etc. könnten davon beeinflusst werden. (?)
+
         return f
 
     def make_no_stream_mask(self, f_shape):
@@ -1667,25 +1638,6 @@ class HalfwayBounceBackBoundary:
         #self.force = 1 ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / 1.0  # v1.1 - M.Kliemank
         #self.force = dx ** self.lattice.D * 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e) / dx  # v.1.2 - M.Bille (dt=dx, dx as a parameter)
         self.force_sum = 2 * torch.einsum('i..., id -> d', tmp, self.lattice.e)  # CALCULATE FORCE / v2.0 - M.Bille: dx_lu = dt_lu is allways 1 (!)
-            # explanation for 2D:
-                # sums forces in x and in y (and z) direction,
-                # tmp: all f, that are marked in f_mask
-                    # tmp.size: 9 x nx x ny (for 2D)
-                # self.lattice.e: 9 x 2 (for 2D)
-                # - the multiplication of f_i and c_i is down through the first dimension (q) = direction, indexname i
-                # - the sign is given by the coordinates of the stencil-vectors (e[0 to 8] for 2D)
-                # -> results in two dimensional output (index d) for x- and y-direction (for 2D)
-                # "dx**self-lattice.D" = dx³ (3D) or dx² (2D) as prefactor, converting momentum density to momentum
-                    # theoretically DELTA P (difference in momentum density) is calculated
-                    # assuming smooth momentum transfer over dt, force can be calculated through: F= dP/dt
-                    # ...that's why theoretically dividing by dt=dx=1 is necessary (BUT: c_i=1=dx/dt=1 so that can be omitted (v2.0) !)
-
-        # # calculate Force on all boundary nodes individually:
-        # if self.lattice.D == 2:
-        #     self.force = 2 * torch.einsum('qxy, qd -> xyd', tmp,
-        #                                   self.lattice.e)  # force = [x-coordinate, y-coodrinate, direction (0=x, 1=y)]
-        # if self.lattice.D == 3:
-        #     self.force = 2 * torch.einsum('qxyz, qd -> xyzd', tmp, self.lattice.e)  # force = [x-coordinate, y-coodrinate, z-coodrinate, direction (0=x, 1=y, 2=z)]
 
     def store_f_collided(self, f_collided):
         self.f_collided = torch.clone(f_collided)
@@ -2333,10 +2285,12 @@ class EquilibriumBoundaryPU:
         # parameter input (u, p) in PU!
         # u can be a field (individual ux, uy, (uz) for all boundary nodes) or vector (uniform ux, uy, (uz)))
         self.mask = lattice.convert_to_tensor(mask)
+
         # temp >>>
         # self._no_stream_mask = np.zeros((lattice.Q, mask.shape[0], mask.shape[1], mask.shape[2] if len(mask.shape)==3 else None), dtype=bool)
         # self._no_stream_mask = self._no_stream_mask | mask
         # <<< temp
+
         self.lattice = lattice
         self.units = units
         self.velocity = lattice.convert_to_tensor(velocity)

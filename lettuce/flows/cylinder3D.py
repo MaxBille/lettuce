@@ -11,7 +11,7 @@ class Cylinder3D:
                  x_offset=0, y_offset=0, radius=0):
         self.shape = (int(x_lu), int(y_lu), int(z_lu))  # shape of the domain in LU (length, height, width)
         self.char_length_pu = char_length_pu  # characteristic length
-        # self.x_lu = x_lu  # domain length (kann das nicht auch über "shape" abgegriffen werden?)
+        # self.x_lu = x_lu  # domain length (maybe available through shape?)
         # self.y_lu = y_lu  # domain height ('')
         # self.z_lu = z_lu  # domain width ('')
 
@@ -78,7 +78,7 @@ class Cylinder3D:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
-        #self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
+        #OLD self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
