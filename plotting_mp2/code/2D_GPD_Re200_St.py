@@ -58,7 +58,7 @@ ax2.set_ylim(ylim_lock)
 ax1.set_ylim(ylim_lock)
 ax2.tick_params(color='r', direction='in', width=1.2)
 
-ax1.legend(fontsize="6")
-plt.savefig(folder+"/plots/"+name+".png")
+#ax1.legend(fontsize="6")
+plt.savefig(folder+"/plots/"+name+"_nolegend.png")
 plt.show()
 

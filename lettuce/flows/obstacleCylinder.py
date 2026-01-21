@@ -135,7 +135,7 @@ class ObstacleCylinder:
     def obstacle_mask(self, m):
         assert isinstance(m, np.ndarray) and m.shape == self.shape
         self._obstacle_mask = m.astype(bool)
-        # self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
+        #OLD: self.solid_mask[np.where(self._obstacle_mask)] = 1  # (!) this line is not doing what it should! solid_mask is now defined in the initial solution (see below)!
 
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
@@ -252,6 +252,7 @@ class ObstacleCylinder:
             obstacle_boundary = HalfwayBounceBackBoundary_compact_v3(self.obstacle_mask, self.units.lattice)
         else:  # use Fullway Bounce Back
             obstacle_boundary = FullwayBounceBackBoundary(self.obstacle_mask, self.units.lattice)
+            print("(!) WARNING: obstacle boundary name was not recognized, USING FWBB!")
 
         if lateral_boundary is None:  # if lateral boundary is periodic...don't include the lateral_boundary object in the boundaries-list
             return [

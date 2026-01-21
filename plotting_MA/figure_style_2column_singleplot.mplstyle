@@ -1,0 +1,46 @@
+### style sheet for use with TWO COLUMN paper
+
+# runtime changes via: matplotlib.rcParams.update({'lines.linewidth': 0.8})
+
+# temporary changes via:
+##>>>
+#with mpl.rc_context({'lines.linewidth': 2, 'lines.linestyle': ':'}):
+#    plt.plot(data)
+##<<<
+
+# temporary changes via decorator:
+##>>>
+#@mpl.rc_context({'lines.linewidth': 3, 'lines.linestyle': '-'})
+#def plotting_function():
+#    plt.plot(data)
+#
+#plotting_function()
+##<<<
+
+# defaults: matplotlib.rcdefaults
+
+# USE style sheet: plt.style.use('path')
+# list of multiple style sheets (.mplstyle) possible. last entry takes priority
+
+# temporary use of style sheet:
+##>>>
+#with plt.style.context('dark_background'):
+#    plt.plot(np.sin(np.linspace(0, 2 * np.pi)), 'r-o')
+#plt.show()
+##<<<
+
+###########################################################
+
+# FONT
+font.size: 7
+
+# LINES AND MARKERS
+lines.linewidth: 1
+lines.markeredgewidth: 1
+lines.markersize: 5
+
+# FIGURE
+figure.figsize: 3.4876,2.301816  # widths: two_column_elsarticle: 3.4876, textwidth_elsarticle: 7.22433
+#figure.autolayout: True  # fits stuff automatically but with more space than constrained_layout
+figure.constrained_layout.use: True
+figure.dpi: 300

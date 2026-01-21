@@ -1,5 +1,11 @@
 """Lattice Boltzmann Solver"""
 
+import torch
+import numpy as np
+
+import pickle
+import warnings
+
 from timeit import default_timer as timer
 from lettuce import (
     LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient,
@@ -9,11 +15,8 @@ from lettuce import (
     HalfwayBounceBackBoundary_compact_v3
 )
 from lettuce.util import pressure_poisson
-import pickle
+
 from copy import deepcopy
-import warnings
-import torch
-import numpy as np
 
 __all__ = ["Simulation"]
 
@@ -34,6 +37,10 @@ class Simulation:
         self.collision = collision
         self.streaming = streaming
         self.i = 0  # index of the current timestep
+        self.abort_condition = 0  # 0: no abort, 1: abort
+        self.abort_message = ""  # string where reporters etc. can write, why they want to abort
+        self.n_steps_target = None  # num_steps passed to simulation.call()
+        self.n_steps_reached = 0  # to save last i in, before finishing simulation
 
         # >>>
         # M.Bille:
@@ -42,10 +49,7 @@ class Simulation:
         # ...momentum exchange (force on boundary, coefficient of drag etc.)
         # TRUE/FALSE per boundary in the _boundaries list
 
-        self.times = [[], [], [], [], []]  # list of lists for time-measurement (collision, streaming, boundary, reporters)
-        # ...doesn't work correctly with cuda-optimized code (e.g. c2 compact BBBC implementation)
-        self.time_avg = dict()
-        self.t_max = 72*3600-10*60  # max. runtime 71:50:00 h / to stop and store sim-data for later continuation,
+        self.t_max = 72 * 3600 - 60 * 60  # max. runtime 71:00:00 h / to stop and store sim-data for later continuation,
         # ...because the cluster only allows 72h long jobs.
         # <<<
 
@@ -78,7 +82,7 @@ class Simulation:
             # ... no_collision_mask is used in the simulation.step()
 
         # retrieve no-streaming and no-collision markings from all boundaries
-        self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state -> WHY?
+        self._boundaries = self.flow.boundaries  # store locally to keep the flow free from the boundary state -> WHY?
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
                 # get no-collision markings from boundaries
@@ -95,43 +99,42 @@ class Simulation:
         for boundary_index in self.boundary_range:
             if hasattr(self._boundaries[boundary_index], "store_f_collided"):
                 self.store_f_collided.append(True)  # this boundary needs f_collided
-                self._boundaries[boundary_index].store_f_collided(self.f)
             else:
                 self.store_f_collided.append(False)  # this boundary doesn't need f_collided
         # (!) at the moment f_collided is passed to and stored by the boundary. This is only efficient,
         # ...if there is either only one boundary needing f_collided, or the storage of f_collided is sparse,
         # ...meaning: every boundary stores only the population needed for itself.
 
+        # initialize f_collided to correct shape after flow initialization and store first f (for hwbb and ibb BBBC)
+        for boundary_index in self.boundary_range:
+            if self.store_f_collided[boundary_index]:
+                self._boundaries[boundary_index].initialize_f_collided()
+                self._boundaries[boundary_index].store_f_collided(self.f)
+
     def step(self, num_steps):
         """ Take num_steps stream-and-collision steps and return performance in MLUPS.
         M.Bille: added force_calculation on object/boundaries
         M.Bille: added halfway bounce back boundary
         """
+        self.n_steps_target = num_steps
         start = timer()
         if self.i == 0:
             # reporters are called before the first timestep
             self._report()
         for _ in range(num_steps):  # simulate num_step timesteps
-            time1 = timer()
 
             ### COLLISION
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             # ...and store post-collision population for certain bounce-back boundary condition
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
 
-            time2 = timer()
-
             ### STORE f_collided FOR BOUNDARIES needing post-collision-, pre-streaming populations for bounce or force-calculation
             for boundary_index in self.boundary_range:
                 if self.store_f_collided[boundary_index]:
                     self._boundaries[boundary_index].store_f_collided(self.f)
 
-            time3 = timer()
-
             ### STREAMING
             self.f = self.streaming(self.f)
-
-            time4 = timer()
 
             ### BOUNDARY
             # apply boundary conditions
@@ -141,40 +144,33 @@ class Simulation:
             # count step
             self.i += 1
 
-            time5 = timer()
             # call reporters
             self._report()
 
-            time6 = timer()
-            self.times[0].append(time2-time1)  # time to collide
-            self.times[1].append(time3-time2)  # time to store f_collided
-            self.times[2].append(time4-time3)  # time to stream
-            self.times[3].append(time5-time4)  # time to boundary
-            self.times[4].append(time6-time5)  # time to report
-
-            # BETA: if simulation is running close to t_max (host job-duraction limit),
+            # BETA: if simulation is running close to t_max (host job-duration limit),
             # ...end simulation prematurely to allow for postprocessing and storage of so far gathered results.
             # If you suspect your simulation to end prematurely due to the execution time limit, remember to write a
             # ...checkpoint to continue the simulation in a new job.
-            if time6-start > self.t_max:  # if T_total > 71:50:00 h
-                num_steps = _  # log current step counter
+            if timer() - start > self.t_max:  # if T_total > 71:50:00 h (cluster kills process after 72h, so 10min are left for post-processing...)
+                #print(f"(!) prematurely ending simulation.step({num_steps}) at step = {_}, because t_max = {self.t_max} is reached!")
+                #print(f"(!) setting num_steps = {_} for correct MLUPS calculation!")
+                num_steps = _ # log current step counter
+                self.n_steps_reached = self.i
+                self.abort_condition = 1  # out_of_time (t_max reached)
+                self.abort_message = f'(!) ABORT MESSAGE: prematurely ending simulation.step({self.n_steps_target}) at step = {self.n_steps_reached}, because walltime t_max = {self.t_max} is reached!'
                 break  # end sim-loop prematurely
-                # TODO: print out real number of steps! sim.i - i_start
+
+            if self.abort_condition > 1:  # NaN detected in f or something else...
+                # print(f"(!) aborting simulation due to NaN reporter detecting NaN -> see log for more details!")
+                num_steps = _  # log current step counter
+                self.n_steps_reached = self.i
+                # self.abort_condition = 2  # NaN detected in f
+                break
+
         end = timer()
 
-        # calculate individual runtimes (M.Bille): doesn't work with asynchronous, cuda-optimized boundary conditions
-        if num_steps > 0:
-            self.time_avg = dict(time_collision=sum(self.times[0])/len(self.times[0]),
-                                 time_store_f_collided=sum(self.times[1])/len(self.times[1]),
-                                 time_streaming=sum(self.times[2])/len(self.times[2]),
-                                 time_boundary=sum(self.times[3])/len(self.times[3]),
-                                 time_reporter=sum(self.times[4])/len(self.times[4]))
-        else:  # no division by zero
-            self.time_avg = dict(time_collision=-1,
-                                 time_store_f_collided=-1,
-                                 time_streaming=-1,
-                                 time_boundary=-1,
-                                 time_reporter=-1)
+        if self.abort_condition > 0:
+            print(f"\n(!) Simulation was aborted prematurely at step {self.i} of {self.n_steps_target} (T_PU = {self.flow.units.convert_time_to_pu(self.i):.3f} of {self.flow.units.convert_time_to_pu(self.n_steps_target):.3f})...\n"+self.abort_message)
 
         # calculate runtime and performance in MLUPS
         seconds = end - start
@@ -269,3 +265,7 @@ class Simulation:
         else:  # if no device is given, device from checkponit is used. May run into issues if the device of the ckeckpoint is different from the device of the rest of the simulation.
             with open(filename, "rb") as fp:
                 self.f = pickle.load(fp)
+
+    @property
+    def boundaries(self):
+        return self._boundaries

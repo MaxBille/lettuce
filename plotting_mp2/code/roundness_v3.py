@@ -297,7 +297,10 @@ if True:  # toggle plot for mean, max, min radius over all GPD
                      #gpds, rq_rel_mean_PU_list,
                      gpds, r_rel_max_list,
                      gpds, r_rel_min_list)
-    plt.setp(lines, ls="--", marker=".", markersize=3)
+    plt.setp(lines[0], ls="--", marker=".", markersize=3)
+    plt.setp(lines[1], ls="--", marker="x", markersize=2)
+    plt.setp(lines[2], ls="--", marker="^", markersize=2)
+    plt.setp(lines[3], ls="--", marker="v", markersize=2)
     # plt.legend([r"$\bar{r}$ Gitterpunte einfach gezählt",
     #             #"PU",
     #             r"$\bar{r}$ Gitterpunkte mit Anzahl der Verbindungen zu Fluidknoten",

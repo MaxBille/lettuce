@@ -2,7 +2,7 @@
 
 """Top-level package for lettuce."""
 
-__author__ = """Andreas Kraemer"""
+__author__ = 'Andreas Kraemer'
 __email__ = 'kraemer.research@gmail.com'
 
 

@@ -15,8 +15,8 @@ import gc
 from collections import Counter
 
 __all__ = [
-    "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter",
-    "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter", "Watchdog"
+    "write_image", "write_vtk", "VTKReporter", "VTKsliceReporter", "VTKsliceReporter3D", "ObservableReporter", "ErrorReporter",
+    "VRAMreporter", "Clock", "NaNReporter", "AverageVelocityReporter", "Watchdog", "ProgressReporter", "HighMaReporter", "UPpointReporter"
 ]
 
 
@@ -32,7 +32,7 @@ def write_image(filename, array2d):
     plt.savefig(filename)
 
 
-def write_vtk(point_dict, id=0, filename_base="./data/output"):
+def write_vtk(point_dict, id=0, filename_base="./data/output", origin: tuple[float, float, float] = (0.0, 0.0, 0.0)):
     # OLD Master-version
     # vtk.gridToVTK(f"{filename_base}_{id:08d}",
     #               np.arange(0, point_dict["p"].shape[0]),
@@ -43,7 +43,7 @@ def write_vtk(point_dict, id=0, filename_base="./data/output"):
     # version by M.C.B.
     vtk.imageToVTK(
         path=f"{filename_base}_{id:08d}",
-        origin=(0.0, 0.0, 0.0),
+        origin=origin,
         spacing=(1.0, 1.0, 1.0),
         cellData=None,
         pointData=point_dict,
@@ -56,23 +56,32 @@ class VTKReporter:
     "EDIT (M.Bille: can insert solid-mask to pin osb. to zero, inside solid obstacle, " \
     "...useful for boundaries that store populations inside the boundary-region (FWBB, HWBBc3,...), making obs(f) deviate from 0"
 
-    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0):
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, imin=0, imax=None):
         self.lattice = lattice
         self.flow = flow
-        self.interval = interval
+        if interval < 0:
+            self.interval = 1
+        else:
+            self.interval = interval
         self.filename_base = filename_base
         self.imin=imin
+        if imax is None:
+            self.imax = 1e15
+        elif imax <= 0:
+            self.imax = 1
+        else:
+            self.imax = imax
         if solid_mask is not None and lattice.D == 2:
             self.solid_mask = solid_mask[..., None]
         else:
             self.solid_mask = solid_mask
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
-            os.mkdir(directory)
+            os.makedirs(directory)
         self.point_dict = dict()
 
     def __call__(self, i, t, f):
-        if i % self.interval == 0 and i >= self.imin:
+        if i % self.interval == 0 and i >= self.imin and i <= self.imax:
             u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
             p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
             #rho = self.flow.units.convert_density_to_pu(self.lattice.rho(f))
@@ -106,20 +115,332 @@ class VTKReporter:
                 #self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
             write_vtk(self.point_dict, i, self.filename_base)
 
-    def output_mask(self, no_collision_mask):
-        """Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
-        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)"""
-        point_dict = dict()
-        if self.lattice.D == 2:
-            point_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
-        else:
-            point_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
-        vtk.gridToVTK(self.filename_base + "_mask",
-                      np.arange(0, point_dict["mask"].shape[0]),
-                      np.arange(0, point_dict["mask"].shape[1]),
-                      np.arange(0, point_dict["mask"].shape[2]),
-                      pointData=point_dict)
+    def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
+        """
+        Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
+        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)
+        UPDATE 28.08.2024 (MBille: outputs mask as cell data. cell data represents the approx.
+        location of solid boundaries, assuming Fullway or Halfway Bounce Back implementation,
+        if translated by (-0.5,-0.5,-0.5) LU.
+        Attention: point data is misleading, looking at masks rendered as solid objects or point-clouds!
 
+        USE: in Paraview use Filter:Threshold -> Above Upper Threshold (Upper Threshold 0.9) -> Solid Color -> Volume/Wireframe,...
+        """
+
+        if outdir is None:
+            filename_base = self.filename_base
+        else:
+            filename_base = outdir+"/"+str(name)
+
+        mask_dict = dict()
+
+        mask_dict["mask"] = mask.astype(int) if len(mask.shape) == 3 else mask[..., None].astype(int)  # extension to pseudo-3D is needed for vtk-export to work
+
+        if point:
+            vtk.imageToVTK(
+                path=filename_base +"_point",
+                pointData=mask_dict
+            )
+        if no_offset:
+            vtk.imageToVTK(
+                path=filename_base +"_cell_noOffset",
+                cellData=mask_dict
+            )
+        vtk.imageToVTK(
+            path=filename_base + "_cell",
+            cellData=mask_dict,
+            origin=(-0.5, -0.5, -0.5),
+            spacing=(1.0, 1.0, 1.0)
+        )
+
+        # OLD Martin Kliemank: >>>
+        # if self.lattice.D == 2:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+        # else:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
+        # vtk.gridToVTK(self.filename_base + "_mask",
+        #               np.arange(0, mask_dict["mask"].shape[0]),
+        #               np.arange(0, mask_dict["mask"].shape[1]),
+        #               np.arange(0, mask_dict["mask"].shape[2]),
+        #               pointData=mask_dict)
+        # <<<
+
+
+class VTKsliceReporter:
+    '''reports a certain specified area portion of the domain as vtk-file
+    '''
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, sliceXY = None, sliceZ= None, imin=0, imax=None):
+        self.lattice = lattice
+        self.flow = flow
+        self.interval = interval
+        self.filename_base = filename_base
+        self.imin = imin
+        if imax is None:
+            self.imax = 1e15
+        elif imax <= 0:
+            self.imax = 1
+        else:
+            self.imax = imax
+
+        if solid_mask is not None and lattice.D == 2:
+            self.solid_mask = solid_mask[..., None]
+        else:
+            self.solid_mask = solid_mask
+
+        directory = os.path.dirname(filename_base)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+
+        self.point_dict = dict()
+
+        #comment: area = ([xmin, xmax], [ymin, ymax], [zmin, zmax])
+        #comment: sliceXY = ([xmin, xmax], [ymin,ymax])
+        #comment: sliceZ = zi
+        #comment: f = f[xmin:xmax, ymin:ymax, zi]  # selektiert nur die benötigten f-Werte, sodass kleinere Slices entstehen
+        # x = [0:50], y = [0:100], z=[int(zmax/2)
+        if sliceXY is not None:
+            if sliceZ is None:
+                sliceZ = 0
+            self.xmin = sliceXY[0][0]
+            self.ymin = sliceXY[1][0]
+            self.xmax = sliceXY[0][1]
+            self.ymax = sliceXY[1][1]
+            self.z_index = sliceZ
+        else:
+            self.z_index = None
+        # OPTIONAL: Abfrage, welche schaut ob xmin == xmax (und y... und z...) und falls das der Fall ist, dann dort entsprechend eine "None" Dimension anhängt und nur einen Wert nimmt, also ein "slice"
+        #   Wahrscheinlich am sinnvollsten direkt unten im Call dann abzufragen aus einem ([xmin, xmax],[ymin, ymax],[zmin, zmax]) tupel, in dem dann Werte gleich sind, wenn in dieser Ebne geslicet werden soll.
+
+
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0 and i >= self.imin and i <= self.imax:
+            if self.z_index is not None:
+                f = f[:,self.xmin:self.xmax+1, self.ymin:self.ymax+1, self.z_index, None]
+                # (!) None is needed because single-slice omits the last dimension and will result in bad dimension in conversion of u and rho/p below!
+                #print(f.shape)
+            u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+            p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+            # rho = self.flow.units.convert_density_to_pu(self.lattice.rho(f))
+            if self.lattice.D == 2:
+                if self.solid_mask is None:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                else:
+                    self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ..., None]))
+                # ALTERNATIVE:                self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ..., None]))  # for boundaries that store populations "inside" the boundary
+                for d in range(self.lattice.D):
+                    if self.solid_mask is None:
+                        self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0,
+                                                                   self.lattice.convert_to_numpy(u[d, ..., None]))
+            # ALTERNATIVE:                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, u[d, ..., None]))
+            # self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ..., None])
+            else:
+                if self.solid_mask is None:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                else:
+                    self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ...]))
+                # ORIGINAL: self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                # ALTERNATIVE:               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
+                for d in range(self.lattice.D):
+                    # ORIGINAL: self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    if self.solid_mask is None:
+                        self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    else:
+                        self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0,
+                                                                   self.lattice.convert_to_numpy(u[d, ...]))
+
+                # self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])
+            write_vtk(self.point_dict, i, self.filename_base, origin=(self.xmin, self.ymin, self.z_index))  # origin to show slice at correct position when superimposing on 3D vtk-data!
+
+    def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
+        """
+        Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
+        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)
+        UPDATE 28.08.2024 (MBille: outputs mask as cell data. cell data represents the approx.
+        location of solid boundaries, assuming Fullway or Halfway Bounce Back implementation,
+        if translated by (-0.5,-0.5,-0.5) LU.
+        Attention: point data is misleading, looking at masks rendered as solid objects or point-clouds!
+
+        USE: in Paraview use Filter:Threshold -> Above Upper Threshold (Upper Threshold 0.9) -> Solid Color -> Volume/Wireframe,...
+        """
+
+        if outdir is None:
+            filename_base = self.filename_base
+        else:
+            filename_base = outdir + "/" + str(name)
+
+        mask_dict = dict()
+
+        mask_dict["mask"] = mask.astype(int) if len(mask.shape) == 3 else mask[..., None].astype(
+            int)  # extension to pseudo-3D is needed for vtk-export to work
+
+        if point:
+            vtk.imageToVTK(
+                path=filename_base + "_point",
+                pointData=mask_dict
+            )
+        if no_offset:
+            vtk.imageToVTK(
+                path=filename_base + "_cell_noOffset",
+                cellData=mask_dict
+            )
+        vtk.imageToVTK(
+            path=filename_base + "_cell",
+            cellData=mask_dict,
+            origin=(-0.5, -0.5, -0.5),
+            spacing=(1.0, 1.0, 1.0)
+        )
+
+        # OLD Martin Kliemank: >>>
+        # if self.lattice.D == 2:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+        # else:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
+        # vtk.gridToVTK(self.filename_base + "_mask",
+        #               np.arange(0, mask_dict["mask"].shape[0]),
+        #               np.arange(0, mask_dict["mask"].shape[1]),
+        #               np.arange(0, mask_dict["mask"].shape[2]),
+        #               pointData=mask_dict)
+        # <<<
+
+class VTKsliceReporter3D:
+    '''reports a certain specified area portion of the domain as vtk-file, at the moment, only from 3D simulation
+    '''
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", solid_mask=None, slice_region: tuple = ([int, int], [int, int], [int, int]), imin=0, imax=None):
+        self.lattice = lattice
+        self.flow = flow
+        self.interval = interval
+        self.filename_base = filename_base
+        self.imin = imin
+        if imax is None:
+            self.imax = 1e15
+        elif imax <= 0:
+            self.imax = 1
+        else:
+            self.imax = imax
+
+        if solid_mask is not None and lattice.D == 2:
+            self.solid_mask = solid_mask[..., None]
+        else:
+            self.solid_mask = solid_mask
+
+        directory = os.path.dirname(filename_base)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+
+        self.point_dict = dict()
+
+        #comment: area = ([xmin, xmax], [ymin, ymax], [zmin, zmax])
+        #comment: sliceXY = ([xmin, xmax], [ymin,ymax])
+        #comment: sliceZ = zi
+        #comment: f = f[xmin:xmax, ymin:ymax, zi]  # selektiert nur die benötigten f-Werte, sodass kleinere Slices entstehen
+        # x = [0:50], y = [0:100], z=[int(zmax/2)
+
+        # OPTIONAL: Abfrage, welche schaut ob xmin == xmax (und y... und z...) und falls das der Fall ist, dann dort entsprechend eine "None" Dimension anhängt und nur einen Wert nimmt, also ein "slice"
+        #   Wahrscheinlich am sinnvollsten direkt unten im Call dann abzufragen aus einem ([xmin, xmax],[ymin, ymax],[zmin, zmax]) tupel, in dem dann Werte gleich sind, wenn in dieser Ebne geslicet werden soll.
+        if slice_region[0][0] == slice_region[0][1]:  # x-normal
+            self.normal_dir = 0
+        elif slice_region[1][0] == slice_region[1][1]: self.normal_dir = 1
+        elif slice_region[2][0] == slice_region[2][1]: self.normal_dir = 2
+        else: self.normal_dir = None
+        self.xmin = slice_region[0][0]
+        self.ymin = slice_region[1][0]
+        self.zmin = slice_region[2][0]
+        self.xmax = slice_region[0][1]
+        self.ymax = slice_region[1][1]
+        self.zmax = slice_region[2][1]
+
+
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0 and i >= self.imin and i <= self.imax:
+            if self.normal_dir is None:  # full 3D subdomain
+                f = f[:, self.xmin:self.xmax+1, self.ymin:self.ymax+1, self.zmin:self.zmax+1]
+            elif self.normal_dir == 0:  # slice in YZ plane
+                f = f[:, self.xmin, None, self.ymin:self.ymax+1, self.zmin:self.zmax+1]
+            elif self.normal_dir == 1:  # slice in XZ plane
+                f = f[:, self.xmin:self.xmax+1, self.ymin, None, self.zmin:self.zmax+1]
+            elif self.normal_dir == 2:  # slice in XY plane
+                f = f[:, self.xmin:self.xmax + 1, self.ymin:self.ymax + 1, self.zmin, None]
+            # (!) None index is needed because single-slice omits the last dimension and will result in bad dimension in conversion of u and rho/p below!
+            # print(f.shape)
+
+            # CALC. observables u and p in PU
+            u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+            p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+
+            if self.solid_mask is None:  # if you want to set all the solid nodes to p[solid]=0 provide solid_mask
+                self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+            else:
+                self.point_dict["p"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(p[0, ...]))
+            # (!) pressure comes with singleton-dimension in first position! (where u has 2 or 3 dimensions respectivly)
+
+            # ORIGINAL: self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+            # ALTERNATIVE:               self.point_dict["p"] = self.lattice.convert_to_numpy(torch.where(self.solid_mask, 0, p[0, ...]))
+            for d in range(self.lattice.D):
+                # ORIGINAL: self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                if self.solid_mask is None:
+                    self.point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                else:
+                    self.point_dict[f"u{'xyz'[d]}"] = np.where(self.solid_mask, 0, self.lattice.convert_to_numpy(u[d, ...]))
+
+                # self.point_dict["rho"] = self.lattice.convert_to_numpy(rho[0, ...])  # if you want to include the density in your vtk data...
+            # correct origin for 3D display in Paraview:
+
+            write_vtk(self.point_dict, i, self.filename_base, origin=(self.xmin, self.ymin, self.zmin))
+
+    def output_mask(self, mask, outdir=None, name="mask", point=False, no_offset=False):
+        """
+        Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
+        Usage: vtk_reporter.output_mask(simulation.no_collision_mask)
+        UPDATE 28.08.2024 (MBille: outputs mask as cell data. cell data represents the approx.
+        location of solid boundaries, assuming Fullway or Halfway Bounce Back implementation,
+        if translated by (-0.5,-0.5,-0.5) LU.
+        Attention: point data is misleading, looking at masks rendered as solid objects or point-clouds!
+
+        USE: in Paraview use Filter:Threshold -> Above Upper Threshold (Upper Threshold 0.9) -> Solid Color -> Volume/Wireframe,...
+        """
+
+        if outdir is None:
+            filename_base = self.filename_base
+        else:
+            filename_base = outdir + "/" + str(name)
+
+        mask_dict = dict()
+
+        mask_dict["mask"] = mask.astype(int) if len(mask.shape) == 3 else mask[..., None].astype(
+            int)  # extension to pseudo-3D is needed for vtk-export to work
+
+        if point:
+            vtk.imageToVTK(
+                path=filename_base + "_point",
+                pointData=mask_dict
+            )
+        if no_offset:
+            vtk.imageToVTK(
+                path=filename_base + "_cell_noOffset",
+                cellData=mask_dict
+            )
+        vtk.imageToVTK(
+            path=filename_base + "_cell",
+            cellData=mask_dict,
+            origin=(-0.5, -0.5, -0.5),
+            spacing=(1.0, 1.0, 1.0)
+        )
+
+        # OLD Martin Kliemank: >>>
+        # if self.lattice.D == 2:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask)[..., None].astype(int)
+        # else:
+        #     mask_dict["mask"] = self.lattice.convert_to_numpy(no_collision_mask).astype(int)
+        # vtk.gridToVTK(self.filename_base + "_mask",
+        #               np.arange(0, mask_dict["mask"].shape[0]),
+        #               np.arange(0, mask_dict["mask"].shape[1]),
+        #               np.arange(0, mask_dict["mask"].shape[2]),
+        #               pointData=mask_dict)
+        # <<<
 
 class ErrorReporter:
     """Reports numerical errors with respect to analytic solution."""
@@ -190,6 +511,30 @@ class ObservableReporter:
             else:
                 print(*entry, file=self.out)
 
+
+class UPpointReporter:
+    '''
+        report u and p at specific node as a time series
+        OPT: can further be streamlined to get i, t only once and make seperate files for each point, from a point-list
+    '''
+
+    def __init__(self, lattice, flow, index_lu: tuple[int,...], interval=1, out=sys.stdout):
+        # OPT.: point_list[NUMBER,iX,iY,iZ]
+        # or: one reporter per point and out = list of [i,t,ux,uy,uz,p] data
+        self.lattice = lattice
+        self.flow = flow
+        self.index_lu = index_lu
+        self.interval = interval
+        self.out = [] if out is None else out
+        if out is not None:
+            print('steps    ', 'time    ', 'p      ', 'ux      ', 'uy      ', 'uz      ')
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0:
+            u = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f[:, self.index_lu[0], self.index_lu[1], self.index_lu[2] if len(self.index_lu) > 2 else None])))
+            p = self.lattice.convert_to_numpy(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f[:, self.index_lu[0], self.index_lu[1], self.index_lu[2] if len(self.index_lu) > 2 else None])))
+            self.out.append([i,t,p[0],u[0],u[1],u[2] if u.shape[0] > 2 else None])
+
 class VRAMreporter:
 
     def __init__(self, interval=1000, filename_base="./vram_data/vram_summary"):
@@ -197,7 +542,7 @@ class VRAMreporter:
         self.filename_base = filename_base
         directory = os.path.dirname(filename_base)
         if not os.path.isdir(directory):
-            os.mkdir(directory)
+            os.makedirs(directory)
     def __call__(self, i, t, f):
         if i % self.interval == 0:
             # export CUDA-VRAM-summary + index
@@ -253,37 +598,268 @@ class Clock:
             self.out.append([i, t])
 
 
-class NaNReporter:
-    """reports any NaN and aborts the simulation"""
-    def __init__(self, flow, lattice, n_target, t_target, interval=100, ):
+class ProgressReporter:
+    '''reports progress in % and prints i and t_PU'''
+    def __init__(self, flow, n_target, num_reports=10):
         self.flow = flow
-        self.lattice = lattice
-        self.interval = interval
         self.n_target = n_target
-        self.t_target = t_target
+        self.interval = int(n_target / num_reports)
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
-            if torch.isnan(f).any() == True:
-                if self.lattice.D == 2:
-                    q, x, y = torch.where(torch.isnan(f))
-                    q = self.lattice.convert_to_numpy(q)
-                    x = self.lattice.convert_to_numpy(x)
-                    y = self.lattice.convert_to_numpy(y)
-                    nan_location = np.stack((q, x, y), axis=-1)
-                    print("(!) NaN detected at (q,x,y):", nan_location)
-                if self.lattice.D == 3:
-                    q, x, y, z = torch.where(torch.isnan(f))
-                    q = self.lattice.convert_to_numpy(q)
-                    x = self.lattice.convert_to_numpy(x)
-                    y = self.lattice.convert_to_numpy(y)
-                    z = self.lattice.convert_to_numpy(z)
-                    nan_location = np.stack((q, x, y, z), axis=-1)
-                    print("(!) NaN detected at (q,x,y,z):", nan_location)
-                print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
-                print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.t_target)
-                sys.exit()
+            print(f"Progress: {(i/self.n_target)*100:5.2f} % - Simulating step {i:6d} of {self.n_target:6d} (t_PU {self.flow.units.convert_time_to_pu(i):9.3f} of {self.flow.units.convert_time_to_pu(self.n_target):9.3f})...")
 
+
+class NaNReporter:
+    """reports any NaN and aborts the simulation"""
+    # WARNING: too many NaNs in very large simulations can confuse torch and trigger an error, when trying to create and store the nan_location tensor.
+    # ...to avoid this, leave outdir=None to omit creation and file-output of nan_location. This will not impact the abortion of sim. by NaN_Reporter
+
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk=False, vtk_dir=None):
+        self.flow = flow
+        self.old = False
+        if simulation is None:
+            self.old = True
+            self.n_target = n_target
+        else:
+            self.simulation = simulation
+            self.n_target = simulation.n_steps_target
+        self.lattice = lattice
+        self.interval = interval
+        self.t_target = t_target
+        self.outdir = outdir
+        self.vtk = vtk
+        if vtk_dir is None:
+            self.vtk_dir = self.outdir
+        else:
+            self.vtk_dir = vtk_dir
+        #TMP vtk_dir = os.path.dirname(vtk_dir)
+        #TMP if not os.path.isdir(directory):
+        #TMP     os.mkdir(directory)
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0:
+            if torch.isnan(f).any():
+                try:
+                    if self.lattice.D == 2 and self.outdir is not None:
+                        q, x, y = torch.where(torch.isnan(f))
+                        more_than_100 = False
+                        if x.shape[0] < 100:
+                            q = self.lattice.convert_to_numpy(q)
+                            x = self.lattice.convert_to_numpy(x)
+                            y = self.lattice.convert_to_numpy(y)
+                            nan_location = np.stack((q, x, y), axis=-1)
+                        else:
+                            more_than_100 = True
+                    if self.lattice.D == 3 and self.outdir is not None:
+                        q, x, y, z = torch.where(torch.isnan(f))
+                        print(f"NaNReporter: x.shape, number of NaNs = {x.shape}")
+                        more_than_100 = False
+                        if x.shape[0] < 100:
+                            q = self.lattice.convert_to_numpy(q)
+                            x = self.lattice.convert_to_numpy(x)
+                            y = self.lattice.convert_to_numpy(y)
+                            z = self.lattice.convert_to_numpy(z)
+                            nan_location = np.stack((q, x, y, z), axis=-1)
+                        else:
+                            more_than_100 = True
+                    if self.outdir is not None and not more_than_100:
+                        my_file = open(self.outdir+"/NaNReporter.txt", "w")
+                        my_file.write(f"(!) NaN detected in step {i} at (q,x,y,z):\n")
+                        for _ in nan_location:
+                            my_file.write(f"{_}\n")
+                        my_file.close()
+                        #print("(!) NaN detected at (q,x,y,z):", nan_location)
+                    elif self.outdir is not None and more_than_100:
+                        print(f"(!) NaNReporter detected more than 100 NaNs in step {i}. No outputfile created. See HighMaReporter output of previous steps or open vtk/vti-file")
+                except:
+                    print("NaNReporter: Error in writing nan_reporter.txt, probably because torch got confused because of too big tensors...")
+
+                if self.old:
+                    # backwards compatibility for simulation class w/o abort-message-functionality
+                    print("(!) NaN detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
+                    sys.exit()
+                else:
+                    self.simulation.abort_condition = 2  # telling simulation to abort simulation
+                    self.simulation.abort_message = f'(!) ABORT MESSAGE: NaNReporter detected NaN in f in step {i} (NaNReporter.interval = {self.interval}). See NaNReporter.txt log for details!'
+
+                # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
+                if self.vtk_dir is not None and self.vtk:
+                    point_dict = dict()
+                    u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+                    p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+                    if self.lattice.D == 2:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    write_vtk(point_dict, i, self.vtk_dir+"/nan_frame")
+
+
+def unravel_index(indices: torch.Tensor, shape: tuple[int, ...], ) -> torch.Tensor:
+    r"""Converts flat indices into unraveled coordinates in a target shape.
+
+    This is a `torch` implementation of `numpy.unravel_index`.
+
+    Args:
+        indices: A tensor of (flat) indices, (*, N).
+        shape: The targeted shape, (D,).
+
+    Returns:
+        The unraveled coordinates, (*, N, D).
+    """
+
+    coord = []
+
+    for dim in reversed(shape):
+        coord.append(indices % dim)
+        indices = indices // dim
+
+    coord = torch.stack(coord[::-1], dim=-1)
+
+    return coord
+
+
+class HighMaReporter:
+    """reports any Ma>0.3 and aborts the simulation if wanted"""
+
+    def __init__(self, flow, lattice, n_target=None, t_target=None, interval=100, simulation=None, outdir=None, vtk_full=False, vtk_highma_points=False, vtk_dir=None, stop_simulation=False):
+        self.flow = flow
+        self.old = False
+        if simulation is None:
+            self.old = True
+            self.n_target = n_target
+        else:
+            self.simulation = simulation
+            self.n_target = simulation.n_steps_target
+        self.lattice = lattice
+        self.interval = interval
+        self.t_target = t_target
+        self.outdir = outdir
+        self.vtk_full = vtk_full
+        self.vtk_highma_points = vtk_highma_points
+        if vtk_dir is None:
+            self.vtk_dir = self.outdir
+        else:
+            self.vtk_dir = vtk_dir
+        self.stop_simulation = stop_simulation
+        if not self.stop_simulation and self.vtk_full:
+            self.vtk_full = False
+            print("(HighMaReporter) because stop_simulation == False, setting vtk = False, otherwise too many vtk files could be created! Use NaNReporter to write 'last' vtk file on crash.")
+            print("(HighMaReporter) will still store HighMa-points in vtk-folder/HighMa (!) as .vtu")
+
+        self.outdir_exists = False
+        if os.path.exists(self.outdir):
+            self.outdir_exists = True
+        self.vtk_dir_exists = False
+        if os.path.exists(self.vtk_dir):
+            self.vtk_dir_exists = True
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0:
+            u = self.lattice.u(f)
+            ma = torch.norm(u, dim=0)/self.lattice.cs
+            # return torch.tensor([u_mag.max(), indices], device=u.device)
+
+            high_ma_locations = torch.where(ma > 0.3, True, False)
+
+            if high_ma_locations.any():
+                if self.lattice.D == 2 and self.outdir is not None:
+                    x, y = torch.where(high_ma_locations)
+                    more_than_10000 = False
+                    if x.shape[0] < 1000000:
+                        x_np = self.lattice.convert_to_numpy(x)
+                        y_np = self.lattice.convert_to_numpy(y)
+                        high_ma_locations = np.stack((x_np, y_np), axis=-1)
+                    else:
+                        more_than_1000000 = True
+                if self.lattice.D == 3 and self.outdir is not None:
+                    x, y, z = torch.where(high_ma_locations)
+                    more_than_1000000 = False
+                    if x.shape[0] < 1000000:
+                        x_np = self.lattice.convert_to_numpy(x)
+                        y_np = self.lattice.convert_to_numpy(y)
+                        z_np = self.lattice.convert_to_numpy(z)
+                        high_ma_locations = np.stack((x_np, y_np, z_np), axis=-1)
+                    else:
+                        more_than_1000000 = True
+                if self.outdir is not None:
+                    if not self.outdir_exists:
+                        os.makedirs(self.outdir)
+                        self.outdir_exists = True
+                    my_file = open(self.outdir+f"/HighMa_reporter_step{i:08d}.txt", "w")
+
+                    my_file.write(f"(!) Ma > 0.3 detected in step {i:8d}, Maximum at (x,y,[z]):\n")
+                    index_max = torch.argmax(ma)
+                    index_max = unravel_index(index_max, ma.shape)
+                    ma_np = self.lattice.convert_to_numpy(ma)
+                    index_max = self.lattice.convert_to_numpy(index_max)
+                    my_file.write(f" Ma {str(list(index_max))}lu = {ma_np[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]}\n\n")
+                    #TODO: write PU coordinates as well. a) in seperate file, b) same file below, c) same file new column "table style"
+                    if not more_than_1000000:
+                        my_file.write(f"(!) Ma > 0.3 detected at (x,y,[z]):\n")
+                        for _ in high_ma_locations:
+                            my_file.write(f"Ma {_}lu = {ma_np[_[0], _[1], _[2] if self.lattice.D == 3 else None]}\n")
+                    else:
+                        flat_ma = ma_np.ravel()
+                        k=1000000
+                        indices = np.argpartition(-flat_ma, k)[:k]
+                        top_values = flat_ma[indices]
+                        sorted_indices = indices[np.argsort(-top_values)]
+                        sorted_values = flat_ma[sorted_indices]
+                        original_indices = np.array(np.unravel_index(sorted_indices, ma_np.shape))
+                        # print(original_indices)
+                        # print(original_indices.shape[0], original_indices.shape[1])
+                        my_file.write(f"(!) Ma > 0.3 detected for more than 1000000 values. Showing top 1000000 values:\n")
+                        for _ in range(original_indices.shape[1]):
+                            my_file.write(f"Ma {original_indices[:,_]}lu = {ma_np[original_indices[0,_], original_indices[1,_], original_indices[2,_] if self.lattice.D == 3 else None]:15.4f}\n")
+                    my_file.close()
+
+                if self.old and self.stop_simulation:
+                    print("(!) Ma > 0.3 detected in time step", i, "of", self.n_target, "(interval:", self.interval, ")")
+                    sys.exit()
+                elif self.stop_simulation:
+                    self.simulation.abort_condition = 3  # telling simulation to abort simulation
+                    if self.outdir is not None:
+                        self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). Ma {str(list(index_max))}lu = {ma[index_max[0], index_max[1], index_max[2] if self.lattice.D == 3 else None]:.5f}. See HighMaReporter log for details!'
+                    else:
+                        self.simulation.abort_message = f'(!) ABORT MESSAGE: Ma > 0.3 detected (HighMaReporter.interval = {self.interval}). See HighMaReporter log for details!'
+                    #print("(!) NaN detected in time step", i, "of", self.simulation.n_steps_target, "(interval:", self.interval, ")")
+                    #print("(!) Aborting simulation at t_PU", self.flow.units.convert_time_to_pu(i), "of", self.flow.units.convert_time_to_pu(self.simulation.n_steps_target))
+
+                # write vtk output with u and p fields to vtk_dir, if vtk_dir is not None
+                if self.vtk_dir is not None and self.vtk_full:
+                    if not self.vtk_dir_exists:
+                        os.makedirs(self.vtk_dir)
+                        self.vtk_dir_exists = True
+                    point_dict = dict()
+                    u = self.flow.units.convert_velocity_to_pu(self.lattice.u(f))
+                    p = self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))
+                    if self.lattice.D == 2:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ..., None])
+                    else:
+                        point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                        for d in range(self.lattice.D):
+                            point_dict[f"u{'xyz'[d]}"] = self.lattice.convert_to_numpy(u[d, ...])
+                    write_vtk(point_dict, i, self.vtk_dir + "/highMa_frame")
+
+                # write point-vtk with Ma, ux, uy, uz, p at coordinates where Ma>0.3, if number is <100
+                if self.vtk_dir is not None and self.vtk_highma_points and not more_than_1000000:
+                    #print(f"more_than_1000000: {more_than_1000000}")
+                    if not self.vtk_dir_exists:
+                        os.makedirs(self.vtk_dir)
+                        self.vtk_dir_exists = True
+                    ux_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[0, x, y, z]))
+                    uy_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[1, x, y, z]))
+                    uz_list = self.lattice.convert_to_numpy(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)[2, x, y, z]))
+                    p_list = self.lattice.convert_to_numpy(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f))[0,x, y, z])
+                    ma_list = self.lattice.convert_to_numpy(ma[x,y,z])
+                    vtk.pointsToVTK(self.vtk_dir + f"/highMa_Points_{i:08d}", x_np, y_np, z_np, data = {"ma": ma_list, "p": p_list, "ux": ux_list, "uy": uy_list, "uz": uz_list})
 
 class AverageVelocityReporter:
     """Reports the streamwise velocity averaged in span direction (z) at defined position in x.
@@ -307,6 +883,8 @@ class AverageVelocityReporter:
             self.x_pos2 = int(np.ceil(position))
             self.w1 = position - self.x_pos1
             self.w2 = 1 - self.w1
+        else:
+            self.interpol = False
 
     def __call__(self, i, t, f):
         if i % self.interval == 0 and i >= self.start:
@@ -322,7 +900,8 @@ class AverageVelocityReporter:
                 self.out.append(np.mean(u, axis=2))
 
 
-def append_txt_file(filename, line):
+def append_txt_file(filename, line: str):
+    ''' append a line to a file with an added linebreak'''
     file = open(filename, "a")
     file.write(line + "\n")
     file.close()
@@ -338,8 +917,10 @@ class Watchdog:
 
     '''
 
-    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=71*3600, filebase="./watchdog"):
+    def __init__(self, lattice, flow, sim, interval=1000, i_start=0, i_target=1, t_max=(72 * 3600 - 10 * 60), filebase="./watchdog", show=False):
         self.interval = interval
+        if self.interval < 1:
+            self.interval = 1
         self.lattice = lattice
         self.flow = flow
         self.sim = sim
@@ -354,16 +935,17 @@ class Watchdog:
             pass
         self.running = False
         self.t_start = 0
+        self.show = show
 
     def __call__(self, i, t, f):
         #print("calling watchdog")
         if not self.running:
             self.start_timer()
-        elif i % self.interval == 0:
+        elif i % self.interval == 0 or i == 100:
             #print("watchdog in interval")
             #print("watchdog with", str(i))
             timestamp = datetime.datetime.now()
-            timestamp_str = timestamp.strftime("%y%m%d") + "_" + timestamp.strftime("%H%M%S")
+            timestamp_str = timestamp.strftime("%y%m%d_%H%M%S")
 
             t_now = timer()
             t_elapsed = t_now - self.t_start
@@ -375,9 +957,13 @@ class Watchdog:
 
             # write DATA and warn if t_total_estimate > t_max
             if t_total_estimate > self.t_max:
-                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26) + " WARNING t_total>t_max=" + str(self.t_max))
+                append_txt_file(self.filebase+"/watchdog_log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20) + " WARNING t_total>t_max=" + str(self.t_max))
+                if self.show:
+                    print(timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20) + " WARNING t_total>t_max=" + str(self.t_max))
             else:
-                append_txt_file(self.filebase+"/log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + " " + str(datetime_finish_estimate).ljust(26))
+                append_txt_file(self.filebase+"/watchdog_log.txt", timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20))
+                if self.show:
+                    print(timestamp_str.ljust(13) + " " + str(i).rjust(10) + " " + "{:.2f}".format(t_now).rjust(10) + " " + "{:.2f}".format(t_elapsed).rjust(10) + " " + "{:.6f}".format(t_per_step).rjust(10) + " " + "{:.2f}".format(t_remaining_estimate).rjust(15) + " " + "{:.2f}".format(t_total_estimate).rjust(15) + "  " + str(datetime_finish_estimate.strftime('%Y-%m-%d %H:%M:%S')).ljust(20))
             # write checkpoint if t_elapsed > t_max
             if t_elapsed > self.t_max:
                 self.sim.save_checkpoint(self.filebase+"/"+timestamp_str + "_f_"+str(self.sim.i)+".cpt")
@@ -386,6 +972,13 @@ class Watchdog:
         self.running = True
         self.t_start = timer()
         #print("starting timer")
-        append_txt_file(self.filebase+"/log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
-        append_txt_file(self.filebase+"/log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(26)+"|"+" T WARNING")
+        print("-> WATCHDOG_REPORTER ACTIVE:\nt_start: " + str(self.t_start) + ", interval: " + str(
+            self.interval) + ", i_target: " + str(self.i_target))
+        if self.show:
+            print("timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")
+        else:
+            print(f"-> WATCHDOG_REPORTER (on cluster): see '{self.filebase}/watchdog_log.txt' for output")
+
+        append_txt_file(self.filebase+"/watchdog_log.txt", "t_start: "+str(self.t_start)+", interval: "+str(self.interval)+", i_target: "+str(self.i_target))
+        append_txt_file(self.filebase+"/watchdog_log.txt", "timestamp ".center(13)+"|"+"step".center(10)+"|"+"t_now".center(10)+"|"+"t_elapsed".center(10)+"|"+"t_per_step".center(10)+"|"+"t_remain(est)".center(15)+"|"+"t_total(est)".center(15)+"|"+"DATE_FINISH(est)".center(20)+"|"+" T WARNING")
         # sizes:                                   13, 10, 7+2.(rjust10), 7+2.(rjust10), 1+6.(rjust10), 7+2.(rjust10), 7+2.(rjust15), 27

@@ -1,0 +1,4 @@
+"Coefficient of lift for HWBB and IBB boundary condition over reynolds number for 3D simulation. D3Q27, GPD = 30, D/Y = 10, D/Z = 3, BGK collision",,,,,,
+Reynolds number,200,220,240,260,280,300
+HWBB BGK,0.75353958,0.77940384,0.74056516,0.42035393,0.42569104,0.41179366
+IBB BGK,0.71063519,0.70747239,0.66664489,0.46019607,0.3787181,0.37200647
